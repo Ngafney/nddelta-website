@@ -159,7 +159,7 @@ function App() {
               </div>
               
               <p className="contact-info">
-                Contact us at <a href="mailto:ggardey@nd.edu" className="email-link">ggardey@nd.edu</a>
+                Contact us at <a href="mailto:nddelta@gmail.com" className="email-link">nddelta@gmail.com</a>
               </p>
             </div>
           </div>

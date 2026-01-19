@@ -797,15 +797,8 @@
   align-items: center;
   justify-content: center;
   aspect-ratio: 1;
-  transition: all 0.3s ease;
   border: 2px solid transparent;
   box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
-}
-
-.placement-logo-card:hover {
-  transform: translateY(-8px);
-  border-color: #60a5fa;
-  box-shadow: 0 12px 30px rgba(96, 165, 250, 0.3);
 }
 
 .placement-logo {
@@ -815,11 +808,6 @@
   height: auto;
   object-fit: contain;
   filter: grayscale(0%);
-  transition: filter 0.3s ease;
-}
-
-.placement-logo-card:hover .placement-logo {
-  filter: grayscale(0%) brightness(1.1);
 }
 
 /* Footer */
