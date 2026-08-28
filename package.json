@@ -10,7 +10,7 @@
   },
   "scripts": {
     "start": "react-scripts start",
-    "build": "react-scripts build",
+    "build": "npm --prefix week1 install --no-audit --no-fund && npm --prefix week1 run build && react-scripts build",
     "test": "react-scripts test",
     "eject": "react-scripts eject"
   },

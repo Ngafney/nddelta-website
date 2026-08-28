@@ -21,3 +21,9 @@
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+
+# week1
+week1/node_modules
+week1/.data
+public/week1
+week1/.env

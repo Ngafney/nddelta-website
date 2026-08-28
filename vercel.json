@@ -1,0 +1,6 @@
+{
+  "rewrites": [
+    { "source": "/week1/board", "destination": "/week1/index.html" },
+    { "source": "/week1/admin", "destination": "/week1/index.html" }
+  ]
+}
