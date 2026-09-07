@@ -31,10 +31,10 @@ const PRICE_KEYS = [
   ["rain_no", "Rain NO"],
 ];
 
-/* Example phrasings — inspiration only, NOT click-to-fill. */
+/* Example phrasings — inspiration only, NOT click-to-fill. Deliberately plain. */
 const EXAMPLES = [
-  "on days the forecast high is below 68, hold 800 under-70 contracts",
-  "hold rain contracts equal to twice the rain probability times 1000 whenever rain is over 30%",
+  "if the forecast 3 days out is below 68°, hold 700 under-70 contracts for that day",
+  "when rain looks likely 2 days out, hold rain-yes contracts sized to the rain chance",
 ];
 
 const money = (v) => (v == null || Number.isNaN(v) ? "—" : (v < 0 ? "-$" : "$") + Math.abs(Math.round(v)).toLocaleString());
@@ -281,6 +281,45 @@ function v0InRange(lo, hi) {
   return lo <= 0 && hi >= 0;
 }
 
+/* ── the rolling forecast-market strip (a compact forward curve) ─────────── */
+
+function MarketStrip({ markets }) {
+  const ms = markets ?? [];
+  if (ms.length === 0) return <div className="ic-bets-empty">—</div>;
+  const temps = ms.map((m) => m.tempMean).filter((t) => t != null);
+  const lo = Math.min(...temps);
+  const hi = Math.max(...temps);
+  const span = hi - lo || 1;
+  const W = 260;
+  const H = 40;
+  const xOf = (i) => (ms.length <= 1 ? 0 : (i / (ms.length - 1)) * W);
+  const yOf = (t) => H - 4 - ((t - lo) / span) * (H - 8);
+  const line = ms.map((m, i) => (i === 0 ? "M" : "L") + xOf(i).toFixed(1) + " " + yOf(m.tempMean).toFixed(1)).join(" ");
+
+  return (
+    <div className="ic-market">
+      <svg className="ic-market-curve" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none">
+        <path d={line} fill="none" stroke="#f5c542" strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" />
+        {ms.map((m, i) => (
+          <circle key={i} cx={xOf(i)} cy={yOf(m.tempMean)} r="2" fill="#f5c542" />
+        ))}
+      </svg>
+      <div className="ic-market-cells">
+        {ms.map((m) => (
+          <div key={m.offset} className={`ic-mcell ${m.offset === 0 ? "now" : ""}`}>
+            <span className="mo">{m.offset === 0 ? "TODAY" : `+${m.offset}`}</span>
+            <span className="mt">{m.tempMean != null ? `${Math.round(m.tempMean)}°` : "—"}</span>
+            <span className="msd">{m.tempSd ? `±${Math.round(m.tempSd)}` : ""}</span>
+            <span className="mr" title="rain chance" style={{ opacity: 0.25 + 0.75 * Math.min(1, (m.pRain ?? 0) / 0.6) }}>
+              ☔{Math.round((m.pRain ?? 0) * 100)}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 /* ── day-by-day visualizer ──────────────────────────────────────────────── */
 
 function Visualizer({ run }) {
@@ -316,8 +355,9 @@ function Visualizer({ run }) {
   const resPct = Math.max(0, Math.min(100, (res / barMax) * 100));
   const resClass = day.bankrupt || res <= 0 ? "danger" : res < 800 ? "warn" : "safe";
 
-  const bets = day.bets ? Object.entries(day.bets).filter(([, q]) => q) : [];
-  const betLabel = (k) => PRICE_KEYS.find(([kk]) => kk === k)?.[1] ?? k;
+  const trades = day.trades ?? [];
+  const cLabel = (k) => PRICE_KEYS.find(([kk]) => kk === k)?.[1] ?? k;
+  const offLabel = (o) => (o === 0 ? "today" : `+${o}d`);
 
   return (
     <div className="ic-viz">
@@ -367,40 +407,36 @@ function Visualizer({ run }) {
         )}
       </div>
 
-      {/* prices + hedges */}
+      {/* forecast market + trades */}
       <div className="ic-daygrid">
         <div className="ic-panel-sm">
-          <div className="h">Contract prices</div>
-          <div className="ic-prices">
-            {PRICE_KEYS.map(([k, label]) => {
-              const held = day.bets?.[k];
-              return (
-                <div key={k} className={`ic-price ${held ? "held" : ""}`}>
-                  <span className="k">{label}</span>
-                  <span className="v">{day.prices?.[k] != null ? `¢${Math.round(day.prices[k] * 100)}` : "—"}</span>
-                  {held ? <span className="qty">×{held}</span> : null}
-                </div>
-              );
-            })}
-          </div>
+          <div className="h">Forecast market · next {day.markets?.length ?? 8} days</div>
+          <MarketStrip markets={day.markets} />
         </div>
 
         <div className="ic-panel-sm">
-          <div className="h">Hedges the bot placed</div>
-          {bets.length === 0 ? (
-            <div className="ic-bets-empty">no hedges today — the bot sat out</div>
+          <div className="h">Trades today {day.openContracts ? `· ${day.openContracts.toLocaleString()} open` : ""}</div>
+          {trades.length === 0 ? (
+            <div className="ic-bets-empty">no trades today — the bot held steady</div>
           ) : (
-            <div className="ic-bets">
-              {bets.map(([k, q]) => (
-                <div key={k} className="ic-bet">
-                  <span className="side">{betLabel(k)}</span>
-                  <span className="q">×{q}</span>
-                </div>
-              ))}
+            <div className="ic-trades">
+              {trades.map((tr, k) => {
+                const buy = (tr.to ?? 0) > (tr.from ?? 0);
+                return (
+                  <div key={k} className={`ic-trade ${buy ? "buy" : "sell"}`}>
+                    <span className="tside">{buy ? "BUY" : "SELL"}</span>
+                    <span className="tk">{cLabel(tr.contract)} <i>{offLabel(tr.offset)}</i></span>
+                    <span className="tq">{tr.from}→{tr.to}</span>
+                    <span className="tp">¢{Math.round((tr.price ?? 0) * 100)}</span>
+                  </div>
+                );
+              })}
             </div>
           )}
-          <div style={{ marginTop: 10, fontSize: 12, color: "var(--muted)" }}>
-            hedge P&amp;L: <b style={{ color: (day.hedgePnl ?? 0) >= 0 ? "var(--green)" : "var(--red)" }}>{signed(day.hedgePnl)}</b>
+          <div className="ic-pnl-split">
+            <span>mark-to-mkt <b className={(day.mtm ?? 0) >= 0 ? "pos" : "neg"}>{signed(day.mtm)}</b></span>
+            <span>settled <b className={(day.settled ?? 0) >= 0 ? "pos" : "neg"}>{signed(day.settled)}</b></span>
+            <span>hedge P&amp;L <b className={(day.hedgePnl ?? 0) >= 0 ? "pos" : "neg"}>{signed(day.hedgePnl)}</b></span>
           </div>
         </div>
       </div>
@@ -572,8 +608,12 @@ export default function IceCreamGame({ team }) {
     const r = runResult?.run;
     if (!r?.days?.length) return;
     const priceCols = PRICE_KEYS.map(([k]) => `price_${k}`);
-    const betCols = PRICE_KEYS.map(([k]) => `bet_${k}`);
-    const header = ["date", "dow", "forecastHigh", "tempHigh", "precip", "rained", ...priceCols, ...betCols, "hedgePnl", "revenue", "profit", "cum", "reserves", "billed", "bankrupt"];
+    const header = ["date", "dow", "forecastHigh", "tempHigh", "precip", "rained", ...priceCols, "mtm", "settled", "hedgePnl", "openContracts", "revenue", "profit", "cum", "reserves", "billed", "bankrupt", "trades"];
+    // trades → "contract@offset:from>to@price; ..." in one quoted cell.
+    const tradeStr = (d) =>
+      (d.trades ?? [])
+        .map((t) => `${t.contract}@${t.offset}:${t.from}>${t.to}@${t.price}`)
+        .join("; ");
     const rows = r.days.map((d) => {
       const cells = [
         d.date,
@@ -583,14 +623,17 @@ export default function IceCreamGame({ team }) {
         d.precip ?? "",
         d.rained ? 1 : 0,
         ...PRICE_KEYS.map(([k]) => d.prices?.[k] ?? ""),
-        ...PRICE_KEYS.map(([k]) => d.bets?.[k] ?? 0),
+        d.mtm ?? "",
+        d.settled ?? "",
         d.hedgePnl ?? "",
+        d.openContracts ?? 0,
         d.revenue ?? "",
         d.profit ?? "",
         d.cum ?? "",
         d.reserves ?? "",
         d.billed ? 1 : 0,
         d.bankrupt ? 1 : 0,
+        `"${tradeStr(d)}"`,
       ];
       return cells.join(",");
     });
@@ -624,10 +667,12 @@ export default function IceCreamGame({ team }) {
 
             <Info label="HOW TO WRITE A GOOD PLAN">
               The AI codes <b>exactly what you describe</b> — it won't improve it, and it refuses
-              "just make me win" / "never go bankrupt" asks. Your bot sees each day's forecast high
-              and rain probability and the live contract prices; a contract nets{" "}
-              <b>+$(1−price)</b> if it hits, <b>−$price</b> if not. Get your plan across in plain
-              English — you don't have to cover every case.
+              "just make me win" / "never go bankrupt" asks. Each day your bot sees a rolling{" "}
+              <b>8-day forecast market</b> (today + 7 days ahead); you hold contracts keyed like{" "}
+              <span className="ex">under_70@3</span> (the high is under 70° three days out). Trading is
+              on margin and marked to market daily, so buying a contract cheap and selling once it rises{" "}
+              <b>locks in the gain</b>. It's a fair market — hedging changes your risk, not your average.
+              Get your plan across in plain English — you don't have to cover every case.
               <div style={{ marginTop: 10 }}>
                 for example:{" "}
                 {EXAMPLES.map((ex, k) => (

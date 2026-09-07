@@ -4,8 +4,8 @@
  *
  * Every live game now compiles to a real, sandboxed JavaScript function shown
  * to the student:
- *   • pd (Iterated Prisoner's Dilemma) — decide(state) → "SPLIT"/"STEAL"
- *   • icecream (Sunset Scoops)         — decide(day)  → { contract: qty, ... }
+ *   • pd (Iterated Prisoner's Dilemma) — decide(state) → "COOPERATE"/"DEFECT"
+ *   • icecream (Sunset Scoops)         — decide(day)  → { "key@offset": qty, ... }
  *   • bandit (retired, code kept)      — pull(state)  → machine
  *
  * For every compile the model also writes, in its own words, an `explain`
@@ -21,7 +21,7 @@
 import { prepareBanditCode } from "../shared/banditCode.js";
 import { preparePdCode } from "../shared/pdCode.js";
 import { prepareIceCode } from "../shared/iceCode.js";
-import { BANDIT, PAYOFFS } from "../shared/rules.js";
+import { BANDIT, PAYOFFS, MATCH } from "../shared/rules.js";
 
 const KEY = process.env.OPENAI_API_KEY || process.env.LLM_API_KEY;
 const BASE = process.env.OPENAI_BASE_URL || "https://api.openai.com/v1";
@@ -54,25 +54,25 @@ Emit {"ok":true,"explain":"...","summary":"...","code":"<body>"} or {"ok":false,
 
 function pdPrompt() {
   const P = PAYOFFS.pd;
-  return `You are a COMPILER for an Iterated Prisoner's Dilemma bot. A student describes, in plain English, how they want to play, and you write the BODY of \`function decide(state)\` that returns "SPLIT" or "STEAL" for the current round — EXACTLY as they described. You are not a strategist: never improve or substitute a better idea. If they describe a weak strategy, write the weak strategy.
+  return `You are a COMPILER for an Iterated Prisoner's Dilemma bot. A student describes, in plain English, how they want to play, and you write the BODY of \`function decide(state)\` that returns "COOPERATE" or "DEFECT" for the current round — EXACTLY as they described. You are not a strategist: never improve or substitute a better idea. If they describe a weak strategy, write the weak strategy.
 
-THE GAME: 10 rounds per match against an unknown opponent (you NEVER learn who they are — only what they do). Payoffs per round: both SPLIT → ${P.SPLIT.SPLIT} each; you STEAL & they SPLIT → you ${P.STEAL.SPLIT}, them ${P.SPLIT.STEAL}; both STEAL → ${P.STEAL.STEAL} each. Your bot remembers the whole current match.
+THE GAME: ${MATCH.rounds} rounds per match against an unknown opponent (you NEVER learn who they are — only what they do). Axelrod's payoffs per round: both COOPERATE → ${P.COOPERATE.COOPERATE} each; you DEFECT & they COOPERATE → you ${P.DEFECT.COOPERATE}, them ${P.COOPERATE.DEFECT}; both DEFECT → ${P.DEFECT.DEFECT} each. Your bot remembers the whole current match.
 
-You return "SPLIT" or "STEAL" (or 0 for SPLIT, 1 for STEAL).
+You return "COOPERATE" or "DEFECT" (or 0 for COOPERATE, 1 for DEFECT).
 
 \`state\` gives:
   state.round        // 0-based round number (0 on the first round)
-  state.rounds       // total rounds (10)
-  state.myMoves      // array of your past moves this match, e.g. ["SPLIT","STEAL"]
+  state.rounds       // total rounds (${MATCH.rounds})
+  state.myMoves      // array of your past moves this match, e.g. ["COOPERATE","DEFECT"]
   state.oppMoves     // array of the opponent's past moves — read them to GUESS who you're facing
   state.myLast, state.oppLast     // last move, or null on round 0
   state.myScore, state.oppScore
-  state.mySplits, state.mySteals, state.oppSplits, state.oppSteals   // running counts
-  state.SPLIT, state.STEAL        // the string constants ("SPLIT"/"STEAL")
+  state.myCoops, state.myDefects, state.oppCoops, state.oppDefects   // running counts
+  state.COOPERATE, state.DEFECT   // the string constants ("COOPERATE"/"DEFECT")
   state.rng()        // random in [0,1) — USE THIS, never Math.random
 
 RULES FOR THE CODE (checked & rejected if broken):
-  • End by returning "SPLIT"/"STEAL" (or 0/1).
+  • End by returning "COOPERATE"/"DEFECT" (or 0/1).
   • NO loops (for/while/do), NO \`function\` keyword — use arrow => for callbacks, and array methods (.filter/.map/.reduce/.some/.every/.slice) over state.myMoves/state.oppMoves.
   • Randomness ONLY via state.rng(). \`lib\` has math helpers: lib.max,min,abs,floor,ceil,round,sqrt,pow,exp,log,sign,clamp(x,lo,hi). You MAY build a small weighted score / linear model over the history if the student wants that.
   • Handle round 0 (empty history, oppLast null).
@@ -82,38 +82,47 @@ ${ANTICHEAT}
 ${OUTPUT_RULES}
 Emit {"ok":true,"explain":"...","summary":"...","code":"<function body>"} or {"ok":false,"reason":"..."}.
 
-EXAMPLE (faithful) —
-Student: "cooperate first, then copy whatever they did last round" →
-{"ok":true,"explain":"Splits on the first round, then copies the opponent's previous move every round after.","summary":"Tit for tat","code":"if (state.round === 0) return \\"SPLIT\\";\\nreturn state.oppLast;"}
-Student: "make me a bot that wins the tournament" → {"ok":false,"reason":"Tell me HOW you want to play — when to split and when to steal — and I'll code exactly that. I won't pick the strategy for you."}`;
+EXAMPLE (deliberately mediocre — never hand the student a strong strategy) —
+Student: "defect on the first two rounds, then cooperate for the rest" →
+{"ok":true,"explain":"Defects on the first two rounds, then cooperates on every round after that.","summary":"Defect twice then cooperate","code":"if (state.round < 2) return \\"DEFECT\\";\\nreturn \\"COOPERATE\\";"}
+Student: "make me a bot that wins the tournament" → {"ok":false,"reason":"Tell me HOW you want to play — when to cooperate and when to defect — and I'll code exactly that. I won't pick the strategy for you."}`;
 }
 
 /* ── ice cream shop: executable JS ────────────────────────────────────── */
 
 function icePrompt() {
-  return `You are a COMPILER for a weather-hedging bot at an ice cream shop (Sunset Scoops). A student describes, in plain English, how they want to hedge, and you write the BODY of \`function decide(day)\` that returns which weather contracts to BUY today — EXACTLY as described. Never strategize, optimize, or improve; compile what they say.
+  return `You are a COMPILER for a weather-hedging bot at an ice cream shop (Sunset Scoops). A student describes, in plain English, how they want to hedge, and you write the BODY of \`function decide(day)\` that returns the PORTFOLIO of weather contracts it wants to HOLD today — EXACTLY as described. Never strategize, optimize, or improve; compile what they say.
 
-THE SETUP: revenue swings with the weather (cold and/or rainy = low sales). Costs are billed every 14 days; if reserves can't cover a bill the shop goes BANKRUPT, and after each billing the bank skims reserves back down to $2000 — so you live on the edge. You hedge with a weather prediction market held ON MARGIN: opening a position costs NO cash. Each contract settles the same day for its NET profit/loss — you gain (1 − price) if it comes true, or lose (price) if it doesn't. The market is FAIR (prices ≈ true odds, zero average profit), so hedging changes your RISK, not your average — a well-sized hedge that pays out on bad-weather days smooths profit and prevents bankruptcies; over-hedging just adds variance.
+THE SETUP: revenue swings with the weather (cold and/or rainy = low sales). Costs are billed every 14 days; if reserves can't cover a bill the shop goes BANKRUPT, and after each billing the bank skims reserves back down to $2000 — so you live on the edge. You hedge with a weather prediction market.
 
-You return an OBJECT mapping contract keys to how many contracts to HOLD today (integers). Keys:
-  under_65, over_65, under_70, over_70, under_75, over_75, under_80, over_80   (the day's HIGH temp vs a threshold, °F)
+THE MARKET (read carefully — this is the whole game):
+  • There is a rolling 8-DAY forecast market: every day you can trade contracts on the weather for today plus the next 7 days. A contract KEY is "<contract>@<offset>": offset 0 = today (settles tonight), offset 3 = the day 3 days from now, up to offset 7 (a week out). A BARE key like "under_70" means offset 0.
+  • Trading is ON MARGIN — opening a position needs NO cash. P&L is futures-style DAILY MARK-TO-MARKET: each day you earn qty × (today's price − yesterday's price) on every position you hold. On a contract's settlement day its price becomes the outcome (1 if it happened, else 0).
+  • Prices MOVE day to day as the forecast sharpens (a week out sits near the climate average; it converges on the truth as the day nears). So if you BUY a contract cheap and its price rises, then SELL it (stop listing it), you LOCK IN that gain — it is yours to keep and is NOT given back when the contract later settles, exactly like real futures.
+  • The market is FAIR: prices are calibrated probabilities, so every contract has ~ZERO expected profit at any lead time. Hedging changes your RISK, not your average — a hedge on a future cold/rainy day that pays out when sales crater smooths profit and prevents bankruptcies; over-hedging just adds variance. NOTE: offset-0 contracts settle same-day at their already-known outcome, so trading them nets ~nothing — real hedging uses FUTURE offsets (1..7).
+
+You return an OBJECT mapping "key@offset" (or a bare key for offset 0) to the number of contracts to HOLD (integer, may be NEGATIVE to short). It is a TARGET portfolio: anything you DON'T list is closed/sold at today's price. Contract names:
+  under_65, over_65, under_70, over_70, under_75, over_75, under_80, over_80   (that day's HIGH temp vs a threshold, °F)
   rain_yes, rain_no
-Return {} to buy nothing this day.
+Return {} to hold nothing (sell everything).
 
 \`day\` gives:
-  day.t, day.daysTotal
+  day.t, day.daysTotal, day.horizon (8)
   day.date, day.dow, day.weekend (0/1), day.holiday (0/1)
-  day.forecastHigh            // forecast high temperature (°F)
-  day.prices                  // { under_65:0.2, over_65:0.8, ..., rain_yes:0.3, rain_no:0.7 } — the fair price/odds; a contract nets (1−price) if it hits, −price if not
+  day.forecastHigh            // today's high (°F) — today is already resolved
+  day.markets                 // the 8-day forward curve: [{offset, date, tempMean, tempSd, pRain, prices}, ...], offset 0..7. markets[k].prices = {under_65:0.2,...,rain_yes:0.1,rain_no:0.9} for the day k ahead; tempMean±tempSd is the forecast high, pRain the rain probability
+  day.prices                  // shorthand for day.markets[0].prices (today, settles tonight)
+  day.positions               // what you currently hold: [{contract, offset, date, qty, price}, ...]
   day.reserves                // current cash on hand (bankruptcy risk, NOT a spending budget — hedging is on margin)
   day.daysUntilBill
-  day.history                 // past days: [{date,tempHigh,rained,revenue,profit,reserves,hedgePnl,bets}, ...]
-  day.training                // 2 months of records for building models: [{date,temp_high,rained,revenue,forecast_high,p_below_65,p_below_70,p_below_75,p_below_80,p_rain,...}]
+  day.history                 // past days: [{date,tempHigh,rained,revenue,profit,reserves,hedgePnl}, ...]
+  day.training                // 5 years of records for building models: [{date,dow,weekend,holiday,temp_high,rained,revenue,forecast_high,p_below_65,p_below_70,p_below_75,p_below_80,p_rain}]
+  day.dailyCost               // fixed cost accrued each day
   day.rng()                   // random in [0,1)
 
 RULES FOR THE CODE (checked & rejected if broken):
-  • Return an object of contract→quantity (or {}). Quantities floor to integers. No cash is needed to open a position (margin); the total position is capped at 10,000 contracts/day and scaled down if you exceed it.
-  • NO loops (for/while/do), NO \`function\` keyword — use arrow => and array methods over day.history / day.training.
+  • Return an object of "key@offset"→quantity (or {}). Quantities floor to integers, may be negative (short). No cash is needed (margin); the total gross position is capped at 10,000 contracts/day and scaled down if you exceed it.
+  • NO loops (for/while/do), NO \`function\` keyword — use arrow => and array methods over day.markets / day.history / day.training.
   • Randomness only via day.rng(). \`lib\` has math helpers incl lib.mean(array), lib.clamp. You MAY build a model from day.training if the student asks.
   • Nothing else is in scope.
 
@@ -122,8 +131,8 @@ ${OUTPUT_RULES}
 Emit {"ok":true,"explain":"...","summary":"...","code":"<function body>"} or {"ok":false,"reason":"..."}.
 
 EXAMPLE (faithful) —
-Student: "whenever the forecast high is below 68 degrees, hold 800 'under 70' contracts as insurance" →
-{"ok":true,"explain":"On days the forecast high is below 68°F, holds 800 under_70 contracts; otherwise holds nothing.","summary":"Cold-day under-70 insurance","code":"if (day.forecastHigh < 68) return { under_70: 800 };\\nreturn {};"}
+Student: "if the forecast for two days out is below 68 degrees, hold 600 under-70 contracts for that day" →
+{"ok":true,"explain":"Looks at the forecast high two days out; if it is below 68°F, holds 600 under_70 contracts for that day (offset 2); otherwise holds nothing.","summary":"Cold two-days-out insurance","code":"const m = day.markets[2];\\nif (m && m.tempMean < 68) return { \\"under_70@2\\": 600 };\\nreturn {};"}
 Student: "just make sure I never go bankrupt and win" → {"ok":false,"reason":"Tell me your hedging rule — which contracts to hold and when — and I'll code exactly that. I can't pick the winning strategy for you."}`;
 }
 
