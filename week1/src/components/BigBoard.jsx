@@ -45,16 +45,19 @@ export default function BigBoard() {
     return () => clearInterval(t);
   }, [slides.length, reveal]);
 
-  // Fire (and auto-dismiss) the winner reveal when a timer crosses zero.
+  // Fire (and auto-dismiss) the winner reveal when a timer crosses zero — once
+  // per round. A reload must not replay a countdown that already happened, so
+  // rounds that ended before we loaded are marked seen without playing.
   useEffect(() => {
     const timers = data?.timers ?? {};
     for (const g of ["pd", "icecream"]) {
       const tm = timers[g];
       if (!tm) continue;
       const key = `${g}:${tm.startedAt}`;
-      if (now >= tm.endsAt && !shownRef.current.has(key)) {
+      const expired = now >= tm.endsAt;
+      if (expired && !shownRef.current.has(key)) {
         shownRef.current.add(key);
-        if (!reveal) {
+        if (now - tm.endsAt < 120_000 && !reveal) {
           setReveal(g);
           setTimeout(() => setReveal(null), 26000);
         }

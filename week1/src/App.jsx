@@ -31,13 +31,39 @@ function clock(ms) {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 }
 
+/**
+ * The winner reveal must play ONCE, when a round actually ends — not again on
+ * every refresh afterwards. Two guards: we remember which reveals this browser
+ * has played (across reloads), and we only auto-play one whose timer expired in
+ * the last couple of minutes, so arriving late never triggers an old countdown.
+ */
+const SHOWN_KEY = "w1shownReveals";
+const REVEAL_WINDOW_MS = 120_000;
+
+function loadShown() {
+  try {
+    return new Set(JSON.parse(localStorage.getItem(SHOWN_KEY)) ?? []);
+  } catch {
+    return new Set();
+  }
+}
+
+function markShown(set, key) {
+  set.add(key);
+  try {
+    localStorage.setItem(SHOWN_KEY, JSON.stringify([...set].slice(-40)));
+  } catch { /* private mode — it just won't survive a reload */ }
+}
+
 function MainApp() {
   const [team, setTeam] = useState(loadTeam);
   const [config, setConfig] = useState(null);
   const [tab, setTab] = useState(null);
   const [now, setNow] = useState(Date.now());
   const [revealGame, setRevealGame] = useState(null);
-  const shownRef = useRef(new Set()); // `${game}:${startedAt}` reveals already played
+  // Which reveals this browser has already played, keyed `${game}:${startedAt}`.
+  // Persisted: a refresh must NOT replay a countdown that already happened.
+  const shownRef = useRef(loadShown());
 
   const poll = useCallback(async () => {
     try { setConfig(await api.get("config")); } catch { /* keep last */ }
@@ -58,16 +84,20 @@ function MainApp() {
     if (!tab || (TAB_ORDER.includes(tab) && !config.games[tab])) setTab(enabled[0] ?? "boards");
   }, [config, tab, enabled.join(",")]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // When a game's timer crosses its end, play the reveal once for that instance.
+  // When a game's timer crosses its end, play the reveal once for that round.
   useEffect(() => {
     const timers = config?.timers ?? {};
     for (const g of TAB_ORDER) {
       const tm = timers[g];
       if (!tm) continue;
       const key = `${g}:${tm.startedAt}`;
-      if (now >= tm.endsAt && !shownRef.current.has(key)) {
-        shownRef.current.add(key);
-        if (!revealGame) setRevealGame(g);
+      const expired = now >= tm.endsAt;
+      const justExpired = expired && now - tm.endsAt < REVEAL_WINDOW_MS;
+      if (expired && !shownRef.current.has(key)) {
+        // Mark every ended round as seen — including ones that ended before we
+        // loaded — but only actually PLAY one that just ended.
+        markShown(shownRef.current, key);
+        if (justExpired && !revealGame) setRevealGame(g);
       }
     }
   }, [now, config, revealGame]);
