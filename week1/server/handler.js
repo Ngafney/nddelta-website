@@ -27,13 +27,25 @@ import { BANDIT, GAMES, RULES_TEXT, PAYOFFS, MATCH } from "../shared/rules.js";
  * locally it warns loudly but runs, so dev needs no setup.
  */
 const DEFAULT_SECRET = "week1-dev-secret";
-const SECRET = process.env.SESSION_SECRET || DEFAULT_SECRET;
+// Preferred: an explicit SESSION_SECRET env var. Fallback for prod when only
+// OPENAI_API_KEY is configured: derive a stable signing secret from the API key.
+// The API key is a real secret that lives ONLY in the host's env (never in this
+// public repo), so tokens derived from it are NOT forgeable from public data,
+// and the derivation is deterministic so tokens stay valid across cold starts.
+// (Rotating the API key invalidates existing team/admin tokens — fine per event.)
+const API_KEY_FOR_SECRET = process.env.OPENAI_API_KEY || process.env.LLM_API_KEY;
+const DERIVED_SECRET = API_KEY_FOR_SECRET
+  ? crypto.createHash("sha256").update("week1|session|" + API_KEY_FOR_SECRET).digest("hex")
+  : null;
+const SECRET = process.env.SESSION_SECRET || DERIVED_SECRET || DEFAULT_SECRET;
 const IS_PROD = process.env.VERCEL === "1" || process.env.NODE_ENV === "production";
 if (SECRET === DEFAULT_SECRET) {
   const msg =
-    "SESSION_SECRET is unset — team and admin tokens are forgeable from public data. Set a strong SESSION_SECRET (node -e \"console.log(require('crypto').randomBytes(32).toString('hex'))\").";
+    "No SESSION_SECRET and no OPENAI_API_KEY to derive one from — team and admin tokens are forgeable from public data. Set a strong SESSION_SECRET (node -e \"console.log(require('crypto').randomBytes(32).toString('hex'))\").";
   if (IS_PROD) throw new Error(`REFUSING TO START: ${msg}`);
   console.warn(`[week1] ⚠ ${msg} (allowed in dev only)`);
+} else if (!process.env.SESSION_SECRET && DERIVED_SECRET) {
+  console.warn("[week1] SESSION_SECRET unset — using a secret derived from OPENAI_API_KEY (set an explicit SESSION_SECRET to decouple them).");
 }
 
 const BASE_SEED = process.env.WORLD_SEED || "delta-week1-v2"; // bump to reroll the shared worlds (v2: 8 machines, 100 pulls)
