@@ -36,7 +36,8 @@ const TRAIN = ICE_DATA.train;
 const TEST = ICE_DATA.test;
 const KEYS = ICE.contracts.map((c) => c.key);
 const HORIZON = 8;            // you can trade today + the next 7 days of weather
-const MAX_CONTRACTS = 10000;  // total absolute position across all markets
+const MAX_CONTRACTS = 60000;  // total absolute position across all markets — high
+                              // enough that SIZING is a real decision, not a wall you hit
 
 const DENY = [
   "\\bfor\\b", "\\bwhile\\b", "\\bdo\\b", "\\bfunction\\b",
@@ -82,8 +83,16 @@ function gauss(rand) {
 // Forecast error grows with lead time but stays realistically SKILFUL: a
 // day-ahead high lands within ~1.5°F, a week-ahead high within ~4°F, and the
 // rain signal keeps real skill all the way out to a week.
-const tempSigma = (lead) => 1.2 + 0.40 * lead;   // °F — observation noise
-const rainSigma = (lead) => 0.30 + 0.10 * lead;  // noise on the 0/1 rain signal
+// Tunable via env for offline calibration sweeps only; defaults are the
+// shipped values. Near-term stays sharp (accurate day-ahead) and uncertainty
+// ramps with lead, so the tradable risk lives further out — which is where a
+// hedge can actually transfer risk.
+const _n = (v, d) => (v === undefined || v === "" || isNaN(Number(v)) ? d : Number(v));
+const _env = (typeof process !== "undefined" && process.env) || {};
+const TS_A = _n(_env.ICE_TS_A, 2.0), TS_B = _n(_env.ICE_TS_B, 1.2);
+const RS_A = _n(_env.ICE_RS_A, 0.30), RS_B = _n(_env.ICE_RS_B, 0.16);
+const tempSigma = (lead) => TS_A + TS_B * lead;   // °F — observation noise
+const rainSigma = (lead) => RS_A + RS_B * lead;   // noise on the 0/1 rain signal
 
 // Climatology of the scored period — the PRIOR the forecast shrinks toward at
 // long lead. Using the real marginal (not a flat prior) is what makes the
