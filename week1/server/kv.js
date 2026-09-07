@@ -13,9 +13,15 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { STORE_CONFIG } from "./store-config.mjs";
 
-const REST_URL = process.env.UPSTASH_REDIS_REST_URL || process.env.KV_REST_API_URL;
-const REST_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN || process.env.KV_REST_API_TOKEN;
+// Env vars win (the proper way). Fall back to the committed store-config for
+// this deploy, where we can't set Vercel env vars. Empty strings stay falsy,
+// so an unfilled config leaves us in memory mode exactly as before.
+const REST_URL =
+  process.env.UPSTASH_REDIS_REST_URL || process.env.KV_REST_API_URL || STORE_CONFIG.UPSTASH_REDIS_REST_URL || "";
+const REST_TOKEN =
+  process.env.UPSTASH_REDIS_REST_TOKEN || process.env.KV_REST_API_TOKEN || STORE_CONFIG.UPSTASH_REDIS_REST_TOKEN || "";
 
 export const KV_MODE = REST_URL && REST_TOKEN ? "upstash" : "memory";
 
