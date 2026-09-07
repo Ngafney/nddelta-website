@@ -190,13 +190,15 @@ async function topReplay(tourney, matchIndex = 0) {
 
 /* ── ice cream leaderboards ───────────────────────────────────────────── */
 
-async function iceBoard(kind, n = 50) {
-  const rows = await kv.ztop(`w1:board:ice:${kind}`, n);
+/** The one Sunset Scoops board: fewest bankruptcies (profit breaks ties). */
+async function iceBoard(n = 50) {
+  const rows = await kv.ztop("w1:board:ice:bank", n);
   const names = await teamNames();
   return Promise.all(rows.map(async (r, i) => {
-    const detail = await kv.getJSON(`w1:ice:${kind}:detail:${r.member}`);
-    const score = kind === "bank" ? -r.score : r.score; // bankruptcies stored negated (fewer = better)
-    return { rank: i + 1, teamId: r.member, name: names[r.member] ?? "???", score, ...detail };
+    const detail = await kv.getJSON(`w1:ice:bank:detail:${r.member}`);
+    // Show the real count from the detail record — the sort key carries a
+    // fractional profit tiebreak and must never be displayed as the score.
+    return { rank: i + 1, teamId: r.member, name: names[r.member] ?? "???", score: detail?.bankruptcies ?? Math.round(-r.score), ...detail };
   }));
 }
 
@@ -269,7 +271,6 @@ export async function handle(method, route, body, query) {
         await kv.del("w1:tourney:pd");
         await recomputePd();
       } else if (target === "icecream") {
-        await kv.del("w1:board:ice:sharpe");
         await kv.del("w1:board:ice:bank");
       } else if (target === "bandit-manual") await kv.del("w1:board:bandit:manual");
       else if (target === "bandit-algo") await kv.del("w1:board:bandit:algo");
@@ -280,8 +281,7 @@ export async function handle(method, route, body, query) {
       if (!(await checkAdmin(body.token))) throw httpError(401, "bad admin token");
       const { board, teamId } = body;
       if (board === "pd") { await kv.hdel("w1:submit:pd", teamId); await recomputePd(); }
-      else if (board === "ice-sharpe") await kv.zrem("w1:board:ice:sharpe", teamId);
-      else if (board === "ice-bank") await kv.zrem("w1:board:ice:bank", teamId);
+      else if (board === "ice-bank" || board === "icecream") await kv.zrem("w1:board:ice:bank", teamId);
       else throw httpError(400, "unknown board");
       return { ok: true };
     }
@@ -427,11 +427,18 @@ export async function handle(method, route, body, query) {
       rateLimit(`icerun:${teamId}`, 15, 60_000);
       const r = simulateIce(prep.run);
       const stratName = String(body.name ?? "").slice(0, 32) || null;
-      const improvedS = await kv.zaddGT("w1:board:ice:sharpe", r.sharpe, teamId);
-      if (improvedS) await kv.setJSON(`w1:ice:sharpe:detail:${teamId}`, { sharpe: r.sharpe, bankruptcies: r.bankruptcies, stratName, at: Date.now() });
-      const improvedB = await kv.zaddGT("w1:board:ice:bank", -r.bankruptcies, teamId);
-      if (improvedB) await kv.setJSON(`w1:ice:bank:detail:${teamId}`, { bankruptcies: r.bankruptcies, sharpe: r.sharpe, stratName, at: Date.now() });
-      return { run: r, newBestSharpe: !!improvedS, newBestBankruptcies: !!improvedB };
+      // ONE board: fewest bankruptcies. Ties are broken by total profit, folded
+      // into the sort key as a fraction below 1 so it can never outrank a whole
+      // bankruptcy. (zaddGT keeps a team's best, so a worse rerun can't demote
+      // them.) The displayed numbers come from the detail record, not the key.
+      const tiebreak = Math.min(0.999, Math.max(0, r.totalProfit / 5_000_000));
+      const improved = await kv.zaddGT("w1:board:ice:bank", -r.bankruptcies + tiebreak, teamId);
+      if (improved) {
+        await kv.setJSON(`w1:ice:bank:detail:${teamId}`, {
+          bankruptcies: r.bankruptcies, sharpe: r.sharpe, totalProfit: r.totalProfit, stratName, at: Date.now(),
+        });
+      }
+      return { run: r, newBestBankruptcies: !!improved };
     }
 
     case "GET ice/training":
@@ -504,7 +511,7 @@ export async function handle(method, route, body, query) {
         return { standings: t.standings, updatedAt: t.updatedAt };
       }
       if (game === "icecream") {
-        return { sharpe: await iceBoard("sharpe"), bankruptcies: await iceBoard("bank") };
+        return { bankruptcies: await iceBoard() };
       }
       if (game === "bandit") return { manual: await banditBoard("manual"), algo: await banditBoard("algo") };
       throw httpError(400, "unknown game");
@@ -541,7 +548,7 @@ export async function handle(method, route, body, query) {
         games: config,
         timers: await getTimers(),
         pd: { standings: pd.standings.slice(0, 12), replay: await topReplay(pd, query.match) },
-        icecream: { sharpe: await iceBoard("sharpe", 12), bankruptcies: await iceBoard("bank", 12) },
+        icecream: { bankruptcies: await iceBoard(12) },
       };
     }
 

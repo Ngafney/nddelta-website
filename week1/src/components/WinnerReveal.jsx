@@ -26,7 +26,6 @@ function useLeaderRows(game) {
         } else {
           const r = await api.get("leaderboard?game=icecream");
           if (alive) setRows([
-            { boardLabel: "SHARPE", fmt: (v) => Number(v).toFixed(2), entries: (r.sharpe ?? []).map((s) => ({ name: s.name, value: s.score, teamId: s.teamId })) },
             { boardLabel: "FEWEST BANKRUPTCIES", fmt: (v) => `${v}`, entries: (r.bankruptcies ?? []).map((s) => ({ name: s.name, value: s.score, teamId: s.teamId })) },
           ]);
         }

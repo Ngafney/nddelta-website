@@ -3,8 +3,8 @@
  *
  * You describe a hedging plan in plain English; the AI compiles it to a bot;
  * you run it over 10 years of weather and watch a cumulative-profit graph and
- * a day-by-day visualizer of every hedge it placed. Two leaderboards: Sharpe
- * ratio of daily profit (higher better) and bankruptcies (fewer better).
+ * a day-by-day visualizer of every hedge it placed. One leaderboard: fewest
+ * bankruptcies (ties broken by total profit). Sharpe is still shown as a stat.
  *
  * Minimalist by default — the page is spare; every hint, tip and long label
  * lives behind a collapsed reveal toggle (same pattern as RulesPanel).
@@ -490,7 +490,7 @@ export default function IceCreamGame({ team }) {
   const [busy, setBusy] = useState(null); // 'compile' | 'run' | 'save' | 'training'
   const [err, setErr] = useState(null);
   const [refusal, setRefusal] = useState(null);
-  const [runResult, setRunResult] = useState(draft.runResult ?? null); // {run, newBestSharpe, newBestBankruptcies}
+  const [runResult, setRunResult] = useState(draft.runResult ?? null); // {run, newBestBankruptcies}
   const [savedFlash, setSavedFlash] = useState(false);
   const [chartCurrent, setChartCurrent] = useState(0);
 
@@ -802,9 +802,9 @@ export default function IceCreamGame({ team }) {
         <section className="panel">
           <div className="panel-title">RESULTS <span className="tag">10-year backtest</span></div>
 
-          {(runResult.newBestSharpe || runResult.newBestBankruptcies) && (
+          {runResult.newBestBankruptcies && (
             <div className="newbest" style={{ marginBottom: 12 }}>
-              ★ NEW TEAM BEST{runResult.newBestSharpe ? " · SHARPE" : ""}{runResult.newBestBankruptcies ? " · FEWEST BANKRUPTCIES" : ""} ★
+              ★ NEW TEAM BEST · FEWEST BANKRUPTCIES ★
             </div>
           )}
 
@@ -883,25 +883,14 @@ function IceLeaderboards({ team }) {
   return (
     <div className="ic-boards">
       <section className="panel board">
-        <div className="panel-title">📈 SHARPE <span className="tag">higher better</span></div>
-        <Board
-          rows={data?.sharpe}
-          me={team.teamId}
-          columns={[
-            { key: "score", label: "SHARPE", cls: "score", fmt: (v) => (v == null ? "—" : Number(v).toFixed(2)) },
-            { key: "bankruptcies", label: "BANKR.", cls: "dim", fmt: (v) => (v == null ? "—" : v) },
-            { key: "stratName", label: "STRATEGY", cls: "dim", fmt: (v) => v ?? "—" },
-          ]}
-        />
-      </section>
-      <section className="panel board">
-        <div className="panel-title">🛡 FEWEST BANKRUPTCIES <span className="tag">fewer better</span></div>
+        <div className="panel-title">🛡 FEWEST BANKRUPTCIES <span className="tag">ties broken by total profit</span></div>
         <Board
           rows={data?.bankruptcies}
           me={team.teamId}
+          crown
           columns={[
             { key: "score", label: "BANKR.", cls: "score", fmt: (v) => (v == null ? "—" : v) },
-            { key: "sharpe", label: "SHARPE", cls: "dim", fmt: (v) => (v == null ? "—" : Number(v).toFixed(2)) },
+            { key: "totalProfit", label: "PROFIT", cls: "dim", fmt: (v) => (v == null ? "—" : "$" + Math.round(v).toLocaleString()) },
             { key: "stratName", label: "STRATEGY", cls: "dim", fmt: (v) => v ?? "—" },
           ]}
         />

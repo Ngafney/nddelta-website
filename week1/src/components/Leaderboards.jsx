@@ -92,24 +92,14 @@ export default function Leaderboards({ team, games }) {
         </section>
       )}
       {games?.icecream && (
-        <div className="board-duo">
-          <section className="panel board">
-            <div className="panel-title">{GAME_META.icecream.icon} SUNSET SCOOPS · SHARPE <span className="tag">steadiest profit wins</span></div>
-            <Board rows={ice?.sharpe} me={team.teamId} crown columns={[
-              { key: "score", label: "SHARPE", cls: "score", fmt: (v) => Number(v).toFixed(2) },
-              { key: "bankruptcies", label: "BANKRUPT", cls: "dim", fmt: (v) => (v == null ? "—" : v) },
-              { key: "stratName", label: "STRATEGY", cls: "dim", fmt: (v) => v ?? "—" },
-            ]} />
-          </section>
-          <section className="panel board">
-            <div className="panel-title">{GAME_META.icecream.icon} SUNSET SCOOPS · FEWEST BANKRUPTCIES</div>
-            <Board rows={ice?.bankruptcies} me={team.teamId} crown columns={[
-              { key: "score", label: "BANKRUPTCIES", cls: "score", fmt: (v) => `${v}` },
-              { key: "sharpe", label: "SHARPE", cls: "dim", fmt: (v) => (v == null ? "—" : Number(v).toFixed(2)) },
-              { key: "stratName", label: "STRATEGY", cls: "dim", fmt: (v) => v ?? "—" },
-            ]} />
-          </section>
-        </div>
+        <section className="panel board">
+          <div className="panel-title">{GAME_META.icecream.icon} SUNSET SCOOPS · FEWEST BANKRUPTCIES <span className="tag">ties broken by total profit</span></div>
+          <Board rows={ice?.bankruptcies} me={team.teamId} crown columns={[
+            { key: "score", label: "BANKRUPTCIES", cls: "score", fmt: (v) => `${v}` },
+            { key: "totalProfit", label: "PROFIT", cls: "dim", fmt: (v) => (v == null ? "—" : "$" + Math.round(v).toLocaleString()) },
+            { key: "stratName", label: "STRATEGY", cls: "dim", fmt: (v) => v ?? "—" },
+          ]} />
+        </section>
       )}
     </>
   );

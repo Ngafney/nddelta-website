@@ -119,22 +119,13 @@ export default function BigBoard() {
       )}
 
       {cur === "icecream" && (
-        <div className="board-duo">
-          <section className="panel board">
-            <div className="panel-title">{GAME_META.icecream.icon} SUNSET SCOOPS · SHARPE RATIO</div>
-            <Board rows={data.icecream.sharpe} crown columns={[
-              { key: "score", label: "SHARPE", cls: "score", fmt: (v) => Number(v).toFixed(2) },
-              { key: "bankruptcies", label: "BANKRUPT", cls: "dim", fmt: (v) => (v == null ? "—" : v) },
-            ]} />
-          </section>
-          <section className="panel board">
-            <div className="panel-title">{GAME_META.icecream.icon} SUNSET SCOOPS · FEWEST BANKRUPTCIES</div>
-            <Board rows={data.icecream.bankruptcies} crown columns={[
-              { key: "score", label: "BANKRUPTCIES", cls: "score", fmt: (v) => `${v}` },
-              { key: "sharpe", label: "SHARPE", cls: "dim", fmt: (v) => (v == null ? "—" : Number(v).toFixed(2)) },
-            ]} />
-          </section>
-        </div>
+        <section className="panel board">
+          <div className="panel-title">{GAME_META.icecream.icon} SUNSET SCOOPS · FEWEST BANKRUPTCIES</div>
+          <Board rows={data.icecream.bankruptcies} crown columns={[
+            { key: "score", label: "BANKRUPTCIES", cls: "score", fmt: (v) => `${v}` },
+            { key: "totalProfit", label: "PROFIT", cls: "dim", fmt: (v) => (v == null ? "—" : "$" + Math.round(v).toLocaleString()) },
+          ]} />
+        </section>
       )}
     </div>
   );

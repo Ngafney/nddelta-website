@@ -75,7 +75,7 @@ function Controls({ token, onLogout }) {
         api.get("leaderboard?game=pd"),
         api.get("leaderboard?game=icecream"),
       ]);
-      setBoards({ pd: p.standings, "ice-sharpe": i.sharpe, "ice-bank": i.bankruptcies });
+      setBoards({ pd: p.standings, "ice-bank": i.bankruptcies });
     } catch {}
   };
 
@@ -212,7 +212,7 @@ function Controls({ token, onLogout }) {
         {!boards ? (
           <Spinner text="LOADING" />
         ) : (
-          ["pd", "ice-sharpe", "ice-bank"].map((bk) => (
+          ["pd", "ice-bank"].map((bk) => (
             <EntryList
               key={bk}
               label={bk}
