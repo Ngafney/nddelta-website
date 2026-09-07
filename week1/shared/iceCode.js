@@ -52,12 +52,21 @@ const DENY = [
 ];
 const DENY_RE = new RegExp(DENY.join("|"), "i");
 
+// Every helper is an OWN frozen wrapper, never the built-in itself. Handing out
+// Math.max directly meant `lib.max.n = (lib.max.n||0)+1` both polluted the real
+// global and gave strategies hidden state that survived ACROSS runs — the same
+// code scored differently on its 2nd and 3rd submission. Freezing the wrappers
+// closes the stash; wrapping keeps the globals untouched.
+const frz = (f) => Object.freeze(f);
 const LIB = Object.freeze({
-  max: Math.max, min: Math.min, abs: Math.abs, floor: Math.floor,
-  ceil: Math.ceil, round: Math.round, sqrt: Math.sqrt, log: Math.log,
-  pow: Math.pow, exp: Math.exp, sign: Math.sign,
-  clamp: (x, lo, hi) => Math.max(lo, Math.min(hi, x)),
-  mean: (arr) => (arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 0),
+  max: frz((...a) => Math.max(...a)), min: frz((...a) => Math.min(...a)),
+  abs: frz((x) => Math.abs(x)), floor: frz((x) => Math.floor(x)),
+  ceil: frz((x) => Math.ceil(x)), round: frz((x) => Math.round(x)),
+  sqrt: frz((x) => Math.sqrt(x)), log: frz((x) => Math.log(x)),
+  pow: frz((x, y) => Math.pow(x, y)), exp: frz((x) => Math.exp(x)),
+  sign: frz((x) => Math.sign(x)),
+  clamp: frz((x, lo, hi) => Math.max(lo, Math.min(hi, x))),
+  mean: frz((arr) => (arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 0)),
 });
 
 const round2 = (x) => Math.round(x * 100) / 100;
@@ -184,10 +193,19 @@ export function compileIceCode(src) {
  * Accepts { under_70: 500 } (offset 0 shorthand) and { "under_70@3": 500 }.
  * Anything not mentioned is treated as "hold none" — i.e. sold.
  */
+// A real portfolio can name at most KEYS.length × HORIZON = 80 distinct
+// markets. A bot returning tens of thousands of junk keys used to make the
+// engine do that work 3653 times over; enumerate lazily and stop early.
+const MAX_DESIRED_KEYS = 1000;
+
 function sanitizeDesired(out) {
   const want = new Map();
   if (!out || typeof out !== "object") return want;
-  for (const [rawKey, rawQty] of Object.entries(out)) {
+  let scanned = 0;
+  for (const rawKey in out) {
+    if (!Object.prototype.hasOwnProperty.call(out, rawKey)) continue; // own keys only
+    if (++scanned > MAX_DESIRED_KEYS) break;
+    const rawQty = out[rawKey];
     if (!Number.isFinite(rawQty)) continue;
     const [key, offRaw] = String(rawKey).split("@");
     if (!KEYS.includes(key)) continue;
@@ -200,14 +218,25 @@ function sanitizeDesired(out) {
   return want;
 }
 
+// Built once, rows frozen. The strategy is handed a fresh ARRAY each day (so it
+// may sort/filter it) but never the engine's own rows — the shared mutable copy
+// was a cross-day memory channel: a bot could stash each day's quotes on it and
+// read them back tomorrow, which is information the market never meant to give.
+let TRAINING_ROWS = null;
+function trainingRows() {
+  if (!TRAINING_ROWS) {
+    TRAINING_ROWS = TRAIN.map((d) => Object.freeze({
+      date: d.date, dow: d.dow, weekend: d.weekend, holiday: d.holiday,
+      temp_high: d.temp_high, rained: d.rained, revenue: d.revenue,
+      forecast_high: d.forecast_high,
+      p_below_65: d.p_below_65, p_below_70: d.p_below_70,
+      p_below_75: d.p_below_75, p_below_80: d.p_below_80, p_rain: d.p_rain,
+    }));
+  }
+  return TRAINING_ROWS;
+}
 function trainingView() {
-  return TRAIN.map((d) => ({
-    date: d.date, dow: d.dow, weekend: d.weekend, holiday: d.holiday,
-    temp_high: d.temp_high, rained: d.rained, revenue: d.revenue,
-    forecast_high: d.forecast_high,
-    p_below_65: d.p_below_65, p_below_70: d.p_below_70,
-    p_below_75: d.p_below_75, p_below_80: d.p_below_80, p_rain: d.p_rain,
-  }));
+  return trainingRows().slice();
 }
 
 /**
@@ -215,7 +244,7 @@ function trainingView() {
  * Returns leaderboard numbers plus a full per-day log (visualizer + CSV).
  */
 export function simulateIce(fn) {
-  const training = trainingView();
+  const trainRows = trainingRows();
   let cash = ICE.startReserves;
   let bankruptcies = 0, billAccrued = 0, dayInCycle = 0, cum = 0;
   const profits = [];
@@ -237,6 +266,11 @@ export function simulateIce(fn) {
     }
     const priceOf = (key, off) => markets[off]?.prices[key];
 
+    // The strategy gets a COPY of the quotes, never the engine's own objects.
+    // It used to get the originals, so `day.markets[7].prices.under_70 = 0.0001`
+    // rewrote the price the engine then traded (and logged) at — free money.
+    const botMarkets = markets.map((m) => ({ ...m, prices: { ...m.prices } }));
+
     // 1) MARK TO MARKET — carry P&L from every open position as prices moved.
     let mtm = 0;
     for (const p of book.values()) {
@@ -253,20 +287,25 @@ export function simulateIce(fn) {
       t, daysTotal: TEST.length,
       date: d.date, dow: d.dow, weekend: d.weekend, holiday: d.holiday,
       horizon: HORIZON,
-      markets,
-      prices: markets[0].prices,          // today's market (settles tonight)
+      markets: botMarkets,
+      prices: botMarkets[0].prices,       // today's market (settles tonight)
       forecastHigh: markets[0].tempMean,  // = today's actual high
       positions,
       cash, reserves: cash,
       daysUntilBill: ICE.billEveryDays - dayInCycle,
-      billAccrued, history, training,
+      billAccrued,
+      // Fresh array wrappers, frozen rows: the strategy may sort/slice these,
+      // but anything it writes onto them is gone tomorrow. Passing the engine's
+      // own growing `history` array handed bots hidden cross-day storage.
+      history: history.slice(), training: trainRows.slice(),
       dailyCost: ICE.dailyCost,
       rng: rngFrom(`ice|day${t}`),
     };
 
-    let raw;
-    try { raw = fn(day); } catch { raw = null; errored = true; }
-    let want = sanitizeDesired(raw);
+    // Reading the returned object can itself throw (a getter that throws), so
+    // sanitizing belongs INSIDE the guard — otherwise the whole run 500s.
+    let want;
+    try { want = sanitizeDesired(fn(day)); } catch { want = new Map(); errored = true; }
 
     // Cap total exposure — scale the whole desired book down if oversized.
     let gross = [...want.values()].reduce((s, q) => s + Math.abs(q), 0);
@@ -344,11 +383,11 @@ export function simulateIce(fn) {
       revenue: d.revenue, profit: round2(profit), cum: round2(cum),
       reserves: round2(cash), billed, bankrupt,
     });
-    history.push({
+    history.push(Object.freeze({   // frozen: strategies read history, never write it
       date: d.date, tempHigh: d.temp_high, rained: d.rained,
       revenue: d.revenue, profit: round2(profit), reserves: round2(cash),
       hedgePnl: round2(hedgePnl),
-    });
+    }));
   }
 
   const mean = profits.reduce((a, b) => a + b, 0) / profits.length;

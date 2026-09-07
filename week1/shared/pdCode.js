@@ -36,11 +36,20 @@ const DENY = [
 ];
 const DENY_RE = new RegExp(DENY.join("|"), "i");
 
+// Each helper is its OWN frozen wrapper. Handing out `Math.max` itself let a
+// strategy write properties onto the real global (lib.max.n = ...), which
+// survived across matches and teams in the server process — cross-run memory
+// and cross-team contamination. Wrappers keep the globals untouchable.
+const frz = (f) => Object.freeze(f);
+
 const LIB = Object.freeze({
-  max: Math.max, min: Math.min, abs: Math.abs, floor: Math.floor,
-  ceil: Math.ceil, round: Math.round, sqrt: Math.sqrt, log: Math.log,
-  pow: Math.pow, exp: Math.exp, sign: Math.sign,
-  clamp: (x, lo, hi) => Math.max(lo, Math.min(hi, x)),
+  max: frz((...a) => Math.max(...a)), min: frz((...a) => Math.min(...a)),
+  abs: frz((x) => Math.abs(x)), floor: frz((x) => Math.floor(x)),
+  ceil: frz((x) => Math.ceil(x)), round: frz((x) => Math.round(x)),
+  sqrt: frz((x) => Math.sqrt(x)), log: frz((x) => Math.log(x)),
+  pow: frz((x, y) => Math.pow(x, y)), exp: frz((x) => Math.exp(x)),
+  sign: frz((x) => Math.sign(x)),
+  clamp: frz((x, lo, hi) => Math.max(lo, Math.min(hi, x))),
 });
 
 export function validatePdCode(src) {
@@ -76,15 +85,23 @@ function counts(moves) {
   return [s, t];
 }
 
-/** The per-round view handed to a strategy. No opponent identity. */
+/**
+ * The per-round view handed to a strategy. No opponent identity.
+ *
+ * The move arrays are frozen COPIES, never the engine's own arrays: handing
+ * over the live ones let a bot run `state.oppMoves.length = 0` every round,
+ * erasing the history that reactive opponents read. That blinded tit-for-tat
+ * and farmed a perfect 1000–0 — a tournament-winning cheat. Copies cost a
+ * little work per round and make the exploit impossible.
+ */
 function makeState(me, opp, round, rng) {
   const [mySplits, mySteals] = counts(me.moves);
   const [oppSplits, oppSteals] = counts(opp.moves);
   return {
     round,
     rounds: MATCH.rounds,
-    myMoves: me.moves,
-    oppMoves: opp.moves,
+    myMoves: Object.freeze(me.moves.slice()),
+    oppMoves: Object.freeze(opp.moves.slice()),
     myLast: me.moves.length ? me.moves[me.moves.length - 1] : null,
     oppLast: opp.moves.length ? opp.moves[opp.moves.length - 1] : null,
     myScore: me.score,

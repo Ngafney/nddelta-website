@@ -367,7 +367,8 @@ function Visualizer({ run }) {
         <div className="ic-viz-scene">{mood.emoji}</div>
         <div>
           <div className="ic-viz-date">{day.date}{day.bankrupt && <span style={{ color: "var(--red)" }}> · BANKRUPT!</span>}</div>
-          <div className="ic-viz-dow">day {day.t ?? i + 1} of {days.length}{day.dow != null ? ` · ${dowName(day.dow)}` : ""}</div>
+          {/* day.t is 0-based, so it needs +1 to read "day 1 of 3653". */}
+          <div className="ic-viz-dow">day {(day.t ?? i) + 1} of {days.length}{day.dow != null ? ` · ${dowName(day.dow)}` : ""}</div>
         </div>
         <div className="ic-viz-wx">
           forecast high <b>{day.forecastHigh != null ? `${Math.round(day.forecastHigh)}°` : "—"}</b> · actual <b>{day.tempHigh != null ? `${Math.round(day.tempHigh)}°` : "—"}</b>
@@ -467,6 +468,9 @@ function Visualizer({ run }) {
 
 const DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 function dowName(d) {
+  // The engine emits the full day name ("Saturday"), not an index — the numeric
+  // path alone produced DOW[NaN] → "" and a dangling " · " in the header.
+  if (typeof d === "string") return d.slice(0, 3);
   return DOW[((d % 7) + 7) % 7] ?? "";
 }
 

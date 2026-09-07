@@ -61,11 +61,20 @@ export function validateBanditCode(src) {
 }
 
 /** A small, safe helper library exposed to strategy code as `lib`. */
+// Each helper is its OWN frozen wrapper. Handing out `Math.max` itself let a
+// strategy write properties onto the real global (lib.max.n = ...), which
+// survived across matches and teams in the server process — cross-run memory
+// and cross-team contamination. Wrappers keep the globals untouchable.
+const frz = (f) => Object.freeze(f);
+
 const LIB = Object.freeze({
-  max: Math.max, min: Math.min, abs: Math.abs, floor: Math.floor,
-  ceil: Math.ceil, round: Math.round, sqrt: Math.sqrt, log: Math.log,
-  pow: Math.pow, exp: Math.exp, sign: Math.sign,
-  clamp: (x, lo, hi) => Math.max(lo, Math.min(hi, x)),
+  max: frz((...a) => Math.max(...a)), min: frz((...a) => Math.min(...a)),
+  abs: frz((x) => Math.abs(x)), floor: frz((x) => Math.floor(x)),
+  ceil: frz((x) => Math.ceil(x)), round: frz((x) => Math.round(x)),
+  sqrt: frz((x) => Math.sqrt(x)), log: frz((x) => Math.log(x)),
+  pow: frz((x, y) => Math.pow(x, y)), exp: frz((x) => Math.exp(x)),
+  sign: frz((x) => Math.sign(x)),
+  clamp: frz((x, lo, hi) => Math.max(lo, Math.min(hi, x))),
 });
 
 /**
