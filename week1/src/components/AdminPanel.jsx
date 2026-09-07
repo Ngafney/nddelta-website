@@ -66,25 +66,43 @@ function Controls({ token, onLogout }) {
   const [newPw, setNewPw] = useState("");
   const [persistent, setPersistent] = useState(true);
   const [boards, setBoards] = useState(null);
+  const [timers, setTimers] = useState({});
+  const [now, setNow] = useState(Date.now());
 
   const loadBoards = async () => {
     try {
-      const [b, c, p] = await Promise.all([
-        api.get("leaderboard?game=bandit"),
-        api.get("leaderboard?game=chicken"),
+      const [p, i] = await Promise.all([
         api.get("leaderboard?game=pd"),
+        api.get("leaderboard?game=icecream"),
       ]);
-      setBoards({ "bandit-manual": b.manual, "bandit-algo": b.algo, chicken: c.standings, pd: p.standings });
+      setBoards({ pd: p.standings, "ice-sharpe": i.sharpe, "ice-bank": i.bankruptcies });
+    } catch {}
+  };
+
+  const loadConfig = async () => {
+    try {
+      const c = await api.get("config");
+      setGames(c.games);
+      setPersistent(c.persistent !== false);
+      setTimers(c.timers ?? {});
     } catch {}
   };
 
   useEffect(() => {
-    api.get("config").then((c) => {
-      setGames(c.games);
-      setPersistent(c.persistent !== false);
-    }).catch(() => {});
+    loadConfig();
     loadBoards();
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
   }, []);
+
+  async function setTimer(game, seconds) {
+    await act(seconds ? `set ${game} timer` : `stop ${game} timer`, async () => {
+      const res = await api.post("admin/timer", { token, game, seconds });
+      setTimers((tm) => ({ ...tm, [game]: res.timer }));
+    });
+  }
+  const remain = (g) => (timers[g] && timers[g].endsAt > now ? timers[g].endsAt - now : 0);
+  const mmss = (ms) => `${Math.floor(ms / 60000)}:${String(Math.floor((ms % 60000) / 1000)).padStart(2, "0")}`;
 
   async function act(label, fn) {
     setBusy(label);
@@ -141,31 +159,50 @@ function Controls({ token, onLogout }) {
         ))}
         <div className="row mt">
           <PxButton variant="ghost" small onClick={() => act("open all", async () => {
-            const res = await api.post("admin/config", { token, games: { bandit: true, chicken: true, pd: true } });
+            const res = await api.post("admin/config", { token, games: Object.fromEntries(GAMES.map((g) => [g, true])) });
             setGames(res.games);
           })}>OPEN ALL</PxButton>
           <PxButton variant="ghost" small onClick={() => act("close all", async () => {
-            const res = await api.post("admin/config", { token, games: { bandit: false, chicken: false, pd: false } });
+            const res = await api.post("admin/config", { token, games: Object.fromEntries(GAMES.map((g) => [g, false])) });
             setGames(res.games);
           })}>CLOSE ALL</PxButton>
         </div>
       </section>
 
       <section className="panel">
+        <div className="panel-title">ROUND TIMERS <span className="tag">everyone sees the countdown; a winner reveal fires at 0</span></div>
+        {GAMES.map((g) => (
+          <div className="toggle-row" key={g}>
+            <span style={{ fontSize: 16 }}>{GAME_META[g].icon}</span>
+            <span className="nm">{GAME_META[g].name}</span>
+            {remain(g) > 0 ? (
+              <span style={{ color: "var(--gold)", fontVariantNumeric: "tabular-nums", marginRight: 8 }}>{mmss(remain(g))}</span>
+            ) : (
+              <span className="hint" style={{ marginRight: 8 }}>idle</span>
+            )}
+            {[5, 10, 15, 30].map((m) => (
+              <PxButton key={m} variant="ghost" small onClick={() => setTimer(g, m * 60)}>{m}m</PxButton>
+            ))}
+            <PxButton variant="red" small onClick={() => setTimer(g, 0)}>STOP</PxButton>
+          </div>
+        ))}
+      </section>
+
+      <section className="panel">
         <div className="panel-title">BOARDS</div>
         <div className="admin-tools">
-          {["bandit-manual", "bandit-algo", "chicken", "pd"].map((b) => (
+          {["pd", "icecream"].map((b) => (
             <PxButton
               key={b}
               variant="red"
               small
-              onClick={() => window.confirm(`Wipe the ${b} board? This can't be undone.`) && act(`reset ${b}`, () => api.post("admin/reset", { token, board: b }))}
+              onClick={() => window.confirm(`Wipe the ${b} board? This can't be undone.`) && act(`reset ${b}`, async () => { await api.post("admin/reset", { token, board: b }); await loadBoards(); })}
             >
               RESET {b.toUpperCase()}
             </PxButton>
           ))}
           <PxButton variant="blue" small onClick={() => act("recompute", () => api.post("admin/recompute", { token }))}>
-            RECOMPUTE TOURNAMENTS
+            RECOMPUTE TOURNAMENT
           </PxButton>
         </div>
       </section>
@@ -175,7 +212,7 @@ function Controls({ token, onLogout }) {
         {!boards ? (
           <Spinner text="LOADING" />
         ) : (
-          ["bandit-manual", "bandit-algo", "chicken", "pd"].map((bk) => (
+          ["pd", "ice-sharpe", "ice-bank"].map((bk) => (
             <EntryList
               key={bk}
               label={bk}

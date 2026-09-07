@@ -55,31 +55,25 @@ const medal = (rank) =>
   );
 
 export default function Leaderboards({ team, games }) {
-  const [bandit, setBandit] = useState(null);
-  const [chicken, setChicken] = useState(null);
   const [pd, setPd] = useState(null);
+  const [ice, setIce] = useState(null);
 
   useEffect(() => {
     let alive = true;
     async function load() {
       try {
-        const [b, c, p] = await Promise.all([
-          api.get("leaderboard?game=bandit"),
-          api.get("leaderboard?game=chicken"),
+        const [p, i] = await Promise.all([
           api.get("leaderboard?game=pd"),
+          api.get("leaderboard?game=icecream"),
         ]);
         if (!alive) return;
-        setBandit(b);
-        setChicken(c.standings);
         setPd(p.standings);
+        setIce(i);
       } catch {}
     }
     load();
     const t = setInterval(load, 8000);
-    return () => {
-      alive = false;
-      clearInterval(t);
-    };
+    return () => { alive = false; clearInterval(t); };
   }, []);
 
   const matchCols = [
@@ -88,46 +82,34 @@ export default function Leaderboards({ team, games }) {
     { key: "losses", label: "L", cls: "dim" },
     { key: "draws", label: "D", cls: "dim" },
   ];
-  const rankHint = (
-    <div className="hint">
-      Ranked by average points, not wins. HOUSE BOTS are ours — beating all three is the entry exam.
-    </div>
-  );
 
   return (
     <>
-      {games?.bandit && (
-        <div className="board-duo">
-          <section className="panel board">
-            <div className="panel-title">🎰 BANDIT · MANUAL <span className="tag">best run</span></div>
-            <Board rows={bandit?.manual} me={team.teamId} columns={[
-              { key: "oraclePct", label: "% ORACLE", cls: "score", fmt: (v) => (v == null ? "—" : `${v.toFixed(0)}%`) },
-              { key: "points", label: "POINTS", cls: "dim", fmt: (v) => (v == null ? "—" : v.toFixed(1)) },
-            ]} />
-          </section>
-          <section className="panel board">
-            <div className="panel-title">🤖 BANDIT · ALGORITHM <span className="tag">avg of 10,000</span></div>
-            <Board rows={bandit?.algo} me={team.teamId} columns={[
-              { key: "score", label: "AVG", cls: "score", fmt: (v) => v.toFixed(1) },
-              { key: "oraclePct", label: "% ORACLE", cls: "dim", fmt: (v) => (v == null ? "—" : `${v.toFixed(0)}%`) },
-              { key: "stratName", label: "STRATEGY", cls: "dim", fmt: (v) => v ?? "—" },
-            ]} />
-          </section>
-        </div>
-      )}
-      {games?.chicken && (
-        <section className="panel board">
-          <div className="panel-title">{GAME_META.chicken.icon} CHICKEN · TOURNAMENT</div>
-          <Board rows={chicken?.map((s, i) => ({ rank: i + 1, teamId: s.id.replace(/^team:/, ""), ...s }))} me={team.teamId} columns={matchCols} crown />
-          {rankHint}
-        </section>
-      )}
       {games?.pd && (
         <section className="panel board">
           <div className="panel-title">{GAME_META.pd.icon} SPLIT OR STEAL · TOURNAMENT</div>
           <Board rows={pd?.map((s, i) => ({ rank: i + 1, teamId: s.id.replace(/^team:/, ""), ...s }))} me={team.teamId} columns={matchCols} crown />
-          {rankHint}
         </section>
+      )}
+      {games?.icecream && (
+        <div className="board-duo">
+          <section className="panel board">
+            <div className="panel-title">{GAME_META.icecream.icon} SUNSET SCOOPS · SHARPE <span className="tag">steadiest profit wins</span></div>
+            <Board rows={ice?.sharpe} me={team.teamId} crown columns={[
+              { key: "score", label: "SHARPE", cls: "score", fmt: (v) => Number(v).toFixed(2) },
+              { key: "bankruptcies", label: "BANKRUPT", cls: "dim", fmt: (v) => (v == null ? "—" : v) },
+              { key: "stratName", label: "STRATEGY", cls: "dim", fmt: (v) => v ?? "—" },
+            ]} />
+          </section>
+          <section className="panel board">
+            <div className="panel-title">{GAME_META.icecream.icon} SUNSET SCOOPS · FEWEST BANKRUPTCIES</div>
+            <Board rows={ice?.bankruptcies} me={team.teamId} crown columns={[
+              { key: "score", label: "BANKRUPTCIES", cls: "score", fmt: (v) => `${v}` },
+              { key: "sharpe", label: "SHARPE", cls: "dim", fmt: (v) => (v == null ? "—" : Number(v).toFixed(2)) },
+              { key: "stratName", label: "STRATEGY", cls: "dim", fmt: (v) => v ?? "—" },
+            ]} />
+          </section>
+        </div>
       )}
     </>
   );

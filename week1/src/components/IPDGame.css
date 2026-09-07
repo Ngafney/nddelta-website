@@ -1,0 +1,67 @@
+/* IPDGame — a few extra styles layered on top of styles.css.
+   The page is deliberately spare: most copy hides behind toggles, so
+   these classes are just the selector chips, the results grid, and the
+   quiet "reveal more" affordances. Everything else reuses styles.css. */
+
+.ipd-lead {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.ipd-lead .grow { flex: 1; }
+
+/* the folded-away explainer — same spirit as RulesPanel's GOING DEEPER */
+.ipd-reveal {
+  margin-top: 12px;
+  border-left: 3px solid var(--purple);
+  padding-left: 14px;
+}
+
+/* opponent / match picker chips */
+.ipd-chips {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 8px 0 4px;
+}
+.ipd-chip {
+  font-family: var(--px);
+  font-size: 9px;
+  letter-spacing: 1px;
+  color: var(--dim);
+  background: var(--navy);
+  border: 2px solid var(--line);
+  padding: 7px 10px;
+  cursor: pointer;
+  text-transform: uppercase;
+}
+.ipd-chip:hover { border-color: var(--gold-deep); color: var(--ink); }
+.ipd-chip.on {
+  color: var(--gold);
+  border-color: var(--gold);
+  background: #16335c;
+}
+.ipd-chip .seedtag {
+  font-size: 8px;
+  color: var(--purple);
+  margin-left: 6px;
+}
+
+/* the per-opponent results grid — leans on .board table styling */
+.ipd-results td.res-win { color: var(--green); }
+.ipd-results td.res-loss { color: var(--red); }
+.ipd-results td.res-tie { color: var(--muted); }
+.ipd-results td.num {
+  font-family: var(--px);
+  font-size: 11px;
+  color: var(--ink);
+  text-align: right;
+}
+
+.ipd-live {
+  color: var(--green);
+  border-left: 3px solid var(--green);
+  padding-left: 10px;
+  margin-top: 4px;
+}

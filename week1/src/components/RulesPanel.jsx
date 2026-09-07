@@ -9,13 +9,8 @@ import { RULES_TEXT, PAYOFFS, ACTIONS } from "../../shared/rules.js";
 
 export default function RulesPanel({ game }) {
   const seenKey = `w1rules:${game}`;
-  const [open, setOpen] = useState(() => {
-    try {
-      return !localStorage.getItem(seenKey);
-    } catch {
-      return true;
-    }
-  });
+  // Collapsed by default — the pages stay minimalist; rules open on click.
+  const [open, setOpen] = useState(false);
 
   function toggle() {
     setOpen(!open);
@@ -32,7 +27,7 @@ export default function RulesPanel({ game }) {
       {open && (
         <>
           <div className="rules-body">{RULES_TEXT[game].simple}</div>
-          {game !== "bandit" && (
+          {PAYOFFS[game] && (
             <>
               <PayoffMatrix game={game} />
               <div className="hint">

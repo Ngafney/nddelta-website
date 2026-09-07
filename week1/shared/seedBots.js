@@ -46,42 +46,16 @@ export const SEED_BOTS = {
       },
     },
   ],
+  // Iterated Prisoner's Dilemma: exactly ONE house bot — a coin-flipper that
+  // splits or steals at random. It runs as executable strategy code (like a
+  // student's bot) so the tournament always has an opponent.
   pd: [
     {
-      id: "seed:cobalt",
-      name: "COBALT",
+      id: "seed:coin",
+      name: "COIN",
       seedBot: true,
-      blurb: "A house bot. Watch it to learn it.",
-      spec: {
-        game: "pd",
-        rules: [{ if: true, then: "SPLIT" }],
-      },
-    },
-    {
-      id: "seed:ronin",
-      name: "RONIN",
-      seedBot: true,
-      blurb: "A house bot. Watch it to learn it.",
-      spec: {
-        game: "pd",
-        rules: [
-          { if: { eq: ["round", 0] }, then: "SPLIT" },
-          { if: true, then: { mirror: "oppLast" } },
-        ],
-      },
-    },
-    {
-      id: "seed:onyx",
-      name: "ONYX",
-      seedBot: true,
-      blurb: "A house bot. Watch it to learn it.",
-      spec: {
-        game: "pd",
-        rules: [
-          { if: { gte: [{ oppCount: "STEAL" }, 1] }, then: "STEAL" },
-          { if: true, then: "SPLIT" },
-        ],
-      },
+      blurb: "A house bot that flips a coin every round.",
+      code: `return state.rng() < 0.5 ? "SPLIT" : "STEAL";`,
     },
   ],
 };

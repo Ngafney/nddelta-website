@@ -8,12 +8,37 @@
  *      imports PAYOFFS from here).
  */
 
-export const GAMES = ["bandit", "chicken", "pd"];
+// The two live games. Bandit & Chicken definitions remain below for their
+// engines but are intentionally NOT listed here, so the hub, the compiler,
+// and the API all treat only these two as real.
+export const GAMES = ["pd", "icecream"];
 
 export const GAME_META = {
+  pd: { name: "Split or Steal", subtitle: "Iterated Prisoner's Dilemma", icon: "🤝" },
+  icecream: { name: "Sunset Scoops", subtitle: "Weather-Hedging Puzzle", icon: "🍦" },
+  // retired (code kept, not offered)
   bandit: { name: "Slot Machines", subtitle: "Multi-Armed Bandit", icon: "🎰" },
   chicken: { name: "Chicken", subtitle: "Hawk–Dove", icon: "🚗" },
-  pd: { name: "Split or Steal", subtitle: "Prisoner's Dilemma", icon: "💰" },
+};
+
+/** Ice Cream Shop (Sunset Scoops) constants — the weather-hedging sim. */
+export const ICE = {
+  startReserves: 2000,   // starting cash
+  reserveCap: 2000,      // the bank skims anything above this after each billing
+  billEveryDays: 14,     // costs are billed (and reserves reset/skimmed) on this cycle
+  dailyCost: 1800,       // fixed operating cost accrued each day
+  contracts: [
+    { key: "under_65", label: "High < 65°", priceFrom: "p_below_65", wins: (d) => d.temp_high < 65 },
+    { key: "over_65",  label: "High ≥ 65°", priceFrom: "!p_below_65", wins: (d) => d.temp_high >= 65 },
+    { key: "under_70", label: "High < 70°", priceFrom: "p_below_70", wins: (d) => d.temp_high < 70 },
+    { key: "over_70",  label: "High ≥ 70°", priceFrom: "!p_below_70", wins: (d) => d.temp_high >= 70 },
+    { key: "under_75", label: "High < 75°", priceFrom: "p_below_75", wins: (d) => d.temp_high < 75 },
+    { key: "over_75",  label: "High ≥ 75°", priceFrom: "!p_below_75", wins: (d) => d.temp_high >= 75 },
+    { key: "under_80", label: "High < 80°", priceFrom: "p_below_80", wins: (d) => d.temp_high < 80 },
+    { key: "over_80",  label: "High ≥ 80°", priceFrom: "!p_below_80", wins: (d) => d.temp_high >= 80 },
+    { key: "rain_yes", label: "Rain",        priceFrom: "p_rain",     wins: (d) => d.rained === 1 },
+    { key: "rain_no",  label: "No rain",     priceFrom: "!p_rain",    wins: (d) => d.rained === 0 },
+  ],
 };
 
 /** Matrix-game payoffs: PAYOFFS[game][myAction][oppAction] = my points. */
@@ -88,13 +113,30 @@ export const RULES_TEXT = {
     simple: [
       `100 points sit on the table. Each round, both teams secretly pick: SPLIT (share it) or STEAL (grab it all).`,
       `Both SPLIT → 50 each. You STEAL and they SPLIT → you take all 100, they get nothing. Both STEAL → you scuffle and both LOSE 10.`,
-      `You write a bot in plain English. It plays ${MATCH.rounds} rounds in a row against each opponent and remembers everything from the match so far — so betrayal has consequences.`,
-      `Each team enters ONE bot. Every bot plays every other bot, and the board ranks average points per match.`,
+      `You describe a bot in plain English and the AI writes its code. Your bot plays ${MATCH.rounds} rounds in a row against every other team's bot and remembers everything from the match so far — so betrayal has consequences.`,
+      `You never see who you're playing — only what they DO. Part of the game is reading an opponent's moves to guess how they tick and exploit it.`,
+      `Every bot plays every other bot in a full round-robin. The board ranks average points per match. After each run you can download a CSV of your results vs every opponent and replay any match round-by-round.`,
     ].join("\n"),
     details: [
-      `STRUCTURE — ${MATCH.rounds} rounds per match, ${MATCH.matchesPerPairing} matches per pairing, memory resets between matches, tournament replays on every new submission.`,
-      `FOR THE GAME THEORISTS — this is the iterated prisoner's dilemma. In a single round, stealing never pays less than splitting — so "rational" players both steal and both get zero. The interesting question is what happens over ${MATCH.rounds} rounds when your bot can REMEMBER and react to what the other side did. That memory is the whole game; the rest is yours to figure out.`,
-      `Three HOUSE BOTS are always in the tournament — the bar to beat. We won't spell out how they play; watch a replay and work it out.`,
+      `STRUCTURE — ${MATCH.rounds} rounds per match, ${MATCH.matchesPerPairing} matches per pairing, memory resets between matches, and the whole tournament re-runs whenever any team resubmits.`,
+      `WHAT YOUR BOT CAN SEE — the current match's full history (both sides' moves, both scores, streaks and counts) and a random-number generator, but NEVER the opponent's identity. You can build anything within reason: reactive rules, randomness, even a little linear model over the history.`,
+      `FOR THE GAME THEORISTS — this is the iterated prisoner's dilemma. In a single round, stealing never pays less than splitting — so "rational" players both steal and both get zero. Over ${MATCH.rounds} remembered rounds, reciprocity and reputation change everything.`,
+      `ONE HOUSE BOT is always in the field: a coin-flipper that splits or steals at random. Everything else on the board is another team.`,
+    ].join("\n"),
+  },
+  icecream: {
+    simple: [
+      `You run Sunset Scoops, an ice cream shop. Sales swing with the weather — hot and dry is great, cold and rainy is brutal.`,
+      `You start with just $${ICE.startReserves.toLocaleString()} in the bank. Every ${ICE.billEveryDays} days the bills come due; if you can't pay, you go BANKRUPT. And after each payment the bank sweeps any cash above $${ICE.reserveCap.toLocaleString()} — so you're always one bad stretch from the edge.`,
+      `Your shield is a weather prediction market you trade ON MARGIN — no cash needed to take a position. Each day you can hold contracts on whether the high will be over/under 65–80° or whether it'll rain. When bad weather tanks sales, the right hedge pays out and keeps you afloat.`,
+      `You get 5 years of history to study (download it and train your bot on it), then describe a hedging strategy in plain English — the AI codes it — and it's run day-by-day across 10 years of weather that's the same for everyone.`,
+      `Two leaderboards: the Sharpe ratio of your daily profit (steady + high = good) and how many times you went bankrupt (fewer = better). Afterward, step through your whole run day-by-day to see exactly what your bot did.`,
+    ].join("\n"),
+    details: [
+      `THE MONEY — revenue lands daily; costs ($${ICE.dailyCost.toLocaleString()}/day) are billed every ${ICE.billEveryDays} days. Can't cover a bill → bankrupt (counter +1, reserves reset to $${ICE.startReserves.toLocaleString()}). Survive it → the bank skims you back down to $${ICE.reserveCap.toLocaleString()}. Neither the skim nor a bankruptcy reset counts as profit — profit is pure operating + hedging P&L.`,
+      `THE MARKET IS FAIR & ON MARGIN — a contract's price is the true odds, so buying it has ~zero expected profit. "Under 70°" at $0.55 settles same-day: you net +$0.45 if the high really is under 70, or −$0.55 if not. No cash is tied up to open a position. Because it's fair, hedging changes your RISK, not your average — a hedge that pays out on the cold/rainy days when sales crater smooths your profit and stops bankruptcies; over-hedging just adds noise.`,
+      `FAIRNESS — everyone gets the identical weather, forecasts, and prices (one fixed 15-year history). It's a pure strategy race. Without any hedging the shop goes bankrupt again and again — the whole puzzle is sizing hedges to cancel the weather's swing.`,
+      `YOUR BOT SEES — each day: the forecast, every contract price, the calendar (weekend/holiday), your current reserves and days-until-billing, the full history so far, and the 5 years of training data. It returns how many of each contract to hold. Build anything within reason.`,
     ].join("\n"),
   },
 };
