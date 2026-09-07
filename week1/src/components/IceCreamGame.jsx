@@ -684,6 +684,28 @@ export default function IceCreamGame({ team }) {
               </div>
             </Info>
 
+            <Info label="WHAT YOU CAN TRADE">
+              Ten contracts, on any of eight days. Each pays <b>$1</b> if it comes true.
+              <div className="ic-keys">
+                {PRICE_KEYS.map(([k, label]) => (
+                  <span className="ic-key" key={k}>
+                    <span className="ex">{k}</span> <i>{label}</i>
+                  </span>
+                ))}
+              </div>
+              Add <span className="ex">@0</span>–<span className="ex">@7</span> to pick the day:{" "}
+              <span className="ex">@0</span> is today, <span className="ex">@7</span> a week out — so{" "}
+              <span className="ex">over_75@2</span> is "the high is 75°+ two days from now". A bare key
+              means today. Quantities are whole numbers and can be negative (a short); everything you
+              hold is capped at 60,000 contracts, and anything you don't list gets sold.
+              <div style={{ marginTop: 8 }}>
+                To <b>hedge</b>, buy the side that pays when sales are bad — the{" "}
+                <span className="ex">under_*</span> (cold) and <span className="ex">rain_yes</span> contracts.
+                The <span className="ex">over_*</span> and <span className="ex">rain_no</span> sides pay on
+                good days, which is a bet on sunshine, not protection.
+              </div>
+            </Info>
+
             <div className="row">
               <PxButton variant="blue" onClick={compile} disabled={busy !== null || prompt.trim().length < 3}>
                 {busy === "compile" ? <Spinner text="COMPILING" /> : "⚙ COMPILE"}

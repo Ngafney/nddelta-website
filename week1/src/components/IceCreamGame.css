@@ -227,3 +227,9 @@
 
 /* short-label download / run row */
 .ic-actionrow { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+
+/* contract inventory inside the "what you can trade" reveal */
+.ic-keys { display: flex; flex-wrap: wrap; gap: 6px 10px; margin: 10px 0; }
+.ic-key { display: inline-flex; align-items: baseline; gap: 5px; background: #0d1930;
+  border: 1px solid var(--line-dim); padding: 3px 7px; white-space: nowrap; }
+.ic-key i { font-style: normal; color: var(--muted); font-size: 10px; }
