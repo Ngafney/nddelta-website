@@ -14,8 +14,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { api, withTeam } from "../api.js";
 import RulesPanel from "./RulesPanel.jsx";
-import ReplaySplitSteal from "./ReplaySplitSteal.jsx";
-import PDStrip from "./PDStrip.jsx";
+import PDReplay from "./PDReplay.jsx";
 import { Board } from "./Leaderboards.jsx";
 import { PxButton, Spinner } from "./PixelBits.jsx";
 import "./IPDGame.css";
@@ -24,9 +23,9 @@ import "./IPDGame.css";
  *  the SHAPE of an instruction (react to a move, count something, set a
  *  condition), not a strategy worth stealing. Folded away by default. */
 const EXAMPLES = [
-  "split on the first round, then copy whatever they did last round",
-  "steal only if they've stolen at least twice, otherwise split",
-  "keep a running score of how nice they've been and split when it's positive",
+  "cooperate on even-numbered rounds and defect on odd ones",
+  "defect for the first ten rounds, then cooperate for the rest of the match",
+  "cooperate unless my score is a multiple of 7, then defect once",
 ];
 
 /** Map a `mine`/matchup round ({you,them,youPts,themPts}) to the shape the
@@ -63,11 +62,14 @@ export default function IPDGame({ team }) {
   const [savedFlash, setSavedFlash] = useState(false);
 
   const [standings, setStandings] = useState(null);
-  const [mine, setMine] = useState(null); // {me, breakdown, matchups}
+  const [mine, setMine] = useState(null); // {me, breakdown, opponents}
 
   // results replay viewer selection
   const [oppIdx, setOppIdx] = useState(0);
   const [matchIdx, setMatchIdx] = useState(0);
+  // A 200-round match is far too big to ship with the standings, so the
+  // selected one is recomputed on demand (it's seeded — the replay is real).
+  const [replay, setReplay] = useState(null);
 
   /* ── data ────────────────────────────────────────────────────────────── */
 
@@ -232,7 +234,7 @@ export default function IPDGame({ team }) {
 
   function downloadCSV() {
     if (!mine?.breakdown?.length) return;
-    const header = ["opponent", "matches", "your_avg", "their_avg", "result", "your_split_rate_pct", "your_steals"];
+    const header = ["opponent", "matches", "your_avg", "their_avg", "result", "your_coop_rate_pct", "your_defects"];
     const esc = (v) => {
       const s = String(v ?? "");
       return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
@@ -246,8 +248,8 @@ export default function IPDGame({ team }) {
           esc(b.avgFor?.toFixed?.(1) ?? b.avgFor),
           esc(b.avgAgainst?.toFixed?.(1) ?? b.avgAgainst),
           esc(b.result),
-          esc(b.mySplitRate != null ? Math.round(b.mySplitRate * 100) : ""),
-          esc(b.mySteals),
+          esc(b.myCoopRate ?? ""),
+          esc(b.myDefects),
         ].join(",")
       );
     }
@@ -255,7 +257,7 @@ export default function IPDGame({ team }) {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `${team.name.replace(/[^\w-]+/g, "_") || "team"}_split-or-steal_results.csv`;
+    a.download = `${team.name.replace(/[^\w-]+/g, "_") || "team"}_prisoners-dilemma_results.csv`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -265,9 +267,23 @@ export default function IPDGame({ team }) {
   /* ── derived ─────────────────────────────────────────────────────────── */
 
   const submittedName = saved.find((s) => s.id === submittedId)?.name ?? "";
-  const matchups = mine?.matchups ?? [];
+  const matchups = mine?.opponents ?? [];
   const curOpp = matchups[oppIdx] ?? null;
   const curMatch = curOpp?.matches?.[matchIdx] ?? null;
+
+  // Fetch the selected match's rounds whenever the selection changes.
+  useEffect(() => {
+    let alive = true;
+    setReplay(null);
+    if (!curOpp) return;
+    (async () => {
+      try {
+        const r = await api.get(`pd/replay?teamId=${team.teamId}&token=${team.token}&opponentId=${encodeURIComponent(curOpp.opponentId)}&match=${matchIdx}`);
+        if (alive) setReplay(r);
+      } catch { /* selection changed or tournament moved on */ }
+    })();
+    return () => { alive = false; };
+  }, [curOpp?.opponentId, matchIdx, team.teamId, team.token]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const pct = (v) => (v == null ? "—" : `${Math.round(v * 100)}%`);
   const resultCls = (r) => (r === "win" ? "res-win" : r === "loss" ? "res-loss" : "res-tie");
@@ -428,17 +444,13 @@ export default function IPDGame({ team }) {
           <div className="panel-title">
             ⚔ TEST VS CHAMPION — {exhibition.opponent.name} <span className="tag">not scored · practice</span>
           </div>
-          <ReplaySplitSteal rounds={exhibition.rounds} nameA={team.name} nameB={exhibition.opponent.name} />
-          <div className="mt">
-            <PDStrip
-              rounds={exhibition.rounds}
-              nameA={team.name}
-              nameB={exhibition.opponent.name}
-              scoreA={exhibition.yourScore}
-              scoreB={exhibition.theirScore}
-              summary
-            />
-          </div>
+          <PDReplay
+            rounds={exhibition.rounds}
+            nameA={team.name}
+            nameB={exhibition.opponent.name}
+            scoreA={exhibition.yourScore}
+            scoreB={exhibition.theirScore}
+          />
         </section>
       )}
 
@@ -471,8 +483,8 @@ export default function IPDGame({ team }) {
                 <th style={{ textAlign: "right" }}>YOUR AVG</th>
                 <th style={{ textAlign: "right" }}>THEIR AVG</th>
                 <th>RESULT</th>
-                <th style={{ textAlign: "right" }}>SPLIT %</th>
-                <th style={{ textAlign: "right" }}>STEALS</th>
+                <th style={{ textAlign: "right" }}>COOP %</th>
+                <th style={{ textAlign: "right" }}>DEFECTS</th>
               </tr>
             </thead>
             <tbody>
@@ -482,8 +494,8 @@ export default function IPDGame({ team }) {
                   <td className="num">{b.avgFor?.toFixed?.(1) ?? b.avgFor}</td>
                   <td className="num">{b.avgAgainst?.toFixed?.(1) ?? b.avgAgainst}</td>
                   <td className={resultCls(b.result)}>{(b.result ?? "").toUpperCase()}</td>
-                  <td className="num">{pct(b.mySplitRate)}</td>
-                  <td className="num">{b.mySteals ?? 0}</td>
+                  <td className="num">{b.myCoopRate == null ? "—" : `${b.myCoopRate}%`}</td>
+                  <td className="num">{b.myDefects ?? 0}</td>
                 </tr>
               ))}
             </tbody>
@@ -529,24 +541,16 @@ export default function IPDGame({ team }) {
                 </div>
               )}
 
-              {curMatch && (
+              {replay && (
                 <div className="mt">
-                  <ReplaySplitSteal
+                  <PDReplay
                     key={`${oppIdx}-${matchIdx}`}
-                    rounds={toReplay(curMatch.rounds)}
+                    rounds={replay.rounds.map((r) => ({ a: r.you, b: r.them, pa: r.youPts, pb: r.themPts }))}
                     nameA={team.name}
-                    nameB={curOpp.opponent}
+                    nameB={replay.opponent.name}
+                    scoreA={replay.yourScore}
+                    scoreB={replay.theirScore}
                   />
-                  <div className="mt">
-                    <PDStrip
-                      rounds={toReplay(curMatch.rounds)}
-                      nameA={team.name}
-                      nameB={curOpp.opponent}
-                      scoreA={curMatch.you}
-                      scoreB={curMatch.them}
-                      summary
-                    />
-                  </div>
                 </div>
               )}
             </div>

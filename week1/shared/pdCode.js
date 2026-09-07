@@ -89,8 +89,8 @@ function makeState(me, opp, round, rng) {
     oppLast: opp.moves.length ? opp.moves[opp.moves.length - 1] : null,
     myScore: me.score,
     oppScore: opp.score,
-    mySplits, mySteals, oppSplits, oppSteals,
-    SPLIT: A0, STEAL: A1,
+    myCoops: mySplits, myDefects: mySteals, oppCoops: oppSplits, oppDefects: oppSteals,
+    COOPERATE: A0, DEFECT: A1,
     rng,
   };
 }
@@ -123,7 +123,8 @@ export function playMatchCode(botA, botB, matchIndex) {
   return { rounds, scoreA: a.score, scoreB: b.score };
 }
 
-function orient(match, aIsLo) {
+/** Flip a match's orientation so scores/rounds read from the "lo" bot's side. */
+export function orient(match, aIsLo) {
   if (aIsLo) return match;
   return {
     rounds: match.rounds.map((r) => ({ a: r.b, b: r.a, pa: r.pb, pb: r.pa })),
@@ -134,27 +135,49 @@ function orient(match, aIsLo) {
 
 /**
  * Full round-robin. bots: [{ id, name, fn, seedBot? }].
- * Returns { standings, pairs } — standings ranked by avg points/match, pairs
- * keyed "lo|hi" with oriented match logs (the replay + CSV source).
+ *
+ * At Axelrod's length (200 rounds × 5 matches × every pairing) the round logs
+ * are far too big to persist, so we keep only SUMMARIES here — per-pair scores
+ * and cooperation rates, which is everything the standings and the CSV need.
+ * Replays are recomputed on demand from the seeded (deterministic) match.
+ *
+ * Returns { standings, pairSummaries } where pairSummaries is keyed "lo|hi".
  */
 export function roundRobinCode(bots) {
   const totals = Object.fromEntries(bots.map((b) => [b.id, { points: 0, matches: 0, wins: 0, losses: 0, draws: 0 }]));
-  const pairs = {};
+  const pairSummaries = {};
   for (let i = 0; i < bots.length; i++) {
     for (let j = i + 1; j < bots.length; j++) {
       const A = bots[i], B = bots[j];
       const [lo, hi] = [A.id, B.id].sort();
-      const matches = [];
+      let ptsA = 0, ptsB = 0, coopA = 0, coopB = 0, rounds = 0;
+      const perMatch = [];
       for (let m = 0; m < MATCH.matchesPerPairing; m++) {
         const res = playMatchCode(A, B, m);
-        matches.push(res);
+        ptsA += res.scoreA; ptsB += res.scoreB;
+        for (const r of res.rounds) {
+          if (r.a === A0) coopA++;
+          if (r.b === A0) coopB++;
+          rounds++;
+        }
         totals[A.id].points += res.scoreA; totals[B.id].points += res.scoreB;
         totals[A.id].matches++; totals[B.id].matches++;
         if (res.scoreA > res.scoreB) { totals[A.id].wins++; totals[B.id].losses++; }
         else if (res.scoreB > res.scoreA) { totals[B.id].wins++; totals[A.id].losses++; }
         else { totals[A.id].draws++; totals[B.id].draws++; }
+        perMatch.push({ a: res.scoreA, b: res.scoreB });
       }
-      pairs[`${lo}|${hi}`] = { a: lo, b: hi, matches: matches.map((mm) => orient(mm, A.id === lo)) };
+      const aIsLo = A.id === lo;
+      pairSummaries[`${lo}|${hi}`] = {
+        a: lo, b: hi,
+        matches: MATCH.matchesPerPairing,
+        scoreA: aIsLo ? ptsA : ptsB,
+        scoreB: aIsLo ? ptsB : ptsA,
+        coopA: aIsLo ? coopA : coopB,
+        coopB: aIsLo ? coopB : coopA,
+        rounds,
+        perMatch: perMatch.map((pm) => (aIsLo ? pm : { a: pm.b, b: pm.a })),
+      };
     }
   }
   const standings = bots.map((b) => {
@@ -165,40 +188,32 @@ export function roundRobinCode(bots) {
       matches: t.matches, wins: t.wins, losses: t.losses, draws: t.draws,
     };
   }).sort((x, y) => y.avg - x.avg);
-  return { standings, pairs };
+  return { standings, pairSummaries };
 }
 
 /**
  * One team's results against every opponent, for the downloadable CSV.
  * nameOf: id → display name.
  */
-export function opponentBreakdown(pairs, teamId, nameOf) {
+export function opponentBreakdown(pairSummaries, teamId, nameOf) {
   const rows = [];
-  for (const key of Object.keys(pairs)) {
-    const p = pairs[key];
+  for (const key of Object.keys(pairSummaries)) {
+    const p = pairSummaries[key];
     if (p.a !== teamId && p.b !== teamId) continue;
     const meIsA = p.a === teamId;
     const oppId = meIsA ? p.b : p.a;
-    let myPts = 0, oppPts = 0, splits = 0, steals = 0, rounds = 0;
-    for (const mtch of p.matches) {
-      const sFor = meIsA ? mtch.scoreA : mtch.scoreB;
-      const sAgs = meIsA ? mtch.scoreB : mtch.scoreA;
-      myPts += sFor; oppPts += sAgs;
-      for (const rnd of mtch.rounds) {
-        const mine = meIsA ? rnd.a : rnd.b;
-        if (mine === A0) splits++; else steals++;
-        rounds++;
-      }
-    }
-    const n = p.matches.length || 1;
+    const myPts = meIsA ? p.scoreA : p.scoreB;
+    const oppPts = meIsA ? p.scoreB : p.scoreA;
+    const myCoops = meIsA ? p.coopA : p.coopB;
+    const n = p.matches || 1;
     rows.push({
       opponent: nameOf(oppId) || oppId,
-      matches: p.matches.length,
+      matches: p.matches,
       avgFor: Math.round((myPts / n) * 100) / 100,
       avgAgainst: Math.round((oppPts / n) * 100) / 100,
       result: myPts > oppPts ? "win" : myPts < oppPts ? "loss" : "tie",
-      mySplitRate: rounds ? Math.round((100 * splits) / rounds) : 0,
-      mySteals: steals,
+      myCoopRate: p.rounds ? Math.round((100 * myCoops) / p.rounds) : 0,
+      myDefects: p.rounds - myCoops,
     });
   }
   return rows.sort((x, y) => y.avgFor - x.avgFor);
@@ -213,8 +228,8 @@ export function preparePdCode(src) {
   try {
     const first = makeState({ moves: [], score: 0 }, { moves: [], score: 0 }, 0, rngFrom("smoke"));
     const mid = makeState(
-      { moves: [A0, A1, A0], score: 100 },
-      { moves: [A1, A1, A0], score: 150 },
+      { moves: [A0, A1, A0], score: 9 },
+      { moves: [A1, A1, A0], score: 12 },
       3, rngFrom("smoke2"),
     );
     if (fn(first) == null || fn(mid) == null) {

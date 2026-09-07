@@ -130,8 +130,8 @@ async function loadPdBots() {
 
 async function recomputePd() {
   const bots = await loadPdBots();
-  const { standings, pairs } = roundRobinCode(bots);
-  const result = { standings, pairs, updatedAt: Date.now() };
+  const { standings, pairSummaries } = roundRobinCode(bots);
+  const result = { standings, pairSummaries, updatedAt: Date.now() };
   await kv.setJSON("w1:tourney:pd", result);
   return result;
 }
@@ -142,41 +142,50 @@ async function getPdTourney() {
   return t;
 }
 
-/** One team's per-opponent breakdown (CSV) + full round-by-round matchups. */
-function myMatchups(tourney, botId, names) {
-  const out = [];
-  for (const key of Object.keys(tourney.pairs)) {
-    const p = tourney.pairs[key];
+/**
+ * One team's opponent list + per-opponent summary (the CSV source).
+ * At 200 rounds the round logs are far too big to store or ship, so the list
+ * carries scores only; a single match's rounds are recomputed on demand by
+ * GET pd/replay (the match is seeded, so a replay is the real thing).
+ */
+function mineView(tourney, botId, names) {
+  const breakdown = opponentBreakdown(tourney.pairSummaries, botId, (oid) => nameFor(names, oid));
+  const opponents = [];
+  for (const key of Object.keys(tourney.pairSummaries)) {
+    const p = tourney.pairSummaries[key];
     if (p.a !== botId && p.b !== botId) continue;
     const meIsA = p.a === botId;
     const oppId = meIsA ? p.b : p.a;
-    const matches = p.matches.map((m) => ({
-      rounds: m.rounds.map((r) => (meIsA
-        ? { you: r.a, them: r.b, youPts: r.pa, themPts: r.pb }
-        : { you: r.b, them: r.a, youPts: r.pb, themPts: r.pa })),
-      you: meIsA ? m.scoreA : m.scoreB,
-      them: meIsA ? m.scoreB : m.scoreA,
-    }));
-    out.push({ opponentId: oppId, opponent: nameFor(names, oppId), seed: oppId.startsWith("seed:"), matches });
+    opponents.push({
+      opponentId: oppId,
+      opponent: nameFor(names, oppId),
+      seed: oppId.startsWith("seed:"),
+      matches: p.perMatch.map((pm) => ({ you: meIsA ? pm.a : pm.b, them: meIsA ? pm.b : pm.a })),
+    });
   }
-  return out.sort((x, y) => x.opponent.localeCompare(y.opponent));
-}
-
-function mineView(tourney, botId, names) {
-  const breakdown = opponentBreakdown(tourney.pairs, botId, (oid) => nameFor(names, oid));
-  const matchups = myMatchups(tourney, botId, names);
+  opponents.sort((x, y) => x.opponent.localeCompare(y.opponent));
   const me = tourney.standings.find((s) => s.id === botId) ?? null;
-  return { breakdown, matchups, me };
+  return { breakdown, opponents, me };
 }
 
-/** The top-two match logs — the big screen's replay. */
-function topReplay(tourney) {
+/** Recompute one pairing's match round-by-round (deterministic from the seed). */
+async function replayMatch(idA, idB, matchIndex) {
+  const bots = await loadPdBots();
+  const A = bots.find((b) => b.id === idA);
+  const B = bots.find((b) => b.id === idB);
+  if (!A || !B) return null;
+  const m = Math.max(0, Math.min(MATCH.matchesPerPairing - 1, Number(matchIndex) || 0));
+  const res = playMatchCode(A, B, m);
+  return { a: { id: A.id, name: A.name }, b: { id: B.id, name: B.name }, matchIndex: m, matches: MATCH.matchesPerPairing, ...res };
+}
+
+/** The current #1 vs #2 match — the big screen's replay, recomputed live. */
+async function topReplay(tourney, matchIndex = 0) {
   const [one, two] = tourney.standings;
   if (!one || !two) return null;
-  const [lo, hi] = [one.id, two.id].sort();
-  const pair = tourney.pairs[`${lo}|${hi}`];
-  if (!pair) return null;
-  return { a: { id: lo, name: lo === one.id ? one.name : two.name }, b: { id: hi, name: hi === one.id ? one.name : two.name }, matches: pair.matches };
+  const r = await replayMatch(one.id, two.id, matchIndex);
+  if (!r) return null;
+  return { a: r.a, b: r.b, matchIndex: r.matchIndex, matches: r.matches, rounds: r.rounds, scoreA: r.scoreA, scoreB: r.scoreB };
 }
 
 /* ── ice cream leaderboards ───────────────────────────────────────────── */
@@ -503,7 +512,27 @@ export async function handle(method, route, body, query) {
 
     case "GET replay": {
       const t = await getPdTourney();
-      return { replay: topReplay(t), updatedAt: t.updatedAt };
+      return { replay: await topReplay(t, query.match), updatedAt: t.updatedAt };
+    }
+
+    case "GET pd/replay": {
+      // One team's match vs one opponent, recomputed round-by-round.
+      const { teamId } = await requireTeam(query);
+      const opp = String(query.opponentId ?? "");
+      if (!opp) throw httpError(400, "opponentId required");
+      const r = await replayMatch(`team:${teamId}`, opp, query.match);
+      if (!r) throw httpError(404, "no such matchup");
+      const meIsA = r.a.id === `team:${teamId}`;
+      return {
+        opponent: meIsA ? r.b : r.a,
+        matchIndex: r.matchIndex,
+        matches: r.matches,
+        yourScore: meIsA ? r.scoreA : r.scoreB,
+        theirScore: meIsA ? r.scoreB : r.scoreA,
+        rounds: r.rounds.map((x) => (meIsA
+          ? { you: x.a, them: x.b, youPts: x.pa, themPts: x.pb }
+          : { you: x.b, them: x.a, youPts: x.pb, themPts: x.pa })),
+      };
     }
 
     case "GET board": {
@@ -511,7 +540,7 @@ export async function handle(method, route, body, query) {
       return {
         games: config,
         timers: await getTimers(),
-        pd: { standings: pd.standings.slice(0, 12), replay: topReplay(pd) },
+        pd: { standings: pd.standings.slice(0, 12), replay: await topReplay(pd, query.match) },
         icecream: { sharpe: await iceBoard("sharpe", 12), bankruptcies: await iceBoard("bank", 12) },
       };
     }

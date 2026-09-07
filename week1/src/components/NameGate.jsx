@@ -34,7 +34,7 @@ export default function NameGate({ onJoin }) {
         <div className="sub">
           WEEK 1 · GAMES OF STRATEGY
           <br />
-          BANDITS · CHICKEN · SPLIT OR STEAL
+          PRISONER'S DILEMMA · SUNSET SCOOPS
         </div>
         <form onSubmit={join}>
           <input

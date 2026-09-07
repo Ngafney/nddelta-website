@@ -14,7 +14,7 @@
 export const GAMES = ["pd", "icecream"];
 
 export const GAME_META = {
-  pd: { name: "Split or Steal", subtitle: "Iterated Prisoner's Dilemma", icon: "🤝" },
+  pd: { name: "Prisoner's Dilemma", subtitle: "Iterated · Axelrod payoffs", icon: "🤝" },
   icecream: { name: "Sunset Scoops", subtitle: "Weather-Hedging Puzzle", icon: "🍦" },
   // retired (code kept, not offered)
   bandit: { name: "Slot Machines", subtitle: "Multi-Armed Bandit", icon: "🎰" },
@@ -47,19 +47,20 @@ export const PAYOFFS = {
     STAY: { STAY: -50, SWERVE: 20 },
     SWERVE: { STAY: -20, SWERVE: -10 },
   },
+  // Axelrod's classic payoffs: T=5 > R=3 > P=1 > S=0, with 2R > T+S.
   pd: {
-    SPLIT: { SPLIT: 50, STEAL: 0 },
-    STEAL: { SPLIT: 100, STEAL: -10 }, // both-steal stings: restores strict T>R>P>S
+    COOPERATE: { COOPERATE: 3, DEFECT: 0 }, // R (reward) / S (sucker)
+    DEFECT: { COOPERATE: 5, DEFECT: 1 },    // T (temptation) / P (punishment)
   },
 };
 
 export const ACTIONS = {
   chicken: ["STAY", "SWERVE"],
-  pd: ["SPLIT", "STEAL"],
+  pd: ["COOPERATE", "DEFECT"],
 };
 
 /** The action mirror/opposite defaults to before any history exists. */
-export const COOPERATIVE = { chicken: "SWERVE", pd: "SPLIT" };
+export const COOPERATIVE = { chicken: "SWERVE", pd: "COOPERATE" };
 
 export const BANDIT = {
   machines: 8,
@@ -69,8 +70,8 @@ export const BANDIT = {
 };
 
 export const MATCH = {
-  rounds: 10, // decisions per match; memory resets after
-  matchesPerPairing: 5, // every pairing plays this many matches
+  rounds: 200, // decisions per match (Axelrod's tournament length); memory resets after
+  matchesPerPairing: 5, // every pairing plays this many matches (Axelrod ran 5 games)
 };
 
 /**
@@ -111,17 +112,17 @@ export const RULES_TEXT = {
   },
   pd: {
     simple: [
-      `100 points sit on the table. Each round, both teams secretly pick: SPLIT (share it) or STEAL (grab it all).`,
-      `Both SPLIT → 50 each. You STEAL and they SPLIT → you take all 100, they get nothing. Both STEAL → you scuffle and both LOSE 10.`,
+      `The Prisoner's Dilemma. Each round, both players secretly pick: COOPERATE or DEFECT.`,
+      `Both COOPERATE → 3 points each. You DEFECT while they COOPERATE → you get 5, they get 0. Both DEFECT → 1 point each. (Axelrod's classic payoffs.)`,
       `You describe a bot in plain English and the AI writes its code. Your bot plays ${MATCH.rounds} rounds in a row against every other team's bot and remembers everything from the match so far — so betrayal has consequences.`,
-      `You never see who you're playing — only what they DO. Part of the game is reading an opponent's moves to guess how they tick and exploit it.`,
+      `You never see who you're playing — only what they DO. Reading an opponent's moves to guess how they tick and exploit it is the whole game.`,
       `Every bot plays every other bot in a full round-robin. The board ranks average points per match. After each run you can download a CSV of your results vs every opponent and replay any match round-by-round.`,
     ].join("\n"),
     details: [
-      `STRUCTURE — ${MATCH.rounds} rounds per match, ${MATCH.matchesPerPairing} matches per pairing, memory resets between matches, and the whole tournament re-runs whenever any team resubmits.`,
-      `WHAT YOUR BOT CAN SEE — the current match's full history (both sides' moves, both scores, streaks and counts) and a random-number generator, but NEVER the opponent's identity. You can build anything within reason: reactive rules, randomness, even a little linear model over the history.`,
-      `FOR THE GAME THEORISTS — this is the iterated prisoner's dilemma. In a single round, stealing never pays less than splitting — so "rational" players both steal and both get zero. Over ${MATCH.rounds} remembered rounds, reciprocity and reputation change everything.`,
-      `ONE HOUSE BOT is always in the field: a coin-flipper that splits or steals at random. Everything else on the board is another team.`,
+      `STRUCTURE — ${MATCH.rounds} rounds per match, ${MATCH.matchesPerPairing} matches per pairing (exactly Axelrod's tournament), memory resets between matches, and the whole tournament re-runs whenever any team resubmits.`,
+      `WHAT YOUR BOT CAN SEE — the current match's full history (both sides' moves, both scores, streaks and counts) and a random-number generator, but NEVER the opponent's identity. Build anything within reason: reactive rules, randomness, even a little linear model over the history.`,
+      `FOR THE GAME THEORISTS — Axelrod's payoffs (T=5 > R=3 > P=1 > S=0). In one round DEFECT strictly dominates, so "rational" one-shot players both defect and get 1 each — worse than the 3 each of mutual cooperation. Over ${MATCH.rounds} remembered rounds reciprocity flips the logic, exactly as Axelrod's 1980 tournaments showed.`,
+      `ONE HOUSE BOT is always in the field: a coin-flipper that cooperates or defects at random. Everything else on the board is another team.`,
     ].join("\n"),
   },
   icecream: {

@@ -87,7 +87,7 @@ export default function Leaderboards({ team, games }) {
     <>
       {games?.pd && (
         <section className="panel board">
-          <div className="panel-title">{GAME_META.pd.icon} SPLIT OR STEAL · TOURNAMENT</div>
+          <div className="panel-title">{GAME_META.pd.icon} PRISONER'S DILEMMA · TOURNAMENT</div>
           <Board rows={pd?.map((s, i) => ({ rank: i + 1, teamId: s.id.replace(/^team:/, ""), ...s }))} me={team.teamId} columns={matchCols} crown />
         </section>
       )}
