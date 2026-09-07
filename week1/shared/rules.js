@@ -36,7 +36,7 @@ export const ICE_ECON = {
     { lo: 70, hi: 75, days: 688, revenue: 2014 },
     { lo: 75, hi: 80, days: 715, revenue: 2433 },
     { lo: 80, hi: 85, days: 584, revenue: 2755 },
-    { lo: 85, hi: 90, days: 572, revenue: 2998 },
+    { lo: 85, hi: 90, days: 572, revenue: 2998, openEnded: true }, // 85F and up (the data reaches 110F)
   ],
   rain: { wet: { days: 346, revenue: 1171 }, dry: { days: 3307, revenue: 2258 } },
   breakEvenTemp: 72, // where average revenue crosses the $1,800 daily cost

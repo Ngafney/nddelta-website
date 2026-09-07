@@ -55,9 +55,10 @@ export default function ContractGuide() {
         })}
       </div>
       <div className="cg-axis">
-        {[55, 60, 65, 70, 75, 80, 85, 90].map((t) => (
+        {[55, 60, 65, 70, 75, 80, 85].map((t) => (
           <span key={t} style={{ left: `${x(t)}%` }}>{t}°</span>
         ))}
+        <span style={{ left: "100%" }}>90°+</span>
       </div>
       <div className="cg-zones">
         <span className="z bad" style={{ left: 0, width: `${x(breakEvenTemp)}%` }}>LOSING MONEY</span>
@@ -74,7 +75,7 @@ export default function ContractGuide() {
             <div className="cg-track">
               <i className="cg-mark" style={{ left: `${x(breakEvenTemp)}%` }} />
               <div className={`cg-span ${cls}`} style={{ left: `${x(r.from)}%`, width: `${x(r.to) - x(r.from)}%` }}>
-                pays · avg ${r.avg.toLocaleString()}/day
+                pays $1 here · shop earns ${r.avg.toLocaleString()}/day
               </div>
             </div>
             <span className={`cg-tag ${cls}`}>{r.tag}</span>
@@ -99,6 +100,12 @@ export default function ContractGuide() {
           <code className="bet">rain_no</code>
           <span className="cg-tag bet">BET</span>
         </div>
+      </div>
+
+      <div className="cg-note">
+        Read a row as: on the days this contract pays out, the shop takes in that much
+        revenue. Costs are ${costPerDay.toLocaleString()} every day, so anything under that line is a
+        day you lost money. (The hottest band is 85°+ — the data runs to 110°.)
       </div>
 
       <div className="cg-note">
