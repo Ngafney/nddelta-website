@@ -6,6 +6,7 @@
  */
 import React, { useState } from "react";
 import { RULES_TEXT, PAYOFFS, ACTIONS } from "../../shared/rules.js";
+import ContractGuide from "./ContractGuide.jsx";
 
 export default function RulesPanel({ game }) {
   const seenKey = `w1rules:${game}`;
@@ -27,6 +28,11 @@ export default function RulesPanel({ game }) {
       {open && (
         <>
           <div className="rules-body">{RULES_TEXT[game].simple}</div>
+          {game === "icecream" && (
+            <div style={{ marginTop: 16 }}>
+              <ContractGuide />
+            </div>
+          )}
           {PAYOFFS[game] && (
             <>
               <PayoffMatrix game={game} />

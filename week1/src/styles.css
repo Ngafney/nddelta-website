@@ -1255,3 +1255,49 @@ input::placeholder, textarea::placeholder { color: var(--dim); }
 .pdr-cell .m { font-family: var(--mono); font-size: 12px; padding: 2px 0; margin-top: 2px; color: #06111f; font-weight: bold; }
 .pdr-cell .m.c { background: var(--green); } .pdr-cell .m.d { background: var(--red); }
 .pdr-cell .pay { font-size: 8px; color: var(--muted); font-family: var(--mono); margin-top: 2px; }
+
+/* ── Sunset Scoops contract guide (the "which side hedges" picture) ───── */
+.cg { font-size: 12px; color: var(--ink); }
+.cg-title { font-size: 10px; letter-spacing: 1px; color: var(--gold); margin-bottom: 8px; }
+.cg-chart { position: relative; height: 150px; background: #0a1428; border: 2px solid var(--line-dim); }
+.cg-bar { position: absolute; bottom: 0; height: 100%; display: flex; align-items: flex-end; padding: 0 2px; box-sizing: border-box; }
+.cg-fill { width: 100%; position: relative; border: 1px solid #0006; }
+.cg-fill.good { background: linear-gradient(180deg, var(--green), #1d6b41); }
+.cg-fill.bad  { background: linear-gradient(180deg, var(--red), #7c2a31); }
+.cg-val { position: absolute; top: -15px; left: 0; right: 0; text-align: center; font-family: var(--mono); font-size: 9px; color: var(--muted); }
+.cg-cost { position: absolute; left: 0; right: 0; border-top: 2px dashed var(--gold); z-index: 2; }
+.cg-cost span { position: absolute; right: 4px; top: -14px; font-size: 9px; color: var(--gold); background: #0a1428; padding: 0 4px; }
+.cg-axis { position: relative; height: 16px; margin-top: 2px; }
+.cg-axis span { position: absolute; transform: translateX(-50%); font-size: 9px; color: var(--muted); font-family: var(--mono); }
+.cg-zones { position: relative; height: 18px; margin-bottom: 4px; }
+.cg-zones .z { position: absolute; text-align: center; font-size: 9px; letter-spacing: .5px; padding: 2px 0; }
+.cg-zones .z.bad { color: var(--red); border-top: 2px solid var(--red); }
+.cg-zones .z.good { color: var(--green); border-top: 2px solid var(--green); }
+.cg-row { display: flex; align-items: center; gap: 8px; margin-bottom: 5px; }
+.cg-row code { width: 82px; flex: none; font-family: var(--mono); font-size: 10px; }
+.cg-row code.hedge { color: var(--green); } .cg-row code.bet { color: var(--red); }
+.cg-track { position: relative; flex: 1; height: 17px; background: #0a1428; border: 1px solid var(--line-dim); }
+.cg-mark { position: absolute; top: 0; bottom: 0; width: 0; border-left: 1px dashed var(--gold); }
+.cg-span { position: absolute; top: 0; bottom: 0; display: flex; align-items: center; justify-content: center;
+  font-size: 8px; letter-spacing: .5px; color: #06111f; }
+.cg-span.hedge { background: var(--green); } .cg-span.bet { background: var(--red); }
+.cg-tag { flex: none; width: 44px; text-align: right; font-size: 8px; letter-spacing: .5px; }
+.cg-tag.hedge { color: var(--green); } .cg-tag.bet { color: var(--red); }
+.cg-rain { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.cg-rainbox { border: 2px solid var(--line-dim); padding: 10px; text-align: center; }
+.cg-rainbox.bad { border-color: #7c2a31; } .cg-rainbox.good { border-color: #1d6b41; }
+.cg-rainbox .k { font-size: 9px; color: var(--muted); letter-spacing: 1px; }
+.cg-rainbox .v { font-family: var(--mono); font-size: 18px; margin: 4px 0; }
+.cg-rainbox.bad .v { color: var(--red); } .cg-rainbox.good .v { color: var(--green); }
+.cg-rainbox .s { font-size: 9px; color: var(--dim); margin-bottom: 6px; }
+.cg-rainbox code { font-family: var(--mono); font-size: 10px; margin-right: 6px; }
+.cg-rainbox code.hedge { color: var(--green); } .cg-rainbox code.bet { color: var(--red); }
+.cg-note { margin-top: 12px; color: var(--muted); line-height: 1.6; font-size: 11px; }
+.cg-note code { font-family: var(--mono); color: var(--ink); }
+@media (max-width: 620px) {
+  .cg-row code { width: 66px; font-size: 9px; }
+  .cg-tag { width: 34px; }
+  .cg-rain { grid-template-columns: 1fr; }
+}
+.cg-row code.weak, .cg-tag.weak { color: var(--gold); }
+.cg-span.weak { background: var(--gold-deep); color: #1d1400; }

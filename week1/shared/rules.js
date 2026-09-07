@@ -21,6 +21,27 @@ export const GAME_META = {
   chicken: { name: "Chicken", subtitle: "Hawk–Dove", icon: "🚗" },
 };
 
+/**
+ * Measured economics of the scored period — what the shop actually earns at
+ * each temperature, and on wet vs dry days. Drives the contract guide graph so
+ * the picture students see is the real data, not an illustration.
+ * (Regenerate alongside ice-data.js if the dataset changes.)
+ */
+export const ICE_ECON = {
+  costPerDay: 1800,
+  tempBands: [
+    { lo: 55, hi: 60, days: 228, revenue: 827 },
+    { lo: 60, hi: 65, days: 323, revenue: 1208 },
+    { lo: 65, hi: 70, days: 543, revenue: 1555 },
+    { lo: 70, hi: 75, days: 688, revenue: 2014 },
+    { lo: 75, hi: 80, days: 715, revenue: 2433 },
+    { lo: 80, hi: 85, days: 584, revenue: 2755 },
+    { lo: 85, hi: 90, days: 572, revenue: 2998 },
+  ],
+  rain: { wet: { days: 346, revenue: 1171 }, dry: { days: 3307, revenue: 2258 } },
+  breakEvenTemp: 72, // where average revenue crosses the $1,800 daily cost
+};
+
 /** Ice Cream Shop (Sunset Scoops) constants — the weather-hedging sim. */
 export const ICE = {
   startReserves: 2000,   // starting cash

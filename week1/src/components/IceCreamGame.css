@@ -233,3 +233,10 @@
 .ic-key { display: inline-flex; align-items: baseline; gap: 5px; background: #0d1930;
   border: 1px solid var(--line-dim); padding: 3px 7px; white-space: nowrap; }
 .ic-key i { font-style: normal; color: var(--muted); font-size: 10px; }
+
+/* unmissable which-side-hedges hint above the strategy box */
+.ic-sidehint { margin: 10px 0; padding: 9px 11px; background: #0c1a12; border-left: 3px solid var(--green);
+  font-size: 11px; line-height: 1.7; color: var(--muted); }
+.ic-sidehint code { font-family: var(--mono); font-size: 11px; }
+.ic-sidehint code.ok { color: var(--green); }
+.ic-sidehint code.no { color: var(--red); }
