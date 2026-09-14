@@ -323,6 +323,20 @@ await ok("descent is refused for a bad rate, a foreign anchor, or a step that do
   assert.strictEqual((await GET("state", cred(carol))).me.cashC, st.me.cashC, "none of that was charged for");
 });
 
+await ok("a step onto a point you own is refused free, and names no coordinate", async () => {
+  const st = await GET("state", cred(carol));
+  const from = st.me.points[0];
+  // The smallest rate cannot move you off where you stand.
+  const e = await rejects(
+    () => POST("descend", { ...cred(carol), anchorX: from.x, lr: LIMITS.learningRate[0] }),
+    /already walked/
+  );
+  // A step aimed past the end of the domain is clamped to the edge, so naming
+  // the landing point in this message would announce where the domain stops.
+  assert.ok(!/\d/.test(e.message), `the refusal names a coordinate: ${e.message}`);
+  assert.strictEqual((await GET("state", cred(carol))).me.cashC, st.me.cashC, "and nothing was charged");
+});
+
 await ok("there is nothing else to buy", async () => {
   await rejects(() => POST("probe", { ...cred(carol), anchorX: 1, offset: 1 }), /no route/);
   await rejects(() => POST("ticket", cred(carol)), /no route/);

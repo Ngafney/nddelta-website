@@ -658,9 +658,15 @@ export async function handle(method, route, body, query) {
         }
         const x = clampToDomain(spec, anchor + step);
         if (p.points.some((pt) => Math.abs(pt.x - x) < 0.005)) {
-          // Converged, or the rate is too small to move off the point. Nothing
-          // is charged, because nothing new was learned.
-          throw httpError(400, "that step lands where you already are — try a larger rate", "duplicate");
+          // The step may have moved a long way and still landed on a point
+          // already owned — at the largest legal rate the step is always
+          // exactly maxStep, which walks a lattice. Nothing is charged, because
+          // nothing new would be learned.
+          // NO COORDINATE in this message. A step aimed past the end of the
+          // domain is clamped to the edge, so naming the landing point here
+          // would announce exactly where the domain stops — which players are
+          // meant to be blind to. The client already shows its own prediction.
+          throw httpError(400, "that step lands somewhere you have already walked — change the rate", "duplicate");
         }
         const costC = descentCostC(state);
         if (costC > spendableC(state, p)) {

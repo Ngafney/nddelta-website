@@ -912,3 +912,11 @@ select { appearance: none; cursor: pointer; }
   color: var(--gold); font-size: 13px; padding: 9px 14px;
   padding-top: max(9px, env(safe-area-inset-top));
 }
+
+/* ── why the step button is off, and how to get out of it ───────────── */
+
+.stepblock {
+  margin-top: 10px; padding: 9px 10px; font-size: 12px; line-height: 1.5;
+  background: #2a1305; border-left: 5px solid var(--gold-deep); color: #f3dca8;
+  display: flex; flex-direction: column; gap: 9px; align-items: flex-start;
+}

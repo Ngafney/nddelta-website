@@ -526,6 +526,38 @@ ok("the app carries the stale-build check, and it shows nothing when current", (
   assert.ok(/visibilityState/.test(src), "it should not poll a backgrounded tab");
 });
 
+ok("landing on a point you own is not the same as not moving", () => {
+  // THE BUG THIS EXISTS FOR: at the top of the slider the step is always
+  // exactly maxStep, so repeated max steps walk a rigid lattice and keep
+  // landing on points already owned. The panel called that "THAT DOES NOT
+  // MOVE" — about a 25-unit step — and left no way out.
+  const src = fs.readFileSync(path.join(root, "src", "components", "Scope.jsx"), "utf8");
+  assert.ok(src.includes("alreadyThere"), "the panel does not distinguish landing on an owned point");
+  assert.ok(src.includes("tooSmall"), "the panel does not distinguish a rate too small to move");
+  assert.ok(!src.includes('"THAT DOES NOT MOVE"'), "the misleading message is still there");
+  assert.ok(src.includes("nudgeRate"), "there is no one-tap way out of the dead end");
+  // The max button must not sit exactly on the cap, or the lattice stays rigid.
+  assert.ok(/lrMax \* 0\.9\d/.test(src), "the max button still lands exactly on the cap");
+
+  // And it renders: a point whose step at the default rate lands on its twin.
+  const twins = [
+    { x: 40, y: 600, d: -1 },
+    { x: 40.1, y: 599, d: -1 },
+  ];
+  const out = render(
+    h(C.Scope, {
+      points: twins,
+      activeX: 40,
+      me,
+      onDescend() {},
+      busy: null,
+      disabled: false,
+      limits: { maxStep: 25, learningRate: [0.0001, 1000] },
+    })
+  );
+  assert.ok(out.includes("LEARNING RATE"), "the step control still renders");
+});
+
 ok("money formatting is exact and signed where it should be", () => {
   assert.strictEqual(M.money(10_000_000), "$100,000.00");
   assert.strictEqual(M.money(1_000_000), "$10,000.00");

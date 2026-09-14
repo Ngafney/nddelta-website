@@ -284,7 +284,40 @@ export default function Scope({
   const lr = clamp(Math.pow(10, lrExp), lrMin, lrMax);
   const step = active ? -lr * active.d : 0;
   const target = active ? round2(active.x + step) : null;
-  const noMove = active ? points.some((p) => Math.abs(p.x - target) < 0.005) : true;
+  // Two very different dead ends, which used to share one wrong message:
+  //   tooSmall  — the rate is so low the step rounds to nothing.
+  //   alreadyThere — the step moves, possibly a long way, but lands on a point
+  //     you have already paid for. At the top of the slider the step is always
+  //     exactly maxStep, so repeated max steps walk a rigid lattice and land on
+  //     old points constantly. Saying "that does not move" about a 25-unit step
+  //     is simply false.
+  const tooSmall = Math.abs(step) < 0.005;
+  const alreadyThere = active ? points.some((p) => Math.abs(p.x - target) < 0.005) : true;
+  const blocked = tooSmall || alreadyThere;
+
+  /**
+   * Walk the rate outward from where it is until the step lands somewhere new.
+   * A dead end the player cannot get out of without understanding why is a bad
+   * dead end; this is the way out, in one tap.
+   */
+  const nudgeRate = () => {
+    if (!active) return;
+    const lo = Math.log10(lrMin);
+    const hi = Math.log10(lrMax);
+    for (let d = 0.02; d <= 2; d += 0.02) {
+      for (const cand of [lrExp + d, lrExp - d]) {
+        if (cand < lo || cand > hi) continue;
+        const l = clamp(Math.pow(10, cand), lrMin, lrMax);
+        const s = -l * active.d;
+        if (Math.abs(s) < 0.005) continue;
+        const t = round2(active.x + s);
+        if (!points.some((p) => Math.abs(p.x - t) < 0.005)) {
+          setLrExp(Math.round(cand * 1000) / 1000);
+          return;
+        }
+      }
+    }
+  };
   const cost = me?.descentCostC ?? 0;
   const broke = cost > (me?.spendableC ?? 0);
 
@@ -377,7 +410,10 @@ export default function Scope({
                     <button title="a third of the biggest step you could take" onClick={() => setLrExp(Math.log10(lrMax * 0.3))}>
                       1/3
                     </button>
-                    <button title="the biggest step there is" onClick={() => setLrExp(Math.log10(lrMax))}>
+                    <button
+                      title="as far as one step can take you"
+                      onClick={() => setLrExp(Math.log10(lrMax * 0.97))}
+                    >
                       max
                     </button>
                   </div>
@@ -395,21 +431,34 @@ export default function Scope({
                   <PxButton
                     variant="green"
                     style={{ width: "100%", marginTop: 10 }}
-                    disabled={busy || disabled || noMove || broke || active.d === 0}
+                    disabled={busy || disabled || blocked || broke || active.d === 0}
                     onClick={() => onDescend(active.x, lr)}
                   >
                     {busy === "descend" ? (
                       <Spinner text="STEPPING" />
                     ) : active.d === 0 ? (
                       "SLOPE HERE IS ZERO"
-                    ) : noMove ? (
-                      "THAT DOES NOT MOVE"
+                    ) : alreadyThere ? (
+                      "YOU HAVE BEEN THERE"
+                    ) : tooSmall ? (
+                      "RATE TOO SMALL TO MOVE"
                     ) : broke ? (
                       "CASH IS COMMITTED"
                     ) : (
                       `STEP · ${money(cost)}`
                     )}
                   </PxButton>
+
+                  {blocked && active.d !== 0 && (
+                    <div className="stepblock">
+                      {alreadyThere
+                        ? `That step lands on x = ${num(target, 2)}, which you already walked to — you would be paying for a point you own.`
+                        : "That rate is too small to move you anywhere new."}
+                      <button className="pxbtn pxbtn--sm pxbtn--ghost" onClick={nudgeRate}>
+                        FIND A RATE THAT MOVES
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
 
