@@ -1,19 +1,23 @@
 /**
- * The curve: a random, smooth f on a domain [lo, hi] whose GLOBAL minimum sits
- * exactly at a location x* drawn from a normal distribution.
+ * The curve: a random, smooth f on a domain [lo, hi] whose GLOBAL MINIMUM
+ * VALUE is exactly a number y* drawn from a normal distribution.
  *
- * The domain, the mean and the standard deviation come from the round (today:
- * [0, 1000] with x* ~ N(500, 100)). Everything below is written in terms of the
- * domain's center C and half-width H, so the construction does not care what
- * those numbers are and `lo` is free to be negative. The difficulty presets are
- * written per hundredth of the domain and scaled once, here.
+ * The thing being traded is **min f(x)** — how low the function gets — not
+ * where it gets there. x* is only the location that value sits at; the market
+ * never settles on it. So there are two draws:
+ *
+ *   x*  uniform across the domain      where the bottom is
+ *   y*  ~ N(mean, sd)                  how deep the bottom is  ← THE CONTRACT
+ *
+ * Everything below is written in terms of the domain's center C and half-width
+ * H, so the construction does not care what those numbers are and `lo` is free
+ * to be negative. The difficulty presets are written per hundredth of the
+ * domain and scaled once, here.
  *
  * The construction, and why it is provably right rather than hopefully right:
  *
- *   1. Draw x* ~ N(mean, sd), clamped a hair inside the domain. This is the
- *      settlement price, so the function is built around it, not the other way
- *      round — and a bell curve gives the room a real prior to trade against,
- *      which a uniform draw never would.
+ *   1. Draw x* uniformly, a hair inside the domain, and y* from the bell curve.
+ *      The function is then built around both.
  *
  *   2. Draw a random texture g from a basis with derivatives everywhere: sines,
  *      a high-degree polynomial, an exponential, and Gaussian "decoy" dips.
@@ -264,9 +268,9 @@ const VERIFY_N = 20000; // 20,001 samples across the domain
  * minimum is drawn from. `lo` may be negative; nothing here assumes otherwise.
  * Returns the compact spec plus the diagnostics the admin panel shows.
  */
-export function makeCurve(seed, diff, domain) {
-  const lo = domain.lo;
-  const hi = domain.hi;
+export function makeCurve(seed, diff, cfg) {
+  const lo = cfg.lo;
+  const hi = cfg.hi;
   const span = hi - lo;
   const center = (lo + hi) / 2;
   const half = span / 2;
@@ -275,10 +279,15 @@ export function makeCurve(seed, diff, domain) {
 
   const r = rngFor(`${seed}|${diff.key}|${lo}|${hi}`);
 
-  // 1. The answer. Normal around the mean, clamped a hair inside the domain so
-  //    the minimum is always interior and always reachable on the ladder.
+  // 1a. WHERE the bottom is. Uniform, a hair inside the domain, so the minimum
+  //     is always interior and a player can always walk downhill to it.
   const margin = Math.max(1e-6, span * 0.01);
-  const xStar = round2(clamp(domain.mean + domain.sd * r.gauss(), lo + margin, hi - margin));
+  const xStar = round2(r.uni(lo + margin, hi - margin));
+
+  // 1b. HOW DEEP the bottom is. This is the number the market settles on, so
+  //     it is drawn from the bell curve the room is trading against, and
+  //     clamped to the range the margin rules are built on.
+  const yStar = round2(clamp(cfg.yMean + cfg.ySd * r.gauss(), cfg.yClamp[0], cfg.yClamp[1]));
 
   // 2. The texture.
   const terms = [];
@@ -322,6 +331,7 @@ export function makeCurve(seed, diff, domain) {
     half,
     domain: span,
     xStar,
+    yStar,
     terms,
     g0,
     gp0,
@@ -367,16 +377,24 @@ export function makeCurve(seed, diff, domain) {
     }
   }
 
-  // 6. Vertical transform. Positive scale, so the argmin is untouched; the
-  //    range is a mystery the players never get for free.
+  // 6. The vertical transform, which is where the contract actually gets set.
+  //
+  //    shape() is >= 0 everywhere and exactly 0 at x*, so for any positive
+  //    yScale, min f = yOffset — attained at x*. Setting yOffset = y* therefore
+  //    makes the minimum VALUE exactly the number we drew, to the cent, while
+  //    a positive scale leaves the argmin where the proof above put it.
+  //
+  //    yScale only decides how far f climbs above its floor, which is what
+  //    makes a single point informative or useless: on a shallow curve any
+  //    point nearly gives the answer away, on a steep one it says very little.
   let top = 0;
   for (let i = 0; i <= VERIFY_N; i++) {
     const s = spec.A * wells[i] + rest[i];
     if (s > top) top = s;
   }
   if (!(top > 0)) top = 1;
-  spec.yScale = round4(r.uni(40, 900) / top);
-  spec.yOffset = round2(r.uni(-500, 500));
+  spec.yScale = round4(r.uni(cfg.climb?.[0] ?? 60, cfg.climb?.[1] ?? 700) / top);
+  spec.yOffset = yStar;
 
   return { spec, diagnostics: diagnose(spec, need) };
 }
@@ -483,13 +501,19 @@ export function diagnose(spec, wellNeeded = null) {
   const step = span / N;
   const ref = goldenMin(spec, Math.max(spec.lo, bestX - step), Math.min(spec.hi, bestX + step));
   const argmin = Math.abs(ref.x - spec.xStar) < Math.abs(bestX - spec.xStar) ? ref.x : bestX;
-  // A tick of tolerance scaled to the domain: on [0, 1000] this is 0.2.
   const tol = Math.max(0.01, span * 0.0002);
+  // The settlement is the minimum VALUE, so that is what has to be exact. A
+  // cent of tolerance, because y* is stored to the cent.
+  const minValue = Math.min(lo, fAt(spec, spec.xStar));
+  const valueError = round4(Math.abs(minValue - spec.yStar));
   return {
     xStar: spec.xStar,
+    yStar: spec.yStar,
     numericArgmin: round4(argmin),
     argminError: round4(Math.abs(argmin - spec.xStar)),
-    ok: Math.abs(argmin - spec.xStar) < tol,
+    numericMin: round4(minValue),
+    valueError,
+    ok: Math.abs(argmin - spec.xStar) < tol && valueError <= 0.01,
     fMin: round4(lo),
     fMax: round4(hi),
     range: round4(hi - lo),

@@ -2,7 +2,7 @@
  * Your money, at a glance, and the orders you have working.
  *
  * Four numbers matter and all four are always on screen: cash, what your
- * resting orders have reserved, your position in lots, and the portfolio marked
+ * resting orders have reserved, your position in shares, and the portfolio marked
  * to the last trade. P&L is always YOUR P&L, even though the leaderboard scores
  * your team.
  */
@@ -38,9 +38,9 @@ export default function YouPanel({ me, team, mark, settled, onCancel, onCancelAl
           <i>POSITION</i>
           <b>
             {me.pos > 0 ? "+" : ""}
-            {me.pos} {Math.abs(me.pos) === 1 ? "lot" : "lots"}
+            {me.pos} {Math.abs(me.pos) === 1 ? "share" : "shares"}
           </b>
-          <small>{me.pos > 0 ? "long the minimum" : me.pos < 0 ? "short the minimum" : "flat"}</small>
+          <small>{me.pos > 0 ? "long the floor" : me.pos < 0 ? "short the floor" : "flat"}</small>
         </div>
         <div className="stat">
           <i>{settled ? "FINAL" : "PORTFOLIO"}</i>
@@ -78,7 +78,7 @@ export default function YouPanel({ me, team, mark, settled, onCancel, onCancelAl
 
       {team && team.members.length > 1 && (
         <>
-          <span className="field-label mt">YOUR TEAM · {money(team.valueC)}</span>
+          <span className="field-label mt">YOUR TEAM · {money(team.valueC)} AVG</span>
           <div className="lbmembers" style={{ padding: 0 }}>
             {team.members.map((m) => (
               <div key={m.id} className={`lbmember ${m.me ? "me" : ""}`}>

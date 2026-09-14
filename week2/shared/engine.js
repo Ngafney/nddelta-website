@@ -4,8 +4,8 @@
  * compare-and-swap transaction and the tests can hammer them directly.
  *
  * ── The contract ─────────────────────────────────────────────────────────
- * One lot settles at S. Long a lot: you paid the price now, you receive S at
- * the end. Short a lot: you received the price now, you pay S at the end.
+ * One share settles at S. Long a share: you paid the price now, you receive S at
+ * the end. Short a share: you received the price now, you pay S at the end.
  *
  * Two ranges matter, and they are deliberately NOT the same range:
  *
@@ -23,7 +23,7 @@
  *
  * ── Money ────────────────────────────────────────────────────────────────
  * All money is INTEGER CENTS. Prices are integer dollars on the tick grid, so
- * a lot costs px * 100 cents exactly and nothing ever drifts.
+ * a share costs px * 100 cents exactly and nothing ever drifts.
  *
  * ── Why nobody can go bust (the part that must not be wrong) ─────────────
  * Final cash is linear in S, so its worst case over [settleMin, settleMax] is
@@ -33,7 +33,7 @@
  *   (A)  cash + settleMin*position  >=  reserveA
  *   (B)  cash + settleMax*position  >=  reserveB
  *
- *        a resting BID at px, q lots:  reserveA += (px - settleMin)+ * q
+ *        a resting BID at px, q shares:  reserveA += (px - settleMin)+ * q
  *                                      reserveB += (px - settleMax)+ * q
  *        a resting OFFER at px, q:     reserveB += (settleMax - px)+ * q
  *                                      reserveA += (settleMin - px)+ * q
@@ -49,7 +49,7 @@
  *
  * Both invariants are checked BEFORE an order is accepted, at the order's limit
  * price and full size — the most expensive thing that order could ever do — and
- * both are preserved by every fill. For a bid at px filling q lots:
+ * both are preserved by every fill. For a bid at px filling q shares:
  *
  *     Δ(cash + settleMin*position) = -(px - settleMin)*q   = -Δ reserveA   ✓
  *     Δ(cash + settleMax*position) = -(px - settleMax)*q   = -Δ reserveB   ✓
@@ -76,7 +76,7 @@ export class EngineError extends Error {
   }
 }
 
-const LOT_C = 100; // cents per dollar of price, per lot
+const SHARE_C = 100; // cents per dollar of price, per share
 const pos0 = (v) => (v > 0 ? v : 0);
 
 /* ── state ────────────────────────────────────────────────────────────── */
@@ -135,11 +135,8 @@ export function newPlayer(pid, name, deviceId, cashC, now) {
     cash: cashC,
     pos: 0,
     points: [],
-    sawAll: false,
     spentC: 0,
-    probes: 0,
     descents: 0,
-    tickets: 0,
     fills: [],
     joinedAt: now,
     settledPos: null,
@@ -173,12 +170,12 @@ export function snapTick(state, px) {
 
 /* ── balances ─────────────────────────────────────────────────────────── */
 
-/** What one lot on this side at this price ties up, against each invariant. */
+/** What one share on this side at this price ties up, against each invariant. */
 export function lotReserveC(g, side, px) {
   if (side === "B") {
-    return { a: pos0(px - g.settleMin) * LOT_C, b: pos0(px - g.settleMax) * LOT_C };
+    return { a: pos0(px - g.settleMin) * SHARE_C, b: pos0(px - g.settleMax) * SHARE_C };
   }
-  return { a: pos0(g.settleMin - px) * LOT_C, b: pos0(g.settleMax - px) * LOT_C };
+  return { a: pos0(g.settleMin - px) * SHARE_C, b: pos0(g.settleMax - px) * SHARE_C };
 }
 
 /** What this player's resting orders tie up, in cents. Derived, never stored. */
@@ -212,17 +209,17 @@ export function powers(state, p) {
     askC,
     reserveA: a,
     reserveB: b,
-    buyC: p.cash + g.settleMin * LOT_C * p.pos - a,
-    sellC: p.cash + g.settleMax * LOT_C * p.pos - b,
+    buyC: p.cash + g.settleMin * SHARE_C * p.pos - a,
+    sellC: p.cash + g.settleMax * SHARE_C * p.pos - b,
   };
 }
 
-/** Most lots this player could post on one side at this price. */
-export function maxLotsAt(state, p, side, px) {
+/** Most shares this player could post on one side at this price. */
+export function maxSharesAt(state, p, side, px) {
   const g = grid(state);
   const pw = powers(state, p);
   const r = lotReserveC(g, side, px);
-  let n = LIMITS.maxLotsPerOrder;
+  let n = LIMITS.maxSharesPerOrder;
   if (r.a > 0) n = Math.min(n, Math.floor(pw.buyC / r.a));
   if (r.b > 0) n = Math.min(n, Math.floor(pw.sellC / r.b));
   return Math.max(0, n);
@@ -234,16 +231,8 @@ export function spendableC(state, p) {
   return Math.max(0, Math.min(pw.buyC, pw.sellC));
 }
 
-/** A share of cash, rounded up to the cent, never zero while they have money. */
-export function shareOfCashC(p, pct) {
-  if (p.cash <= 0) return 0;
-  return Math.max(1, Math.ceil(p.cash * pct));
-}
-
-export const probeCostC = (p) => shareOfCashC(p, MONEY.probeCostPct);
-/** A flat fee, so it does not shrink with a shrinking stack. */
+/** The only price in the game: one step downhill, flat, whatever your stack. */
 export const descentCostC = () => MONEY.descentCostC;
-export const ticketCostC = (p) => shareOfCashC(p, MONEY.ticketCostPct);
 
 /* ── book ─────────────────────────────────────────────────────────────── */
 
@@ -267,7 +256,7 @@ function removeOrder(state, id) {
   if (i >= 0) state.orders.splice(i, 1);
 }
 
-/** Aggregated depth per tick, plus this player's own lots at each tick. */
+/** Aggregated depth per tick, plus this player's own shares at each tick. */
 export function bookLevels(state, pid) {
   const bids = new Map();
   const asks = new Map();
@@ -326,7 +315,7 @@ function pushFill(p, fill) {
 function execute(state, taker, maker, qty, px, now) {
   const buyer = taker.side === "B" ? state.players[taker.pid] : state.players[maker.pid];
   const seller = taker.side === "B" ? state.players[maker.pid] : state.players[taker.pid];
-  const cashC = px * qty * LOT_C;
+  const cashC = px * qty * SHARE_C;
 
   buyer.cash -= cashC;
   buyer.pos += qty;
@@ -365,8 +354,8 @@ export function placeOrder(state, pid, side, px, qty, now) {
   if ((px - g.settleMin) % g.tick !== 0) {
     throw new EngineError(`price must be on the ${g.tick}-tick grid`, "off-tick");
   }
-  if (!Number.isInteger(qty) || qty < 1 || qty > LIMITS.maxLotsPerOrder) {
-    throw new EngineError(`size must be 1 to ${LIMITS.maxLotsPerOrder} lots`);
+  if (!Number.isInteger(qty) || qty < 1 || qty > LIMITS.maxSharesPerOrder) {
+    throw new EngineError(`size must be 1 to ${LIMITS.maxSharesPerOrder} shares`);
   }
   if (state.orders.length >= LIMITS.maxOpenOrders) throw new EngineError("the book is full", "book-full");
 
@@ -385,7 +374,7 @@ export function placeOrder(state, pid, side, px, qty, now) {
     const need = Math.max(needA, needB);
     const have = needA > pw.buyC ? pw.buyC : pw.sellC;
     throw new EngineError(
-      `out of balance — ${qty} lot${qty > 1 ? "s" : ""} at ${px} would tie up ${fmt(need)} and you have ${fmt(
+      `out of balance — ${qty} share${qty > 1 ? "s" : ""} at ${px} would tie up ${fmt(need)} and you have ${fmt(
         Math.max(0, have)
       )} free`,
       "balance"
@@ -396,7 +385,7 @@ export function placeOrder(state, pid, side, px, qty, now) {
   const trades = [];
   let left = qty;
   // Bounded: every pass either fills a resting order or removes one.
-  for (let guard = 0; left > 0 && guard < LIMITS.maxOpenOrders + LIMITS.maxLotsPerOrder; guard++) {
+  for (let guard = 0; left > 0 && guard < LIMITS.maxOpenOrders + LIMITS.maxSharesPerOrder; guard++) {
     const maker = bestMatch(state, side, px);
     if (!maker) break;
     if (maker.pid === pid) {
@@ -452,14 +441,14 @@ export function cancelAll(state, pid) {
 /* ── settlement ───────────────────────────────────────────────────────── */
 
 /**
- * Pull every resting order (they do not fill at the bell), then pay each lot
+ * Pull every resting order (they do not fill at the bell), then pay each share
  * the settlement value in cents. Idempotent: a settled market settles once.
  * In gradient mode the caller passes x*; in prediction mode, whatever the
  * admin resolved to.
  */
 export function settle(state, value, now) {
   if (state.status === "settled") return state;
-  const settleC = Math.round(value * LOT_C);
+  const settleC = Math.round(value * SHARE_C);
   state.orders = [];
   for (const p of Object.values(state.players)) {
     p.settledPos = p.pos;
@@ -479,13 +468,17 @@ export function settle(state, value, now) {
 export function valueC(state, p, mark = null) {
   if (state.status === "settled") return p.cash;
   const m = mark == null ? markPx(state) : mark;
-  return Math.round(p.cash + p.pos * m * LOT_C);
+  return Math.round(p.cash + p.pos * m * SHARE_C);
 }
 
 /**
- * The leaderboard is by TEAM: a team's score is its members' values added up.
- * Members are listed inside the row so a player can always find their own
- * number, and so the big screen can open a team out.
+ * The leaderboard is by TEAM, and a team's score is the AVERAGE of its members'
+ * portfolios, not the sum. A team of three and a team of four are then playing
+ * the same game: adding them up would mean the biggest table wins by turning
+ * up, which rewards nothing anyone did.
+ *
+ * The total is carried along too, because it is the honest answer to "how much
+ * money does this team have", but the rank is the average.
  */
 export function leaderboard(state, limit = 100) {
   const mark = markPx(state);
@@ -504,18 +497,21 @@ export function leaderboard(state, limit = 100) {
         startC: p.startC,
         spentC: p.spentC,
         points: p.points.length,
-        sawAll: p.sawAll,
       }))
       .sort((a, b) => b.valueC - a.valueC);
     if (!members.length) continue;
+    const totalC = members.reduce((s, m) => s + m.valueC, 0);
+    const startC = members.reduce((s, m) => s + m.startC, 0);
     rows.push({
       id: team.id,
       name: team.name,
-      valueC: members.reduce((s, m) => s + m.valueC, 0),
-      startC: members.reduce((s, m) => s + m.startC, 0),
+      // valueC is the score, and the score is the average.
+      valueC: Math.round(totalC / members.length),
+      startC: Math.round(startC / members.length),
+      totalC,
+      totalStartC: startC,
       pos: members.reduce((s, m) => s + m.pos, 0),
       spentC: members.reduce((s, m) => s + m.spentC, 0),
-      sawAll: members.some((m) => m.sawAll),
       size: members.length,
       members,
     });
@@ -621,7 +617,8 @@ export function teamView(state, p) {
     code: team.code,
     size: members.length,
     max: LIMITS.teamSize,
-    valueC: members.reduce((s, m) => s + m.valueC, 0),
+    valueC: Math.round(members.reduce((s, m) => s + m.valueC, 0) / (members.length || 1)),
+    totalC: members.reduce((s, m) => s + m.valueC, 0),
     members,
   };
 }
@@ -641,16 +638,16 @@ export function auditState(state) {
   const g = grid(state);
   for (const p of Object.values(state.players)) {
     const { a, b } = reserves(state, p.id);
-    if (p.cash + g.settleMin * LOT_C * p.pos - a < 0) {
+    if (p.cash + g.settleMin * SHARE_C * p.pos - a < 0) {
       problems.push(`${p.name}: invariant A broken (cash ${p.cash}, pos ${p.pos}, reserve ${a})`);
     }
-    if (p.cash + g.settleMax * LOT_C * p.pos - b < 0) {
+    if (p.cash + g.settleMax * SHARE_C * p.pos - b < 0) {
       problems.push(`${p.name}: invariant B broken (cash ${p.cash}, pos ${p.pos}, reserve ${b})`);
     }
     if (!Number.isInteger(p.cash)) problems.push(`${p.name}: cash is not an integer number of cents`);
     if (!Number.isInteger(p.pos)) problems.push(`${p.name}: position is not an integer`);
   }
-  // The market is zero-sum in lots: they only ever move between players.
+  // The market is zero-sum in shares: they only ever move between players.
   let pos = 0;
   for (const p of Object.values(state.players)) pos += state.status === "settled" ? p.settledPos ?? 0 : p.pos;
   if (pos !== 0) problems.push(`open interest does not net to zero: ${pos}`);

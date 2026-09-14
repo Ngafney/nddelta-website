@@ -69,7 +69,7 @@ export default function BigBoard() {
             <div>
               <div className="title-main">{round.mode === "prediction" ? "DELTA MARKETS" : "GRADIENT TRADING"}</div>
               <div className="title-sub">
-                WEEK 2 · {round.mode === "prediction" ? "PREDICTION MARKET" : (round.difficultyName ?? "").toUpperCase()}
+                WEEK 2 · {round.mode === "prediction" ? "PREDICTION MARKET" : "FIND THE FLOOR"}
               </div>
             </div>
           </div>
@@ -107,7 +107,7 @@ export default function BigBoard() {
               <div className="panel-title">
                 THE MARKET
                 <span className="right">
-                  {data.market.volume} lots traded · {round.players} players
+                  {data.market.volume} shares traded · {round.players} players
                 </span>
               </div>
               <div className="spread-strip" style={{ fontSize: 20 }}>
@@ -130,7 +130,7 @@ export default function BigBoard() {
                 {data.market.tape.map((t) => (
                   <div key={t.s} className={`tape-row ${t.aggr}`} style={{ fontSize: 16 }}>
                     <span className="p">{t.px}</span>
-                    <span className="q">{t.qty} lots</span>
+                    <span className="q">{t.qty} shares</span>
                     <span className="t">{new Date(t.ts).toLocaleTimeString([], { hour12: false })}</span>
                   </div>
                 ))}
@@ -154,7 +154,7 @@ export default function BigBoard() {
                 {data.history.slice(0, 5).map((h) => (
                   <div className="kv" key={h.roundId}>
                     <span>
-                      {h.mode === "prediction" ? "🎯" : "📉"} {h.question ?? h.difficulty} → {num(h.xStar, 2)}
+                      {h.mode === "prediction" ? "🎯" : "📉"} {h.question ?? "the curve"} → {num(h.settles, 2)}
                     </span>
                     <b>{h.podium?.[0]?.name ?? "—"}</b>
                   </div>

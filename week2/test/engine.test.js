@@ -20,9 +20,7 @@ import {
   powers,
   reserves,
   spendableC,
-  probeCostC,
   descentCostC,
-  ticketCostC,
   bookLevels,
   bestBid,
   bestAsk,
@@ -31,7 +29,7 @@ import {
   grid,
   onTick,
   snapTick,
-  maxLotsAt,
+  maxSharesAt,
   valueC,
   leaderboard,
   auditState,
@@ -42,7 +40,7 @@ import {
   EngineError,
 } from "../shared/engine.js";
 import { makeCurve, fAt, dAt, sampleCurve, pointAt } from "../shared/curve.js";
-import { DIFFICULTIES, DIFFICULTY_ORDER, LIMITS, MONEY, MODES, domainFor } from "../shared/rules.js";
+import { DIFFICULTIES, DIFFICULTY_ORDER, LIMITS, MONEY, MODES, curveConfigFor } from "../shared/rules.js";
 
 let passed = 0;
 let failed = 0;
@@ -62,7 +60,7 @@ function ok(name, fn) {
 let clock = 1_000_000;
 const tick = () => ++clock;
 
-const GRAD = domainFor("gradient");
+const GRAD = curveConfigFor("gradient");
 
 /** A live market with teams already formed. `over` overrides the price grid. */
 function market(names = ["a", "b", "c"], cashC = 10_000_000, over = {}) {
@@ -113,7 +111,9 @@ function settlesSafelyEverywhere(s, label) {
 
 console.log("\ncurve");
 
-ok("x* is the global minimum on every difficulty (brute force)", () => {
+ok("the MINIMUM VALUE is exactly y*, on every difficulty (brute force)", () => {
+  // This is the contract: what settles is how low f gets, so that number has
+  // to be exactly the one we drew — not merely close to it.
   for (const k of DIFFICULTY_ORDER) {
     for (let i = 0; i < 8; i++) {
       const { spec, diagnostics } = makeCurve(`gm-${k}-${i}`, DIFFICULTIES[k], GRAD);
@@ -128,28 +128,38 @@ ok("x* is the global minimum on every difficulty (brute force)", () => {
           bx = x;
         }
       }
-      assert.ok(Math.abs(bx - spec.xStar) <= 0.1, `${k}/${i}: brute-force argmin ${bx} but x* is ${spec.xStar}`);
-      assert.ok(fAt(spec, spec.xStar) <= by + 1e-9, `${k}/${i}: f(x*) is not the lowest value`);
+      assert.ok(Math.abs(by - spec.yStar) <= 0.01, `${k}/${i}: lowest value ${by} but y* is ${spec.yStar}`);
+      assert.ok(Math.abs(fAt(spec, spec.xStar) - spec.yStar) <= 0.01, `${k}/${i}: f(x*) is not y*`);
+      assert.ok(Math.abs(bx - spec.xStar) <= 0.02, `${k}/${i}: the low point is at ${bx}, not x* ${spec.xStar}`);
     }
   }
 });
 
-ok("x* is normal with mean 500 and sd 100", () => {
+ok("the settlement y* is normal with mean 500 and sd 100", () => {
+  const ys = [];
   const xs = [];
-  for (let i = 0; i < 4000; i++) xs.push(makeCurve(`n-${i}`, DIFFICULTIES.parabola, GRAD).spec.xStar);
-  const mean = xs.reduce((a, b) => a + b) / xs.length;
-  const sd = Math.sqrt(xs.reduce((a, b) => a + (b - mean) ** 2, 0) / xs.length);
+  for (let i = 0; i < 4000; i++) {
+    const { spec } = makeCurve(`n-${i}`, DIFFICULTIES.parabola, GRAD);
+    ys.push(spec.yStar);
+    xs.push(spec.xStar);
+  }
+  const mean = ys.reduce((a, b) => a + b) / ys.length;
+  const sd = Math.sqrt(ys.reduce((a, b) => a + (b - mean) ** 2, 0) / ys.length);
   assert.ok(Math.abs(mean - 500) < 6, `mean ${mean}`);
   assert.ok(Math.abs(sd - 100) < 6, `sd ${sd}`);
-  const within1 = xs.filter((x) => Math.abs(x - 500) <= 100).length / xs.length;
+  const within1 = ys.filter((y) => Math.abs(y - 500) <= 100).length / ys.length;
   assert.ok(Math.abs(within1 - 0.683) < 0.03, `${(within1 * 100).toFixed(1)}% within one sd`);
+  for (const y of ys) assert.ok(y >= MODES.gradient.settleMin && y <= MODES.gradient.settleMax, `y* ${y} is unsettleable`);
+  // And WHERE the bottom sits is spread across the domain, not bunched up.
   for (const x of xs) assert.ok(x >= GRAD.lo && x <= GRAD.hi, `x* ${x} escaped the domain`);
+  const left = xs.filter((x) => x < (GRAD.lo + GRAD.hi) / 2).length / xs.length;
+  assert.ok(Math.abs(left - 0.5) < 0.05, `the low point favours one side: ${(left * 100).toFixed(0)}% left`);
 });
 
 ok("the published gradient is the real derivative", () => {
   for (const k of DIFFICULTY_ORDER) {
     const { spec } = makeCurve(`d-${k}`, DIFFICULTIES[k], GRAD);
-    for (const x of [5, 73, 239, 500, 682, 914, 995]) {
+    for (const x of [0.5, 7.3, 23.9, 50, 68.2, 91.4, 99.5]) {
       const fd = (fAt(spec, x + 1e-5) - fAt(spec, x - 1e-5)) / 2e-5;
       const an = dAt(spec, x);
       assert.ok(Math.abs(fd - an) < 1e-3 * (1 + Math.abs(fd)), `${k} @ ${x}: ${fd} vs ${an}`);
@@ -161,14 +171,14 @@ ok("the gradient at x* is zero (it is a genuine critical point)", () => {
   for (const k of DIFFICULTY_ORDER) {
     for (let i = 0; i < 6; i++) {
       const { spec } = makeCurve(`c-${k}-${i}`, DIFFICULTIES[k], GRAD);
-      const scale = 1 + Math.abs(dAt(spec, spec.xStar + 50));
+      const scale = 1 + Math.abs(dAt(spec, spec.xStar + 5));
       assert.ok(Math.abs(dAt(spec, spec.xStar)) < 1e-6 * scale, `${k}/${i}: f'(x*) = ${dAt(spec, spec.xStar)}`);
     }
   }
 });
 
 ok("the curve works on a domain that runs negative", () => {
-  const neg = { lo: -600, hi: 400, mean: -100, sd: 100 };
+  const neg = { lo: -600, hi: 400, yMean: 500, ySd: 100, yClamp: [20, 980], climb: [60, 700] };
   for (const k of DIFFICULTY_ORDER) {
     const { spec, diagnostics } = makeCurve(`neg-${k}`, DIFFICULTIES[k], neg);
     assert.ok(diagnostics.ok, `${k}: self-check failed on a negative domain`);
@@ -183,7 +193,8 @@ ok("the curve works on a domain that runs negative", () => {
         bx = x;
       }
     }
-    assert.ok(Math.abs(bx - spec.xStar) <= 0.1, `${k}: argmin ${bx} vs x* ${spec.xStar}`);
+    assert.ok(Math.abs(by - spec.yStar) <= 0.01, `${k}: lowest value ${by} vs y* ${spec.yStar}`);
+    assert.ok(Math.abs(bx - spec.xStar) <= 0.2, `${k}: the low point is at ${bx}, not ${spec.xStar}`);
   }
 });
 
@@ -208,17 +219,17 @@ ok("curves are deterministic in the seed", () => {
 ok("the drawn curve and the point oracle agree", () => {
   const { spec } = makeCurve("draw", DIFFICULTIES.wavy, GRAD);
   for (const [x, y] of sampleCurve(spec, 40)) assert.ok(Math.abs(fAt(spec, x) - y) < 1e-3, `sample at ${x}`);
-  const p = pointAt(spec, 424.24);
-  assert.strictEqual(p.x, 424.24);
-  assert.ok(Math.abs(p.y - fAt(spec, 424.24)) < 1e-3);
+  const p = pointAt(spec, 42.42);
+  assert.strictEqual(p.x, 42.42);
+  assert.ok(Math.abs(p.y - fAt(spec, 42.42)) < 1e-3);
 });
 
 ok("a descent step goes downhill on a parabola, from anywhere", () => {
   const { spec } = makeCurve("descent", DIFFICULTIES.parabola, GRAD);
-  for (const x0 of [120, 350, 500, 640, 880]) {
+  for (const x0 of [12, 35, 50, 64, 88]) {
     const d = dAt(spec, x0);
     // A small enough rate always decreases f; that is the whole premise.
-    const rate = 1 / (1 + Math.abs(d)) * 5;
+    const rate = 0.5 / (1 + Math.abs(d));
     const x1 = x0 - rate * d;
     if (Math.abs(x0 - spec.xStar) < 1) continue;
     assert.ok(fAt(spec, x1) < fAt(spec, x0), `descent from ${x0} did not go down`);
@@ -264,7 +275,7 @@ ok("the ladder runs far past where settlement can land, and never walls off", ()
 
 ok("negative prices trade and settle without breaking anything", () => {
   const s = market(["a", "b"], 10_000_000);
-  A(s, "a", -100, 2); // someone offers to pay you to take lots off them
+  A(s, "a", -100, 2); // someone offers to pay you to take shares off them
   const r = B(s, "b", -100, 2);
   assert.strictEqual(r.filled, 2);
   assert.strictEqual(s.last, -100);
@@ -344,7 +355,7 @@ ok("oversized and zero orders are refused", () => {
   const s = market();
   throws(() => B(s, "a", 400, 0), /size must be/);
   throws(() => B(s, "a", 400, 1.5), /size must be/);
-  throws(() => B(s, "a", 400, LIMITS.maxLotsPerOrder + 1), /size must be/);
+  throws(() => B(s, "a", 400, LIMITS.maxSharesPerOrder + 1), /size must be/);
   clean(s);
 });
 
@@ -364,7 +375,7 @@ ok("closed markets and teamless players cannot trade", () => {
 
 console.log("\nbalances");
 
-ok("a bid reserves (price - floor) x lots, an offer (ceiling - price) x lots", () => {
+ok("a bid reserves (price - floor) x shares, an offer (ceiling - price) x shares", () => {
   const s = market();
   const g = grid(s);
   B(s, "a", 250, 4);
@@ -411,7 +422,7 @@ ok("the old bankruptcy route — bidding above the ceiling — is now closed", (
   // the remaining invariant-B headroom cannot cover.
   const overpay = g.settleMax + 500;
   throws(() => B(s, "a", overpay, 5), /out of balance/);
-  const allowed = maxLotsAt(s, s.players.a, "B", overpay);
+  const allowed = maxSharesAt(s, s.players.a, "B", overpay);
   assert.ok(allowed < 5, `margin should cap the attack, allowed ${allowed}`);
 
   // Whatever the margin does allow must still leave the books clean once filled.
@@ -469,21 +480,12 @@ ok("you cannot cancel somebody else's order, and cancel-all clears only yours", 
   clean(s);
 });
 
-ok("a point and a ticket cost 5% of cash; a descent is a flat $1,000", () => {
-  const p = { cash: 10_000_000 };
-  assert.strictEqual(probeCostC(p), 500_000);
-  assert.strictEqual(ticketCostC(p), 500_000);
-  assert.strictEqual(descentCostC(p), 100_000, "a descent is $1,000");
-  // The share-priced ones shrink with the stack. The flat one does not, which
-  // is the point of it: a step stays a real decision when you are nearly broke.
-  p.cash = 1_000_000;
-  assert.strictEqual(probeCostC(p), 50_000, "the share shrinks");
-  assert.strictEqual(descentCostC(p), 100_000, "the flat fee does not");
-  assert.ok(descentCostC(p) > probeCostC(p), "so far enough down, a descent is the dearer option");
-  assert.strictEqual(probeCostC({ cash: 0 }), 0);
-  assert.strictEqual(probeCostC({ cash: 1 }), 1, "never free while you still have money");
+ok("there is exactly one price in the game, and it is flat", () => {
+  assert.strictEqual(descentCostC({ cash: 10_000_000 }), 100_000, "a step is $1,000");
+  assert.strictEqual(descentCostC({ cash: 1_000 }), 100_000, "and stays $1,000 when you are nearly broke");
   assert.strictEqual(MONEY.startCashC, 10_000_000, "$100,000 to start");
   assert.strictEqual(MONEY.descentCostC, 100_000);
+  assert.ok(!("probeCostPct" in MONEY) && !("ticketCostPct" in MONEY), "nothing else is for sale");
 });
 
 ok("spending on information is checked against BOTH invariants", () => {
@@ -542,7 +544,7 @@ ok("random storm: 60 players, 20,000 actions, invariants hold throughout", () =>
         if (mine.length) cancelOrder(s, pid, mine[Math.floor(rnd() * mine.length)].id);
       } else {
         const p = s.players[pid];
-        const cost = probeCostC(p);
+        const cost = descentCostC(p);
         if (cost <= spendableC(s, p)) {
           p.cash -= cost;
           p.spentC += cost;
@@ -554,7 +556,7 @@ ok("random storm: 60 players, 20,000 actions, invariants hold throughout", () =>
     if (i % 500 === 0) clean(s);
   }
   clean(s);
-  assert.ok(traded > 500, `expected real trading, got ${traded} lots from ${placed} orders`);
+  assert.ok(traded > 500, `expected real trading, got ${traded} shares from ${placed} orders`);
   settlesSafelyEverywhere(s, "storm");
 });
 
@@ -614,7 +616,7 @@ ok("order caps are enforced", () => {
 
 console.log("\nsettlement");
 
-ok("settlement pays lots at x* to the cent and pulls the book", () => {
+ok("settlement pays shares at the settlement value, to the cent, and pulls the book", () => {
   const s = market();
   A(s, "a", 300, 2);
   B(s, "b", 300, 2);
@@ -694,16 +696,23 @@ ok("names and double-joins are refused", () => {
   throws(() => createTeam(s, "a", "Delta", "T3", "CCCC"), /already on a team/);
 });
 
-ok("the leaderboard adds a team up but every member keeps their own number", () => {
-  const s = market(["a", "b", "c", "d"], 10_000_000);
-  A(s, "a", 300, 1);
-  B(s, "b", 300, 1);
-  settle(s, 800, tick());
-  const rows = leaderboard(s);
+ok("a team scores the AVERAGE of its members, so size does not matter", () => {
+  const four = market(["a", "b", "c", "d"], 10_000_000);
+  A(four, "a", 300, 1);
+  B(four, "b", 300, 1);
+  settle(four, 800, tick());
+  const rows = leaderboard(four);
   assert.strictEqual(rows.length, 1);
   assert.strictEqual(rows[0].size, 4);
-  assert.strictEqual(rows[0].valueC, 40_000_000, "internal trades cannot change a team total");
-  assert.ok(rows[0].members.find((m) => m.name === "B").valueC > 10_000_000);
+  assert.strictEqual(rows[0].valueC, 10_000_000, "the score is the average, and internal trades cannot move it");
+  assert.strictEqual(rows[0].totalC, 40_000_000, "the total is still reported");
+  assert.ok(rows[0].members.find((m) => m.name === "B").valueC > 10_000_000, "members keep their own number");
+
+  // A team of two that did nothing must tie a team of four that did nothing —
+  // turning up with more people is not an edge.
+  const two = market(["x", "y"], 10_000_000);
+  settle(two, 800, tick());
+  assert.strictEqual(leaderboard(two)[0].valueC, rows[0].valueC, "three players or four, same score");
 });
 
 ok("leaving is blocked while you hold risk", () => {
@@ -720,7 +729,7 @@ ok("leaving is blocked while you hold risk", () => {
 
 console.log("\nviews");
 
-ok("the book view shows your lots separately from the market's", () => {
+ok("the book view shows your shares separately from the market's", () => {
   const s = market();
   B(s, "a", 400, 3);
   B(s, "b", 400, 2);

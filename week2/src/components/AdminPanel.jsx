@@ -89,6 +89,8 @@ function Login({ onAuth }) {
 function Controls({ token, onLogout }) {
   const [info, setInfo] = useState(null);
   const [rules, setRules] = useState(null);
+  const [resetArmed, setResetArmed] = useState(false);
+  const [preload, setPreload] = useState("");
   const [busy, setBusy] = useState(null);
   const [msg, setMsg] = useState(null);
   const [err, setErr] = useState(null);
@@ -170,7 +172,11 @@ function Controls({ token, onLogout }) {
               <div className="stat">
                 <i>MODE</i>
                 <b>{round.modeName}</b>
-                <small>{round.mode === "gradient" ? round.difficultyName : "admin-resolved"}</small>
+                <small>
+                  {round.mode === "gradient"
+                    ? info?.difficulties?.[info.difficulty]?.name ?? info?.difficulty ?? "—"
+                    : "admin-resolved"}
+                </small>
               </div>
               <div className="stat">
                 <i>STATUS</i>
@@ -193,7 +199,7 @@ function Controls({ token, onLogout }) {
               </div>
               <div className="stat">
                 <i>VOLUME</i>
-                <b>{info.volume} lots</b>
+                <b>{info.volume} shares</b>
                 <small>start money {money(round.startCashC)} each</small>
               </div>
             </div>
@@ -229,49 +235,117 @@ function Controls({ token, onLogout }) {
               )}
               {info?.xStar != null && round.mode === "gradient" && (
                 <PxButton variant="ghost" small onClick={() => setReveal((r) => !r)}>
-                  {reveal ? "HIDE THE ANSWER" : "PEEK AT x*"}
+                  {reveal ? "HIDE THE ANSWER" : "PEEK AT THE ANSWER"}
                 </PxButton>
               )}
             </div>
 
             {reveal && info?.xStar != null && (
               <div className="note">
-                x* = <b style={{ fontSize: 20 }}>{num(info.xStar, 2)}</b> — do not say this out loud. Local minima on
-                this curve: {info.diagnostics?.localMinima ?? "?"} · range {num(info.diagnostics?.range ?? 0, 0)} ·
-                self-check {info.diagnostics?.ok ? "passed" : "FAILED"}.
+                It settles at <b style={{ fontSize: 20 }}>{num(info.yStar, 2)}</b> — the lowest f gets, which it
+                reaches at x = {num(info.xStar, 2)}. Do not say this out loud. False bottoms on this curve:{" "}
+                {info.diagnostics?.localMinima ?? "?"} · self-check {info.diagnostics?.ok ? "passed" : "FAILED"}.
               </div>
             )}
 
-            {/* resolution — prediction mode only */}
-            {round.mode === "prediction" && status !== "settled" && status !== "lobby" && (
+            {/* the answer — prediction mode only */}
+            {round.mode === "prediction" && status !== "settled" && (
               <>
-                <div className="field-label mt">RESOLVE THE MARKET</div>
-                <div className="row">
-                  <PxButton variant="green" disabled={busy} onClick={() => act("resolved YES (100)", () => api.post("admin/resolve", { token, value: 100 }))}>
-                    YES · 100
-                  </PxButton>
-                  <PxButton variant="red" disabled={busy} onClick={() => act("resolved NO (0)", () => api.post("admin/resolve", { token, value: 0 }))}>
-                    NO · 0
-                  </PxButton>
-                  <input
-                    type="number"
-                    min={0}
-                    max={100}
-                    step="0.01"
-                    value={resolveTo}
-                    onChange={(e) => setResolveTo(e.target.value)}
-                    style={{ maxWidth: 120 }}
-                  />
-                  <PxButton
-                    disabled={busy || resolveTo === "" || Number(resolveTo) < 0 || Number(resolveTo) > 100}
-                    onClick={() => act(`resolved at ${resolveTo}`, () => api.post("admin/resolve", { token, value: Number(resolveTo) }))}
-                  >
-                    RESOLVE HERE
-                  </PxButton>
+                <div className="field-label mt">
+                  {status === "live" ? "LOAD THE ANSWER IN ADVANCE" : "RESOLVE THE MARKET"}
                 </div>
-                <div className="hint">
-                  Whatever you pick is what every lot pays. Trading is already closed, so nobody can act on it.
-                </div>
+
+                {status === "live" ? (
+                  <>
+                    <div className="row">
+                      <PxButton
+                        variant="green"
+                        small
+                        disabled={busy}
+                        onClick={() => act("loaded YES", () => api.post("admin/preload", { token, value: 100 }))}
+                      >
+                        LOAD YES · 100
+                      </PxButton>
+                      <PxButton
+                        variant="red"
+                        small
+                        disabled={busy}
+                        onClick={() => act("loaded NO", () => api.post("admin/preload", { token, value: 0 }))}
+                      >
+                        LOAD NO · 0
+                      </PxButton>
+                      <input
+                        type="number"
+                        min={0}
+                        max={100}
+                        step="0.01"
+                        placeholder="value"
+                        value={preload}
+                        onChange={(e) => setPreload(e.target.value)}
+                        style={{ maxWidth: 110 }}
+                      />
+                      <PxButton
+                        variant="ghost"
+                        small
+                        disabled={busy || preload === ""}
+                        onClick={() => act(`loaded ${preload}`, () => api.post("admin/preload", { token, value: Number(preload) }))}
+                      >
+                        LOAD
+                      </PxButton>
+                      {info?.preset != null && (
+                        <PxButton
+                          variant="ghost"
+                          small
+                          disabled={busy}
+                          onClick={() => act("cleared the loaded answer", () => api.post("admin/preload", { token, value: null }))}
+                        >
+                          CLEAR
+                        </PxButton>
+                      )}
+                    </div>
+                    {info?.preset != null ? (
+                      <div className="good">
+                        Loaded: <b>{num(info.preset, 2)}</b>. Nothing changes until the clock runs out — the market is
+                        trading exactly as it was, and no player payload carries this. At the bell it settles here by
+                        itself.
+                      </div>
+                    ) : (
+                      <div className="hint">
+                        If you already know the answer, load it now and the bell will settle the market for you. It has
+                        no effect on trading and players cannot see it.
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <div className="row">
+                      <PxButton variant="green" disabled={busy} onClick={() => act("resolved YES (100)", () => api.post("admin/resolve", { token, value: 100 }))}>
+                        YES · 100
+                      </PxButton>
+                      <PxButton variant="red" disabled={busy} onClick={() => act("resolved NO (0)", () => api.post("admin/resolve", { token, value: 0 }))}>
+                        NO · 0
+                      </PxButton>
+                      <input
+                        type="number"
+                        min={0}
+                        max={100}
+                        step="0.01"
+                        value={resolveTo}
+                        onChange={(e) => setResolveTo(e.target.value)}
+                        style={{ maxWidth: 120 }}
+                      />
+                      <PxButton
+                        disabled={busy || resolveTo === "" || Number(resolveTo) < 0 || Number(resolveTo) > 100}
+                        onClick={() => act(`resolved at ${resolveTo}`, () => api.post("admin/resolve", { token, value: Number(resolveTo) }))}
+                      >
+                        RESOLVE HERE
+                      </PxButton>
+                    </div>
+                    <div className="hint">
+                      Whatever you pick is what every share pays. Trading is already closed, so nobody can act on it.
+                    </div>
+                  </>
+                )}
               </>
             )}
 
@@ -307,12 +381,15 @@ function Controls({ token, onLogout }) {
           <>
             <span className="field-label">THE CURVE</span>
             <div className="difficulties">
-              {(rules?.order ?? []).map((k) => (
+              {(info?.difficultyOrder ?? []).map((k) => (
                 <div key={k} className={`diff ${difficulty === k ? "on" : ""}`} onClick={() => setDifficulty(k)}>
-                  <span className="dn">{rules.difficulties[k].name}</span>
-                  <span className="db">{rules.difficulties[k].blurb}</span>
+                  <span className="dn">{info.difficulties[k].name}</span>
+                  <span className="db">{info.difficulties[k].blurb}</span>
                 </div>
               ))}
+            </div>
+            <div className="hint">
+              Players are never told which of these they are on — the names give the shape of the function away.
             </div>
           </>
         ) : (
@@ -404,10 +481,7 @@ function Controls({ token, onLogout }) {
           <tbody>
             {(info?.players ?? []).map((p) => (
               <tr key={p.id} className={info.suspicious?.some((g) => g.some((x) => x.id === p.id)) ? "flag" : ""}>
-                <td>
-                  {p.name}
-                  {p.sawAll ? " ★" : ""}
-                </td>
+                <td>{p.name}</td>
                 <td style={{ color: "var(--muted)" }}>{p.team ?? "—"}</td>
                 <td className="n">{money(p.valueC)}</td>
                 <td className="n">{p.pos}</td>
@@ -417,7 +491,7 @@ function Controls({ token, onLogout }) {
                   <button
                     className="pxbtn pxbtn--ghost pxbtn--sm"
                     disabled={busy}
-                    title={p.pos !== 0 ? "they are holding lots — they cannot be removed" : "remove this player"}
+                    title={p.pos !== 0 ? "they are holding shares — they cannot be removed" : "remove this player"}
                     onClick={() => act(`removed ${p.name}`, () => api.post("admin/kick", { token, playerId: p.id }))}
                   >
                     KICK
@@ -470,6 +544,35 @@ function Controls({ token, onLogout }) {
             </div>
           </>
         )}
+
+        <div className="row mt">
+          {resetArmed ? (
+            <>
+              <PxButton
+                variant="red"
+                disabled={busy}
+                onClick={() =>
+                  act("wiped the game", async () => {
+                    await api.post("admin/reset", { token, confirm: "RESET" });
+                    setResetArmed(false);
+                  })
+                }
+              >
+                {busy === "wiped the game" ? <Spinner text="WIPING" /> : "YES — WIPE EVERYTHING"}
+              </PxButton>
+              <PxButton variant="ghost" small onClick={() => setResetArmed(false)}>
+                CANCEL
+              </PxButton>
+              <span className="hint" style={{ margin: 0 }}>
+                This deletes the round, every player, every team and the history. Your password survives.
+              </span>
+            </>
+          ) : (
+            <PxButton variant="ghost" small onClick={() => setResetArmed(true)}>
+              RESET EVERYTHING
+            </PxButton>
+          )}
+        </div>
 
         <div className="row mt">
           <input type="password" placeholder="new admin password" value={newPw} onChange={(e) => setNewPw(e.target.value)} style={{ maxWidth: 220 }} />

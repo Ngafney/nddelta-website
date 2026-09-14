@@ -7,11 +7,11 @@
  * One account per device, so typing a second name on the same browser signs
  * you back into the first one rather than minting a rival.
  */
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { api, deviceId, fingerprint, withPlayer } from "../api.js";
 import { PixelSprite, PxButton, Spinner, DELTA, DELTA_PALETTE } from "./PixelBits.jsx";
 
-export default function Gate({ player, round, onPlayer, onTeam }) {
+export default function Gate({ player, round, limits, onPlayer, onTeam }) {
   const [step, setStep] = useState(player ? "choose" : "name");
   const [err, setErr] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -66,6 +66,7 @@ export default function Gate({ player, round, onPlayer, onTeam }) {
         {step === "create" && (
           <TeamStep
             mode="create"
+            limits={limits}
             player={player}
             busy={busy}
             setBusy={setBusy}
@@ -82,6 +83,7 @@ export default function Gate({ player, round, onPlayer, onTeam }) {
         {step === "join" && (
           <TeamStep
             mode="join"
+            limits={limits}
             player={player}
             busy={busy}
             setBusy={setBusy}
@@ -143,9 +145,19 @@ function NameStep({ busy, setBusy, err, setErr, onDone }) {
   );
 }
 
-function TeamStep({ mode, player, busy, setBusy, err, setErr, onBack, onDone }) {
+function TeamStep({ mode, player, limits, busy, setBusy, err, setErr, onBack, onDone }) {
   const [value, setValue] = useState("");
   const [made, setMade] = useState(null);
+  // The code screen holds for a few seconds. Without it the person who made
+  // the team clicks straight through and nobody else ever sees the code.
+  const hold = limits?.codeHoldSeconds ?? 6;
+  const [left, setLeft] = useState(hold);
+  useEffect(() => {
+    if (!made) return undefined;
+    setLeft(hold);
+    const t = setInterval(() => setLeft((n) => (n <= 1 ? 0 : n - 1)), 1000);
+    return () => clearInterval(t);
+  }, [made, hold]);
 
   async function go(e) {
     e.preventDefault();
@@ -175,13 +187,16 @@ function TeamStep({ mode, player, busy, setBusy, err, setErr, onBack, onDone }) 
         </div>
         <div className="codebox">{made.code}</div>
         <div className="hint" style={{ textAlign: "center" }}>
-          Read this out to your team. Up to {made.max} of you, including you. You can start trading now — they can join
-          at any time.
+          <b style={{ color: "var(--gold)" }}>Read this out to your team now.</b> Up to {made.max} of you, including
+          you. They can join at any time, but they need this code — and it is easier to say it than to find it later.
         </div>
         <div className="mt">
-          <PxButton variant="green" onClick={() => onDone(made)}>
-            TO THE FLOOR →
+          <PxButton variant="green" disabled={left > 0} onClick={() => onDone(made)}>
+            {left > 0 ? `TO THE FLOOR IN ${left}…` : "TO THE FLOOR →"}
           </PxButton>
+        </div>
+        <div className="hint" style={{ textAlign: "center" }}>
+          It stays in the top corner all round, so you can read it out again.
         </div>
       </>
     );

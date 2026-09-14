@@ -24,6 +24,13 @@ export default function Reveal({ reveal, points, leaderboard, myTeamId, onClose,
   const [phase, setPhase] = useState(0); // 0 countdown · 1 the answer · 2 podium · 3 board
   const [count, setCount] = useState(3);
 
+  // The big screen has nobody to click it, so that one alone runs on a timer.
+  useEffect(() => {
+    if (!projector || phase === 0 || phase >= 3) return undefined;
+    const t = setTimeout(() => setPhase((p) => p + 1), phase === 1 ? SPREAD_MS + HOLD_MS : 5200);
+    return () => clearTimeout(t);
+  }, [projector, phase]);
+
   useEffect(() => {
     if (phase !== 0) return undefined;
     if (count <= 0) {
@@ -34,20 +41,13 @@ export default function Reveal({ reveal, points, leaderboard, myTeamId, onClose,
     return () => clearTimeout(t);
   }, [phase, count]);
 
-  useEffect(() => {
-    if (phase !== 1) return undefined;
-    const t = setTimeout(() => setPhase(2), SPREAD_MS + HOLD_MS);
-    return () => clearTimeout(t);
-  }, [phase]);
-
-  useEffect(() => {
-    if (phase !== 2) return undefined;
-    const t = setTimeout(() => setPhase(3), 5200);
-    return () => clearTimeout(t);
-  }, [phase]);
+  // Past the countdown nothing advances on its own. A reveal that moves while
+  // somebody is still reading it is a reveal nobody actually sees, so every
+  // step from here is a click.
 
   const prediction = reveal?.mode === "prediction";
-  const settleValue = prediction ? reveal?.value : reveal?.xStar;
+  // What settles is the minimum VALUE of f, not where it occurs.
+  const settleValue = prediction ? reveal?.value : reveal?.yStar;
 
   return (
     <div className="reveal">
@@ -76,11 +76,17 @@ export default function Reveal({ reveal, points, leaderboard, myTeamId, onClose,
         {phase === 1 && (
           <div className="reveal-sub">
             <div className="reveal-stat">
-              <i>{prediction ? "RESOLVES AT" : "THE MINIMUM SITS AT"}</i>
+              <i>{prediction ? "RESOLVES AT" : "THE LOWEST f GETS"}</i>
               <b>{num(settleValue, 2)}</b>
             </div>
+            {!prediction && reveal?.xStar != null && (
+              <div className="reveal-stat">
+                <i>WHICH IT HITS AT x =</i>
+                <b style={{ color: "var(--muted)" }}>{num(reveal.xStar, 2)}</b>
+              </div>
+            )}
             <div className="reveal-stat">
-              <i>EVERY LOT PAYS</i>
+              <i>EVERY SHARE PAYS</i>
               <b>{money(reveal?.settleC ?? 0)}</b>
             </div>
           </div>
@@ -125,10 +131,10 @@ export default function Reveal({ reveal, points, leaderboard, myTeamId, onClose,
           </div>
         )}
 
-        {!projector && (
+        {!projector && phase > 0 && (
           <div style={{ marginTop: 28 }}>
-            <PxButton onClick={phase < 3 ? () => setPhase(3) : onClose}>
-              {phase < 3 ? "SKIP" : "BACK TO THE FLOOR"}
+            <PxButton variant={phase < 3 ? "gold" : "green"} onClick={phase < 3 ? () => setPhase(phase + 1) : onClose}>
+              {phase === 1 ? "NEXT — THE PODIUM →" : phase === 2 ? "NEXT — THE BOARD →" : "BACK TO THE FLOOR"}
             </PxButton>
           </div>
         )}
@@ -142,6 +148,12 @@ export default function Reveal({ reveal, points, leaderboard, myTeamId, onClose,
 function CurveSpread({ reveal, points }) {
   const ref = useRef(null);
   const start = useRef(0);
+  // The poll hands down a NEW points array every second. If the animation
+  // depended on it, the unfurl restarted every second and the curve appeared
+  // to draw itself over and over. It reads the latest points through a ref
+  // instead, and the effect below runs once per round.
+  const pointsRef = useRef(points);
+  pointsRef.current = points;
 
   // The domain only becomes public at the bell, so it is read off the revealed
   // curve rather than assumed anywhere.
@@ -162,7 +174,6 @@ function CurveSpread({ reveal, points }) {
     const canvas = ref.current;
     if (!canvas || !reveal?.curve) return undefined;
     let raf = 0;
-    start.current = performance.now();
 
     const render = (now) => {
       const h = Math.max(260, Math.min(520, Math.round(window.innerHeight * 0.46)));
@@ -173,7 +184,8 @@ function CurveSpread({ reveal, points }) {
       const map = makeMap(w, h, lo, hi, pad, bounds.lo, bounds.hi);
       drawFrame(ctx, w, h, map, pad);
 
-      const t = Math.min(1, (now - start.current) / SPREAD_MS);
+      const elapsed = now - start.current;
+      const t = Math.min(1, elapsed / SPREAD_MS);
       const ease = 1 - Math.pow(1 - t, 3);
       const left = origin - ease * Math.max(origin - bounds.lo, 0.001);
       const right = origin + ease * Math.max(bounds.hi - origin, 0.001);
@@ -211,24 +223,27 @@ function CurveSpread({ reveal, points }) {
         ctx.shadowBlur = 0;
       }
 
-      // everything the player had bought, still in place
-      for (const p of points ?? []) drawPoint(ctx, map, p, { w, h, pad });
+      // everything the player had walked to, still in place
+      for (const p of pointsRef.current ?? []) drawPoint(ctx, map, p, { w, h, pad });
 
-      // the minimum, once the unfurl has reached it
+      // the floor, once the unfurl has reached it
       if (left <= reveal.xStar && right >= reveal.xStar) {
-        const age = Math.min(1, (now - start.current - SPREAD_MS * 0.55) / 700);
+        const age = Math.min(1, (elapsed - SPREAD_MS * 0.55) / 700);
         const sx = map.x(reveal.xStar);
-        const sy = map.y(reveal.yStar);
+        const sy = map.y(reveal.yStar ?? 0);
+        // A HORIZONTAL line: the settlement is a height, so the line that
+        // matters runs across the chart at that height, not down at its x.
         ctx.strokeStyle = "#3ad07f";
         ctx.lineWidth = 2;
         ctx.setLineDash([5, 5]);
         ctx.beginPath();
-        ctx.moveTo(sx, pad.t);
-        ctx.lineTo(sx, h - pad.b);
+        ctx.moveTo(pad.l, sy);
+        ctx.lineTo(w - pad.r, sy);
         ctx.stroke();
         ctx.setLineDash([]);
 
-        const pulse = 9 + Math.sin(now / 160) * 3 + (1 - Math.max(0, age)) * 26;
+        // The ring lands and stops. A permanent pulse just reads as flicker.
+        const pulse = 9 + (1 - Math.max(0, age)) * 26;
         ctx.strokeStyle = "#3ad07f";
         ctx.lineWidth = 3;
         ctx.beginPath();
@@ -240,15 +255,30 @@ function CurveSpread({ reveal, points }) {
         ctx.fillStyle = "#3ad07f";
         ctx.font = "12px 'Press Start 2P', monospace";
         ctx.textAlign = sx > w / 2 ? "right" : "left";
-        ctx.fillText(`x* = ${reveal.xStar.toFixed(2)}`, sx + (sx > w / 2 ? -14 : 14), pad.t + 18);
+        ctx.textAlign = "left";
+        ctx.fillText(`min f = ${(reveal.yStar ?? 0).toFixed(2)}`, pad.l + 8, sy - 10);
       }
 
-      raf = requestAnimationFrame(render);
+      // Once the curve is fully out and the marker has settled, draw the last
+      // frame and stop. Nothing on this chart moves after that.
+      if (elapsed < SPREAD_MS + 1400) raf = requestAnimationFrame(render);
     };
 
+    start.current = performance.now();
     raf = requestAnimationFrame(render);
-    return () => cancelAnimationFrame(raf);
-  }, [reveal, points, origin, bounds]);
+    const onResize = () => {
+      // A resize needs one more frame, but must not restart the unfurl.
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(render);
+    };
+    window.addEventListener("resize", onResize);
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener("resize", onResize);
+    };
+    // Once per round: not per poll, and not per points array.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reveal?.roundId]);
 
   return <canvas ref={ref} className="reveal-canvas" />;
 }

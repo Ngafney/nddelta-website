@@ -1,13 +1,23 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { api, loadPlayer, savePlayer, clearPlayer, withPlayer } from "./api.js";
-import { PixelSprite, clock, money, moneyShort, num, useMedia, NARROW, DELTA, DELTA_PALETTE } from "./components/PixelBits.jsx";
+import {
+  PixelSprite,
+  PxButton,
+  clock,
+  money,
+  moneyShort,
+  num,
+  useMedia,
+  NARROW,
+  DELTA,
+  DELTA_PALETTE,
+} from "./components/PixelBits.jsx";
 import Gate from "./components/Gate.jsx";
 import Scope from "./components/Scope.jsx";
 import OrderBook from "./components/OrderBook.jsx";
-import ProbePanel from "./components/ProbePanel.jsx";
 import YouPanel from "./components/YouPanel.jsx";
 import Leaderboard from "./components/Leaderboard.jsx";
-import Toasts, { fillToast } from "./components/Toasts.jsx";
+import Toasts, { fillToasts } from "./components/Toasts.jsx";
 import Reveal from "./components/Reveal.jsx";
 import Rules from "./components/Rules.jsx";
 import AdminPanel from "./components/AdminPanel.jsx";
@@ -48,9 +58,12 @@ function Floor() {
   const [anchorX, setAnchorX] = useState(null);
   const [tab, setTab] = useState("floor");
   const [now, setNow] = useState(Date.now());
-  const [reveal, setReveal] = useState(null); // fetched curve / resolution
+  const [reveal, setReveal] = useState(null);
   const [showReveal, setShowReveal] = useState(false);
   const [limits, setLimits] = useState(null);
+  // Which round this player has actually stepped into. A new one never takes
+  // the screen out from under them — they click through to it.
+  const [entered, setEntered] = useState(null);
 
   const narrow = useMedia(NARROW);
   const sinceRef = useRef(0);
@@ -65,16 +78,17 @@ function Floor() {
   const pull = useCallback(async () => {
     try {
       if (!player) {
-        const c = await api.get("config");
-        setConfig(c);
+        setConfig(await api.get("config"));
         setErr(null);
         return;
       }
       const s = await api.get("state", { ...withPlayer(player), since: sinceRef.current });
       clockSkew.current = s.round.serverNow - Date.now();
-      for (const f of s.fills) {
-        push(fillToast(f));
-        sinceRef.current = Math.max(sinceRef.current, f.s);
+      if (s.fills.length) {
+        // One trade, one notification: a click that eats three resting orders
+        // is still one thing that happened.
+        for (const t of fillToasts(s.fills)) push(t);
+        for (const f of s.fills) sinceRef.current = Math.max(sinceRef.current, f.s);
       }
       setState(s);
       setConfig({ round: s.round });
@@ -100,13 +114,10 @@ function Floor() {
       if (stopped) return;
       await pull();
       if (stopped) return;
-      const live = document.visibilityState === "visible";
-      timer = setTimeout(loop, live ? 950 : 4000);
+      timer = setTimeout(loop, document.visibilityState === "visible" ? 950 : 4000);
     };
     loop();
-    const onVis = () => {
-      if (document.visibilityState === "visible") pull();
-    };
+    const onVis = () => document.visibilityState === "visible" && pull();
     document.addEventListener("visibilitychange", onVis);
     return () => {
       stopped = true;
@@ -120,9 +131,11 @@ function Floor() {
     return () => clearInterval(t);
   }, []);
 
-  // The caps the buy panel needs to draw its sliders. Static for the round.
   useEffect(() => {
-    api.get("rules").then((r) => setLimits(r.limits)).catch(() => {});
+    api
+      .get("rules")
+      .then((r) => setLimits(r.limits))
+      .catch(() => {});
   }, []);
 
   const round = state?.round ?? config?.round ?? null;
@@ -132,14 +145,32 @@ function Floor() {
   const settled = round?.status === "settled";
   const msLeft = round?.endsAt == null ? null : round.endsAt - (now + clockSkew.current);
 
+  /* ── rounds coming and going ────────────────────────────────────────── */
+
+  // First round we ever see is adopted silently; after that, a new round waits
+  // behind a click so nobody is yanked out of a reveal they are still reading.
+  useEffect(() => {
+    if (!round?.roundId) return;
+    if (entered === null) setEntered(round.roundId);
+  }, [round?.roundId, entered]);
+
+  const newRoundWaiting = round?.roundId && entered && round.roundId !== entered;
+
+  const enterRound = () => {
+    setEntered(round.roundId);
+    setAnchorX(null);
+    sinceRef.current = 0;
+    setReveal(null);
+    setShowReveal(false);
+    setTab("floor");
+  };
+
   /* ── the reveal ─────────────────────────────────────────────────────── */
 
-  // Once the round is settled, fetch the answer and play it — exactly once per
-  // round, per browser.
   useEffect(() => {
-    if (!settled || !round?.roundId) return;
+    if (!settled || !round?.roundId || newRoundWaiting) return;
     const key = `${round.roundId}:settled`;
-    if (reveal?.roundId === round.roundId && reveal.settleC != null) {
+    if (reveal?.roundId === round.roundId) {
       if (!shownRef.current.has(key)) {
         markShown(shownRef.current, key);
         setShowReveal(true);
@@ -147,40 +178,16 @@ function Floor() {
       return;
     }
     api
-      .get("reveal", player ? withPlayer(player) : undefined)
-      .then((r) => setReveal(r))
+      .get("reveal")
+      .then(setReveal)
       .catch(() => {});
-  }, [settled, round?.roundId, reveal, player]);
+  }, [settled, round?.roundId, reveal, newRoundWaiting]);
 
-  // The 1-in-20 winner sees the whole curve immediately, inline, no theater.
   useEffect(() => {
-    if (!me?.sawAll || settled) return;
-    if (reveal?.roundId === round?.roundId) return;
-    api
-      .get("reveal", withPlayer(player))
-      .then((r) => {
-        setReveal(r);
-        push({ key: `saw-${round.roundId}`, kind: "win", title: "★ THE WHOLE CURVE", body: "Your ticket came in. It is on your chart.", ttl: 9000 });
-      })
-      .catch(() => {});
-  }, [me?.sawAll, settled, round?.roundId, reveal, player, push]);
-
-  // A new round hands out new points, so the old anchor is meaningless. Reset
-  // it with the round, and otherwise follow the most recent point you bought.
-  const roundRef = useRef(null);
-  useEffect(() => {
-    if (roundRef.current !== round?.roundId) {
-      roundRef.current = round?.roundId ?? null;
-      setAnchorX(null);
-      sinceRef.current = 0;
-      setReveal(null);
-      setShowReveal(false);
-      return;
-    }
     if (me?.points?.length && !me.points.some((p) => p.x === anchorX)) {
       setAnchorX(me.points[me.points.length - 1].x);
     }
-  }, [round?.roundId, me?.points, anchorX]);
+  }, [me?.points, anchorX]);
 
   /* ── actions ────────────────────────────────────────────────────────── */
 
@@ -207,17 +214,10 @@ function Floor() {
     return act(
       "order",
       async () => {
-        const r = await api.post("order", withPlayer(player, { side, px, qty: size }));
-        if (r.filled) {
-          // the fill toast arrives from the poll; this is the instant echo
-          push({
-            key: `x-${Date.now()}`,
-            kind: side,
-            title: side === "B" ? "▲ CROSSED" : "▼ CROSSED",
-            body: `${r.filled} lot${r.filled > 1 ? "s" : ""} traded`,
-            ttl: 3000,
-          });
-        }
+        // No optimistic toast here. The poll that follows carries the real
+        // fills and announces them once; echoing it locally was the second
+        // notification everybody was seeing.
+        await api.post("order", withPlayer(player, { side, px, qty: size }));
       },
       `${side}${px}`
     );
@@ -226,22 +226,6 @@ function Floor() {
   const cancelLevel = (side, px) => act("cancel", () => api.post("cancel", withPlayer(player, { side, px })));
   const cancelOne = (orderId) => act("cancel", () => api.post("cancel", withPlayer(player, { orderId })));
   const cancelAll = () => act("cancel", () => api.post("cancel", withPlayer(player, { all: true })));
-
-  const probe = (anchor, offset) =>
-    act(
-      "probe",
-      async () => {
-        const r = await api.post("probe", withPlayer(player, { anchorX: anchor, offset }));
-        setAnchorX(r.point.x);
-        push({
-          key: `p-${r.point.x}-${Date.now()}`,
-          kind: "win",
-          title: "◎ NEW POINT",
-          body: `x = ${num(r.point.x, 2)} · f = ${num(r.point.y, 2)} · slope ${num(r.point.d, 3)}`,
-        });
-      },
-      "probe"
-    );
 
   const descend = (anchor, lr) =>
     act(
@@ -253,22 +237,10 @@ function Floor() {
           key: `d-${r.point.x}-${Date.now()}`,
           kind: "win",
           title: "↓ ONE STEP DOWN",
-          body: `${r.step > 0 ? "+" : ""}${num(r.step, 2)} → x = ${num(r.point.x, 2)} · slope ${num(r.point.d, 3)}`,
+          body: `x = ${num(r.point.x, 2)} · f = ${num(r.point.y, 2)}`,
         });
       },
       "descend"
-    );
-
-  const ticket = () =>
-    act(
-      "ticket",
-      async () => {
-        const r = await api.post("ticket", withPlayer(player));
-        if (!r.won) {
-          push({ key: `t-${Date.now()}`, kind: "bad", title: "✕ NO LUCK", body: `That ticket missed. 1 in ${r.odds}.`, ttl: 4000 });
-        }
-      },
-      "ticket"
     );
 
   /* ── gates ──────────────────────────────────────────────────────────── */
@@ -290,6 +262,7 @@ function Floor() {
       <Gate
         player={player}
         round={round}
+        limits={limits}
         onPlayer={(p) => {
           savePlayer(p);
           setPlayer(p);
@@ -307,8 +280,32 @@ function Floor() {
     );
   }
 
+  // A fresh round is up. Nothing changes on screen until they say so.
+  if (newRoundWaiting) {
+    return (
+      <Shell>
+        <div style={{ textAlign: "center" }}>
+          <div className="dead-note" style={{ padding: "30px 20px 10px" }}>
+            A NEW ROUND IS UP
+            <br />
+            <span style={{ color: "var(--dim)", fontSize: 9 }}>
+              {round.status === "lobby" ? "NOT OPEN YET" : "ALREADY TRADING"}
+            </span>
+          </div>
+          <div className="hint" style={{ marginBottom: 18 }}>
+            Fresh money, a fresh curve, and your team intact. Take your time — the last board is still behind this.
+          </div>
+          <PxButton variant="green" onClick={enterRound}>
+            NEXT →
+          </PxButton>
+        </div>
+      </Shell>
+    );
+  }
+
   const mark = state.market.mark;
   const timerClass = msLeft == null ? "" : msLeft <= 0 ? "dead" : msLeft < 60_000 ? "warn" : "";
+  const pnl = me.valueC - me.startC;
 
   return (
     <>
@@ -318,9 +315,7 @@ function Floor() {
             <PixelSprite grid={DELTA} palette={DELTA_PALETTE} scale={3} />
             <div>
               <div className="title-main">{round.mode === "prediction" ? "DELTA MARKETS" : "GRADIENT TRADING"}</div>
-              <div className="title-sub">
-                WEEK 2 · {round.mode === "prediction" ? "PREDICTION" : (round.difficultyName ?? "").toUpperCase()}
-              </div>
+              <div className="title-sub">WEEK 2 · {round.mode === "prediction" ? "PREDICTION" : "FIND THE FLOOR"}</div>
             </div>
           </div>
           <div className="header-right">
@@ -330,13 +325,21 @@ function Floor() {
                 {team.name}
               </div>
             )}
-            {team && live && (
+            {team && round.status !== "settled" && (
               <div className="badge badge--code" title="read this out to add a team-mate">
                 {team.code}
               </div>
             )}
             <div className={`clockbox ${timerClass}`}>
-              <i>{round.status === "settled" ? "SETTLED" : round.status === "ended" ? "CLOSED" : round.status === "lobby" ? "PRE-OPEN" : "TIME"}</i>
+              <i>
+                {round.status === "settled"
+                  ? "SETTLED"
+                  : round.status === "ended"
+                    ? "CLOSED"
+                    : round.status === "lobby"
+                      ? "PRE-OPEN"
+                      : "TIME"}
+              </i>
               <b>{msLeft == null ? "—:—" : clock(msLeft)}</b>
             </div>
           </div>
@@ -348,12 +351,10 @@ function Floor() {
             {round.players === 1 ? "" : "s"} across <b>{round.teams}</b> team{round.teams === 1 ? "" : "s"} so far.
           </div>
         )}
-        {round.status === "ended" && (
-          <div className="banner red">Trading is closed. Waiting for the market to be resolved…</div>
-        )}
+        {round.status === "ended" && <div className="banner red">Trading is closed. Waiting on the result…</div>}
         {settled && (
           <div className="banner">
-            Settled at <b>{num(round.xStar, 2)}</b> — every lot paid {money(round.settleC)}.{" "}
+            Settled at <b>{num(round.xStar, 2)}</b> — every share paid {money(round.settleC)}.{" "}
             <button className="pxbtn pxbtn--sm pxbtn--ghost" style={{ marginLeft: 8 }} onClick={() => setShowReveal(true)}>
               REPLAY
             </button>
@@ -368,14 +369,13 @@ function Floor() {
           </div>
         )}
 
-        {/* On a phone the three numbers that matter follow you down the page. */}
         <div className="mobilebar">
           <div>
             <i>CASH</i>
             <b>{moneyShort(me.cashC)}</b>
           </div>
           <div>
-            <i>POSITION</i>
+            <i>SHARES</i>
             <b className={me.pos > 0 ? "long" : me.pos < 0 ? "short" : ""}>
               {me.pos > 0 ? "+" : ""}
               {me.pos}
@@ -383,9 +383,7 @@ function Floor() {
           </div>
           <div>
             <i>{settled ? "FINAL" : "P&L"}</i>
-            <b className={me.valueC - me.startC > 0 ? "up" : me.valueC - me.startC < 0 ? "down" : ""}>
-              {money(me.valueC - me.startC, { sign: true })}
-            </b>
+            <b className={pnl > 0 ? "up" : pnl < 0 ? "down" : ""}>{money(pnl, { sign: true })}</b>
           </div>
         </div>
 
@@ -409,19 +407,23 @@ function Floor() {
               {round.hasCurve && (
                 <div className="panel">
                   <div className="panel-title">
-                    YOUR VIEW OF f
+                    WHAT YOU KNOW
                     <span className="right">
-                      {me.points.length} point{me.points.length === 1 ? "" : "s"} owned
-                      {me.sawAll ? " · full curve" : ""}
+                      {me.points.length} point{me.points.length === 1 ? "" : "s"} walked
                     </span>
                   </div>
                   <Scope
                     points={me.points}
                     activeX={anchorX}
                     onPick={setAnchorX}
-                    height={narrow ? 210 : 270}
+                    height={narrow ? 230 : 300}
                     revealCurve={reveal?.curve ?? null}
-                    xStar={settled || me.sawAll ? reveal?.xStar ?? null : null}
+                    yStar={settled ? reveal?.yStar ?? null : null}
+                    me={me}
+                    onDescend={live ? descend : null}
+                    busy={busy}
+                    disabled={!live}
+                    limits={limits}
                   />
                 </div>
               )}
@@ -430,12 +432,13 @@ function Floor() {
                 <div className="panel-title">
                   ORDER BOOK
                   <span className="right">
-                    {state.market.volume} lots traded · ticks of {round.tick}
+                    {state.market.volume} shares traded · ticks of {round.tick}
                   </span>
                 </div>
                 <OrderBook
                   book={state.market}
                   last={state.market.last}
+                  me={me}
                   center={round.center}
                   tick={round.tick}
                   mine={me.orders}
@@ -451,28 +454,7 @@ function Floor() {
             </div>
 
             <div className="floor-side">
-              <YouPanel
-                me={me}
-                team={team}
-                mark={mark}
-                settled={settled}
-                onCancel={cancelOne}
-                onCancelAll={cancelAll}
-              />
-
-              {round.hasCurve && (
-                <ProbePanel
-                  me={me}
-                  anchorX={anchorX}
-                  onAnchor={setAnchorX}
-                  onProbe={probe}
-                  onDescend={descend}
-                  onTicket={ticket}
-                  busy={busy}
-                  disabled={!live}
-                  limits={limits}
-                />
-              )}
+              <YouPanel me={me} team={team} mark={mark} settled={settled} onCancel={cancelOne} onCancelAll={cancelAll} />
 
               <div className="panel panel--tight">
                 <div className="panel-title">TAPE</div>
@@ -482,7 +464,7 @@ function Floor() {
                     <div key={t.s} className={`tape-row ${t.aggr}`}>
                       <span className="p">{t.px}</span>
                       <span className="q">
-                        {t.qty} lot{t.qty > 1 ? "s" : ""}
+                        {t.qty} share{t.qty > 1 ? "s" : ""}
                       </span>
                       <span className="t">{new Date(t.ts).toLocaleTimeString([], { hour12: false })}</span>
                     </div>

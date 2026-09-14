@@ -1,30 +1,33 @@
 /**
- * The scope: everything this player knows about the curve, and nothing else.
+ * The scope: everything this player knows about the curve, and the one control
+ * that changes it — taking a step downhill — sitting directly underneath, so a
+ * step is chosen while looking at the thing being stepped on.
  *
- * BOTH axes are fitted to the points you have actually bought. That is the
- * whole design constraint: the chart must not quietly hand over the domain or
- * the range by drawing axes that span them, because a player who can see where
- * the x axis stops can see roughly where the minimum has to be. So the window
- * is your own points plus padding, it moves as you buy more, and it carries no
- * marker for anything you have not paid for.
+ * BOTH axes are fitted to the points the player has actually walked to. That is
+ * the design constraint: the chart must not quietly hand over the domain or the
+ * range by drawing axes that span them, because anyone who can see where the
+ * axes stop can see roughly where the answer has to be. So the window is their
+ * own points plus padding, it moves as they step, and it carries no marker for
+ * anything they have not paid for.
  *
- * Each point carries its exact tangent, drawn as a real tangent line in screen
- * space with an arrowhead, plus the number.
+ * The vertical axis is the one that matters: it is the same scale as the price
+ * ladder, because the contract settles on min f. The lowest height seen so far
+ * is drawn across the chart, since that line is an upper bound on the
+ * settlement — the single most useful thing a player owns.
+ *
+ * The arrow on each point runs DOWNHILL, along −f'(x): the direction a step
+ * would actually take you. The number printed beside it is the gradient itself.
  */
-import React, { useEffect, useRef } from "react";
-import { num } from "./PixelBits.jsx";
+import React, { useEffect, useRef, useState } from "react";
+import { PxButton, Spinner, money, num } from "./PixelBits.jsx";
 
 const COL = {
   grid: "#132441",
-  gridStrong: "#1d3760",
   ink: "#e8eefb",
   muted: "#5b6f96",
   gold: "#f5c542",
-  goldDim: "#7a5c00",
   blue: "#60a5fa",
   green: "#3ad07f",
-  red: "#f8717a",
-  purple: "#a78bfa",
 };
 
 /** Fit the drawing box to the device pixel ratio so nothing looks fuzzy. */
@@ -56,21 +59,7 @@ export function makeMap(w, h, lo, hi, pad, x0 = 0, x1 = 100) {
   };
 }
 
-/** The horizontal window: the points you own, padded, never degenerate. */
-export function xWindowFor(points, fallbackHalfWidth = 120) {
-  if (!points.length) return { x0: -fallbackHalfWidth, x1: fallbackHalfWidth };
-  let lo = Math.min(...points.map((p) => p.x));
-  let hi = Math.max(...points.map((p) => p.x));
-  if (hi - lo < fallbackHalfWidth) {
-    const mid = (hi + lo) / 2;
-    lo = mid - fallbackHalfWidth / 2;
-    hi = mid + fallbackHalfWidth / 2;
-  }
-  const pad = (hi - lo) * 0.16;
-  return { x0: lo - pad, x1: hi + pad };
-}
-
-/** The vertical window: the points you own, padded, never degenerate. */
+/** The vertical window: the values you own, padded, never degenerate. */
 export function windowFor(values, minSpan = 1) {
   if (!values.length) return { lo: -1, hi: 1 };
   let lo = Math.min(...values);
@@ -84,48 +73,18 @@ export function windowFor(values, minSpan = 1) {
   return { lo: lo - pad, hi: hi + pad };
 }
 
-export function drawFrame(ctx, w, h, map, pad, { yLabels = true } = {}) {
-  ctx.clearRect(0, 0, w, h);
-
-  // Vertical grid on a round step chosen for the window we are actually
-  // showing. Nothing here knows or implies where the domain ends.
-  ctx.lineWidth = 1;
-  ctx.font = "11px Consolas, ui-monospace, monospace";
-  ctx.textAlign = "center";
-  const step = niceStep((map.x1 - map.x0) / 8);
-  const start = Math.ceil(map.x0 / step) * step;
-  for (let t = start; t <= map.x1; t += step) {
-    const x = map.x(t);
-    ctx.strokeStyle = COL.grid;
-    ctx.beginPath();
-    ctx.moveTo(Math.round(x) + 0.5, pad.t);
-    ctx.lineTo(Math.round(x) + 0.5, h - pad.b);
-    ctx.stroke();
-    ctx.fillStyle = "#a9bcdd";
-    ctx.fillText(shortNum(t), x, h - pad.b + 16);
+/** The horizontal window: the points you own, padded, never degenerate. */
+export function xWindowFor(points, fallbackWidth = 12) {
+  if (!points.length) return { x0: -fallbackWidth, x1: fallbackWidth };
+  let lo = Math.min(...points.map((p) => p.x));
+  let hi = Math.max(...points.map((p) => p.x));
+  if (hi - lo < fallbackWidth) {
+    const mid = (hi + lo) / 2;
+    lo = mid - fallbackWidth / 2;
+    hi = mid + fallbackWidth / 2;
   }
-
-  // horizontal grid
-  ctx.textAlign = "right";
-  for (let i = 0; i <= 4; i++) {
-    const v = map.lo + ((map.hi - map.lo) * i) / 4;
-    const y = Math.round(map.y(v)) + 0.5;
-    ctx.strokeStyle = COL.grid;
-    ctx.beginPath();
-    ctx.moveTo(pad.l, y);
-    ctx.lineTo(w - pad.r, y);
-    ctx.stroke();
-    if (yLabels) {
-      ctx.fillStyle = COL.muted;
-      ctx.fillText(shortNum(v), pad.l - 6, y + 4);
-    }
-  }
-
-  // the axis label
-  ctx.textAlign = "left";
-  ctx.fillStyle = COL.muted;
-  ctx.font = "10px 'Press Start 2P', monospace";
-  ctx.fillText("x", w - pad.r - 8, h - pad.b + 17);
+  const pad = (hi - lo) * 0.16;
+  return { x0: lo - pad, x1: hi + pad };
 }
 
 /** 1, 2, 2.5 or 5 times a power of ten — whichever is closest below `raw`. */
@@ -143,56 +102,92 @@ function shortNum(v) {
   return v.toFixed(1);
 }
 
-/** A point with its true tangent, arrowed. */
+export function drawFrame(ctx, w, h, map, pad, { yLabels = true } = {}) {
+  ctx.clearRect(0, 0, w, h);
+
+  // Vertical grid on a round step chosen for the window actually on screen.
+  // Nothing here knows or implies where the domain ends.
+  ctx.lineWidth = 1;
+  ctx.font = "11px Consolas, ui-monospace, monospace";
+  ctx.textAlign = "center";
+  const step = niceStep((map.x1 - map.x0) / 8);
+  const start = Math.ceil(map.x0 / step) * step;
+  for (let t = start; t <= map.x1; t += step) {
+    const x = map.x(t);
+    ctx.strokeStyle = COL.grid;
+    ctx.beginPath();
+    ctx.moveTo(Math.round(x) + 0.5, pad.t);
+    ctx.lineTo(Math.round(x) + 0.5, h - pad.b);
+    ctx.stroke();
+    ctx.fillStyle = "#a9bcdd";
+    ctx.fillText(shortNum(t), x, h - pad.b + 16);
+  }
+
+  // Horizontal grid. These are PRICES — the same scale as the ladder.
+  ctx.textAlign = "right";
+  for (let i = 0; i <= 4; i++) {
+    const v = map.lo + ((map.hi - map.lo) * i) / 4;
+    const y = Math.round(map.y(v)) + 0.5;
+    ctx.strokeStyle = COL.grid;
+    ctx.beginPath();
+    ctx.moveTo(pad.l, y);
+    ctx.lineTo(w - pad.r, y);
+    ctx.stroke();
+    if (yLabels) {
+      ctx.fillStyle = COL.muted;
+      ctx.fillText(shortNum(v), pad.l - 6, y + 4);
+    }
+  }
+
+  ctx.textAlign = "left";
+  ctx.fillStyle = COL.muted;
+  ctx.font = "10px 'Press Start 2P', monospace";
+  ctx.fillText("x", w - pad.r - 8, h - pad.b + 17);
+}
+
+/** A point with its DOWNHILL arrow: along −f'(x), the way a step would go. */
 export function drawPoint(ctx, map, pt, { active = false, w, h, pad } = {}) {
   const px = map.x(pt.x);
   const py = map.y(pt.y);
 
-  // The tangent in SCREEN space: dy/dpx = -(f'(x) * yScale) / xScale.
-  const perX = (w - pad.l - pad.r) / (map.x1 - map.x0 || 1); // screen px per unit of x
-  const perY = (h - pad.t - pad.b) / (map.hi - map.lo || 1); // screen px per unit of f
+  // The tangent in SCREEN space, then walked along −f' so the arrow is the
+  // direction of travel rather than the direction of the gradient.
+  const perX = (w - pad.l - pad.r) / (map.x1 - map.x0 || 1);
+  const perY = (h - pad.t - pad.b) / (map.hi - map.lo || 1);
   const slopeScreen = (-pt.d * perY) / perX;
-  const len = active ? 74 : 44;
+  const dirX = pt.d > 0 ? -1 : pt.d < 0 ? 1 : 0; // −f' in x
+  const len = active ? 76 : 46;
   const norm = Math.hypot(1, slopeScreen) || 1;
-  const ux = 1 / norm;
-  const uy = slopeScreen / norm;
+  const ux = (dirX || 1) / norm;
+  const uy = (slopeScreen * (dirX || 1)) / norm;
 
+  // the tangent line, drawn both ways so the slope itself still reads
   ctx.lineWidth = active ? 3 : 2;
   ctx.strokeStyle = active ? COL.gold : "#7f8db0";
   ctx.beginPath();
-  ctx.moveTo(px - ux * len * 0.55, py - uy * len * 0.55);
+  ctx.moveTo(px - ux * len * 0.5, py - uy * len * 0.5);
   ctx.lineTo(px + ux * len, py + uy * len);
   ctx.stroke();
 
-  // arrowhead on the +x end — the direction of the gradient vector (1, f')
-  const hx = px + ux * len;
-  const hy = py + uy * len;
-  const a = Math.atan2(uy, ux);
-  const hs = active ? 11 : 8;
-  ctx.fillStyle = active ? COL.gold : "#7f8db0";
-  ctx.beginPath();
-  ctx.moveTo(hx, hy);
-  ctx.lineTo(hx - hs * Math.cos(a - 0.42), hy - hs * Math.sin(a - 0.42));
-  ctx.lineTo(hx - hs * Math.cos(a + 0.42), hy - hs * Math.sin(a + 0.42));
-  ctx.closePath();
-  ctx.fill();
+  if (dirX !== 0) {
+    const hx = px + ux * len;
+    const hy = py + uy * len;
+    const a = Math.atan2(uy, ux);
+    const hs = active ? 12 : 8;
+    ctx.fillStyle = active ? COL.green : "#7f8db0";
+    ctx.beginPath();
+    ctx.moveTo(hx, hy);
+    ctx.lineTo(hx - hs * Math.cos(a - 0.42), hy - hs * Math.sin(a - 0.42));
+    ctx.lineTo(hx - hs * Math.cos(a + 0.42), hy - hs * Math.sin(a + 0.42));
+    ctx.closePath();
+    ctx.fill();
+  }
 
-  // the point itself, drawn as a pixel square
   const s = active ? 5 : 3.5;
   ctx.fillStyle = "#060d1c";
   ctx.fillRect(px - s - 2, py - s - 2, (s + 2) * 2, (s + 2) * 2);
   ctx.fillStyle = active ? COL.gold : COL.blue;
   ctx.fillRect(px - s, py - s, s * 2, s * 2);
-
-  // a dropped line to the axis so the x is readable at a glance
-  ctx.strokeStyle = active ? "#f5c54255" : "#60a5fa33";
-  ctx.setLineDash([3, 4]);
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.moveTo(px, py + s);
-  ctx.lineTo(px, h - pad.b);
-  ctx.stroke();
-  ctx.setLineDash([]);
 
   if (active) {
     ctx.fillStyle = COL.gold;
@@ -202,18 +197,47 @@ export function drawPoint(ctx, map, pt, { active = false, w, h, pad } = {}) {
   }
 }
 
-export default function Scope({ points, activeX, onPick, height = 270, revealCurve = null, xStar = null }) {
+/** The lowest height seen so far — an upper bound on the settlement. */
+function drawFloor(ctx, map, w, pad, best) {
+  const y = map.y(best);
+  ctx.strokeStyle = "#3ad07f88";
+  ctx.lineWidth = 2;
+  ctx.setLineDash([6, 5]);
+  ctx.beginPath();
+  ctx.moveTo(pad.l, y);
+  ctx.lineTo(w - pad.r, y);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = COL.green;
+  ctx.font = "10px Consolas, ui-monospace, monospace";
+  ctx.textAlign = "left";
+  ctx.fillText(`lowest seen ${best.toFixed(2)}`, pad.l + 6, y - 6);
+}
+
+export default function Scope({
+  points,
+  activeX,
+  onPick,
+  height = 300,
+  revealCurve = null,
+  yStar = null,
+  // the step control, built into the same panel
+  me,
+  onDescend,
+  busy,
+  disabled,
+  limits,
+}) {
   const ref = useRef(null);
+  const [lrExp, setLrExp] = useState(-1);
 
   useEffect(() => {
     const canvas = ref.current;
-    if (!canvas) return;
+    if (!canvas) return undefined;
 
     const draw = () => {
       const { ctx, w, h } = fitCanvas(canvas, height);
-      const pad = { l: 52, r: 14, t: 18, b: 24 };
-      // Once the curve is open to you the whole thing is fair game; until then
-      // the window is strictly your own points.
+      const pad = { l: 56, r: 14, t: 18, b: 26 };
       const ys = points.map((p) => p.y);
       let { x0, x1 } = xWindowFor(points);
       if (revealCurve) {
@@ -231,16 +255,9 @@ export default function Scope({ points, activeX, onPick, height = 270, revealCur
         ctx.beginPath();
         revealCurve.forEach(([x, y], i) => (i ? ctx.lineTo(map.x(x), map.y(y)) : ctx.moveTo(map.x(x), map.y(y))));
         ctx.stroke();
-        if (xStar != null) {
-          const sx = map.x(xStar);
-          ctx.strokeStyle = COL.green;
-          ctx.setLineDash([4, 4]);
-          ctx.beginPath();
-          ctx.moveTo(sx, pad.t);
-          ctx.lineTo(sx, h - pad.b);
-          ctx.stroke();
-          ctx.setLineDash([]);
-        }
+        if (yStar != null) drawFloor(ctx, map, w, pad, yStar);
+      } else if (points.length) {
+        drawFloor(ctx, map, w, pad, Math.min(...points.map((p) => p.y)));
       }
 
       for (const p of points) if (p.x !== activeX) drawPoint(ctx, map, p, { w, h, pad });
@@ -252,58 +269,169 @@ export default function Scope({ points, activeX, onPick, height = 270, revealCur
     const ro = new ResizeObserver(draw);
     ro.observe(canvas);
     return () => ro.disconnect();
-  }, [points, activeX, height, revealCurve, xStar]);
+  }, [points, activeX, height, revealCurve, yStar]);
 
   const active = points.find((p) => p.x === activeX) ?? points[points.length - 1] ?? null;
-  // "left"/"right", never "toward 0" — the ends of the domain are not ours to
-  // mention.
-  const dir = !active ? null : active.d > 0 ? "left" : active.d < 0 ? "right" : "here";
+  const best = points.length ? Math.min(...points.map((p) => p.y)) : null;
+
+  const maxStep = limits?.maxStep ?? 25;
+  const [lrMin, lrHardMax] = limits?.learningRate ?? [0.0001, 1000];
+  // The top of the slider IS the biggest legal step, rather than a place you
+  // can drag to and then be told off. It moves with the slope you are standing
+  // on, so the far right always means "as far as one step can take me".
+  const slope = Math.abs(active?.d ?? 0);
+  const lrMax = slope > 0 ? clamp(maxStep / slope, lrMin, lrHardMax) : lrHardMax;
+  const lr = clamp(Math.pow(10, lrExp), lrMin, lrMax);
+  const step = active ? -lr * active.d : 0;
+  const target = active ? round2(active.x + step) : null;
+  const noMove = active ? points.some((p) => Math.abs(p.x - target) < 0.005) : true;
+  const cost = me?.descentCostC ?? 0;
+  const broke = cost > (me?.spendableC ?? 0);
 
   return (
     <div className="scope">
       <canvas ref={ref} className="scope-canvas" />
+
       {!points.length ? (
         <div className="scope-empty">waiting for your opening point…</div>
       ) : (
         <>
           <div className="scope-readout">
             <div className="readout-cell">
-              <i>YOUR X</i>
+              <i>YOUR x</i>
               <b style={{ color: "var(--gold)" }}>{num(active.x, 2)}</b>
             </div>
             <div className="readout-cell">
-              <i>f(x)</i>
-              <b>{num(active.y, 3)}</b>
+              <i>HEIGHT f(x)</i>
+              <b>{num(active.y, 2)}</b>
             </div>
             <div className={`readout-cell ${active.d > 0 ? "down" : active.d < 0 ? "up" : "flat"}`}>
               <i>GRADIENT f'(x)</i>
               <b>
                 {active.d > 0 ? "+" : ""}
-                {num(active.d, 4)}
+                {num(active.d, 3)}
               </b>
             </div>
             <div className="readout-cell slope-arrow">
-              <i>DOWNHILL</i>
-              <b style={{ color: dir === "here" ? "var(--green)" : "var(--ink)" }}>
-                {dir === "left" ? "◀ to the left" : dir === "right" ? "to the right ▶" : "— you are flat"}
-              </b>
+              <i>LOWEST SEEN</i>
+              <b style={{ color: "var(--bid)" }}>{num(best, 2)}</b>
             </div>
           </div>
+
+          <div className="floor-note">
+            The answer is at or below <b>{num(best, 2)}</b> — that is your edge. Walk downhill to find out how far
+            below it goes.
+          </div>
+
           {points.length > 1 && (
             <div className="pointchips">
               {points.map((p) => (
-                <button key={p.x} className={`chip ${p.x === activeX ? "on" : ""}`} onClick={() => onPick?.(p.x)}>
-                  x={num(p.x, 2)}
-                  <small>
-                    {p.d > 0 ? "+" : ""}
-                    {num(p.d, 2)}
-                  </small>
+                <button
+                  key={p.x}
+                  className={`chip ${p.x === active.x ? "on" : ""} ${p.y === best ? "low" : ""}`}
+                  onClick={() => onPick?.(p.x)}
+                  title={`f(${num(p.x, 2)}) = ${num(p.y, 2)}`}
+                >
+                  {num(p.y, 1)}
+                  <small>x={num(p.x, 1)}</small>
                 </button>
               ))}
+            </div>
+          )}
+
+          {onDescend && (
+            <div className="stepbox">
+              <div className="stepbox-head">
+                <span>
+                  TAKE A STEP DOWNHILL · <b>{money(cost)}</b>
+                </span>
+                <code>x ← x − rate × f'(x)</code>
+              </div>
+
+              <div className="steprow">
+                <div className="stepdial">
+                  <span className="field-label">LEARNING RATE</span>
+                  <div className="probe-offset">{fmtRate(lr)}</div>
+                  <input
+                    type="range"
+                    min={Math.log10(lrMin)}
+                    max={Math.log10(lrMax)}
+                    step={0.001}
+                    value={clamp(lrExp, Math.log10(lrMin), Math.log10(lrMax))}
+                    onChange={(e) => setLrExp(Number(e.target.value))}
+                    aria-label="learning rate"
+                  />
+                  <div className="steprange">
+                    <span>creep</span>
+                    <span>max step · {maxStep}</span>
+                  </div>
+                  <div className="nudge">
+                    {[-1, -0.25, 0.25, 1].map((d) => (
+                      <button
+                        key={d}
+                        onClick={() => setLrExp((v) => clamp(round2(v + d), Math.log10(lrMin), Math.log10(lrMax)))}
+                      >
+                        {d > 0 ? `+${d}` : d}
+                      </button>
+                    ))}
+                    <button title="a third of the biggest step you could take" onClick={() => setLrExp(Math.log10(lrMax * 0.3))}>
+                      1/3
+                    </button>
+                    <button title="the biggest step there is" onClick={() => setLrExp(Math.log10(lrMax))}>
+                      max
+                    </button>
+                  </div>
+                </div>
+
+                <div className="steppreview">
+                  <span className="field-label">THE STEP</span>
+                  <div className={`stepsize ${step < 0 ? "left" : step > 0 ? "right" : ""}`}>
+                    {step > 0 ? "+" : ""}
+                    {num(step, 2)}
+                  </div>
+                  <div className="probe-target">
+                    lands on <b>x = {num(target, 2)}</b>
+                  </div>
+                  <PxButton
+                    variant="green"
+                    style={{ width: "100%", marginTop: 10 }}
+                    disabled={busy || disabled || noMove || broke || active.d === 0}
+                    onClick={() => onDescend(active.x, lr)}
+                  >
+                    {busy === "descend" ? (
+                      <Spinner text="STEPPING" />
+                    ) : active.d === 0 ? (
+                      "SLOPE HERE IS ZERO"
+                    ) : noMove ? (
+                      "THAT DOES NOT MOVE"
+                    ) : broke ? (
+                      "CASH IS COMMITTED"
+                    ) : (
+                      `STEP · ${money(cost)}`
+                    )}
+                  </PxButton>
+                </div>
+              </div>
+
+              <div className="hint">
+                {me?.descents ?? 0} step{me?.descents === 1 ? "" : "s"} taken · {money(me?.spentC ?? 0)} spent, and
+                every dollar of it comes off your score.
+              </div>
             </div>
           )}
         </>
       )}
     </div>
   );
+}
+
+const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+const round2 = (v) => Math.round(v * 100) / 100;
+
+function fmtRate(lr) {
+  if (lr >= 1000) return lr.toFixed(0);
+  if (lr >= 10) return lr.toFixed(1);
+  if (lr >= 1) return lr.toFixed(2);
+  if (lr >= 0.01) return lr.toFixed(3);
+  return lr.toExponential(1);
 }

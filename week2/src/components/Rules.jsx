@@ -31,16 +31,9 @@ export default function Rules({ mode }) {
           <div className="rules-body">
             <p>{data.tip}</p>
             <p>
-              The admin picks how nasty it is before the round. From easiest to hardest:
+              Difficulty varies from round to round, and you are not told which one you are on. Some curves are kind;
+              some have a false bottom that looks exactly like the real one.
             </p>
-          </div>
-          <div className="difficulties">
-            {data.order.map((k) => (
-              <div key={k} className="diff">
-                <span className="dn">{data.difficulties[k].name}</span>
-                <span className="db">{data.difficulties[k].blurb}</span>
-              </div>
-            ))}
           </div>
         </div>
       )}
@@ -49,9 +42,17 @@ export default function Rules({ mode }) {
         <div className="panel-title">LIMITS</div>
         <div className="rules-body">
           <p>
-            Up to <b>{data.limits.maxLotsPerOrder}</b> lots an order, <b>{data.limits.maxOrdersPerPlayer}</b> resting
-            orders each, <b>{data.limits.teamSize}</b> players a team
-            {mode === "prediction" ? "" : <>, and <b>{data.limits.maxPointsPerPlayer}</b> points on the curve</>}.
+            Up to <b>{data.limits.maxSharesPerOrder}</b> shares an order, <b>{data.limits.maxOrdersPerPlayer}</b>{" "}
+            resting orders each, <b>{data.limits.teamSize}</b> players a team
+            {mode === "prediction" ? (
+              ""
+            ) : (
+              <>
+                , <b>{data.limits.maxPointsPerPlayer}</b> steps in a round, and a single step moves at most{" "}
+                <b>{data.limits.maxStep}</b>
+              </>
+            )}
+            .
           </p>
         </div>
       </div>

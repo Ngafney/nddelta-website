@@ -174,22 +174,11 @@ await ok("the market opens and a trade prints", async () => {
   assert.strictEqual(st.market.bids.length + st.market.asks.length, 0, "both sides consumed");
 });
 
-await ok("buying a point costs 5% and shows up on the chart", async () => {
-  const before = await GET("state", cred(alice));
-  const anchor = before.me.points[0].x;
-  const r = await POST("probe", { ...cred(alice), anchorX: anchor, offset: anchor > 500 ? -200 : 200 });
-  assert.strictEqual(r.costC, before.me.probeCostC);
-  const after = await GET("state", cred(alice));
-  assert.strictEqual(after.me.points.length, 2);
-  assert.strictEqual(after.me.cashC, before.me.cashC - r.costC);
-  assert.ok(Number.isFinite(r.point.d), "the new point carries a real gradient");
-});
-
 await ok("one step of gradient descent costs a flat $1,000 and goes downhill", async () => {
   const before = await GET("state", cred(alice));
   const from = before.me.points.find((p) => Math.abs(p.d) > 1e-9) ?? before.me.points[0];
   assert.strictEqual(before.me.descentCostC, 100_000);
-  const lr = 2 / Math.abs(from.d); // small enough that downhill is guaranteed
+  const lr = 0.2 / Math.abs(from.d); // small enough that downhill is guaranteed
   const r = await POST("descend", { ...cred(alice), anchorX: from.x, lr });
   assert.strictEqual(r.costC, before.me.descentCostC);
   assert.ok(Math.abs(r.point.x - (from.x - lr * from.d)) < 0.02, "it lands exactly where it said it would");

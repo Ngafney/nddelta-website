@@ -20,8 +20,7 @@ export default function Leaderboard({ rows, myTeamId, settled, compact = false, 
               <span className="nm">
                 {r.name}
                 <small>
-                  {r.size} {r.size === 1 ? "player" : "players"}
-                  {r.sawAll ? " · saw the curve" : ""}
+                  avg of {r.size} {r.size === 1 ? "player" : "players"}
                 </small>
               </span>
               <span>

@@ -78,14 +78,16 @@ await ok("a gradient round is created with a proved curve", async () => {
   assert.strictEqual(r.round.status, "lobby");
   assert.ok(r.diagnostics.ok);
   assert.ok(r.diagnostics.argminError < 0.2);
-  assert.deepStrictEqual(r.diagnostics.domain, [MODES.gradient.settleMin, SETTLE_MAX]);
+  assert.deepStrictEqual(r.diagnostics.domain, MODES.gradient.xDomain);
+  assert.ok(r.diagnostics.yStar >= 0 && r.diagnostics.yStar <= SETTLE_MAX);
+  assert.ok(r.diagnostics.valueError <= 0.01, "the minimum value must be exactly y*");
 });
 
 await ok("the round tells a client the tick and the center, and nothing else", async () => {
   const { round } = await GET("config");
   assert.strictEqual(round.tick, TICK);
   assert.strictEqual(round.center, MODES.gradient.center);
-  for (const leak of ["settleMin", "settleMax", "orderMin", "orderMax", "domain", "xStarMean", "xStarSd"]) {
+  for (const leak of ["settleMin", "settleMax", "orderMin", "orderMax", "domain", "yStarMean", "yStarSd", "difficulty"]) {
     assert.ok(!(leak in round), `the round payload leaks ${leak}`);
   }
   assert.strictEqual(round.xStar, null);
@@ -109,11 +111,16 @@ await ok("the public rules payload carries labels, never the shape of the game",
   for (const leak of ["settleMin", "settleMax", "xStarMean", "xStarSd", "ladderPad", "lambda", "maxOmega", "wellWidth", "decoys", "polyDeg"]) {
     assert.ok(!blob.includes(leak), `GET rules leaks ${leak}`);
   }
-  assert.ok(!/\b1000\b/.test(blob.replace(/10000/g, "")), "GET rules leaks a bound");
+  // The learning-rate range legitimately contains 1000; nothing else may.
+  const withoutRates = JSON.stringify({ ...r, limits: { ...r.limits, learningRate: null } });
+  assert.ok(!/\b1000\b/.test(withoutRates), "GET rules leaks a bound");
   // But it still has to say enough to draw the screens.
   assert.strictEqual(r.modes.gradient.name, "Gradient Trading");
-  assert.strictEqual(r.difficulties.rugged.name, "Rugged");
-  assert.strictEqual(r.limits.maxProbeStep, LIMITS.maxProbeStep);
+  // The difficulty catalogue is gone from the public payload entirely: the
+  // names and blurbs describe the shape of the function.
+  assert.ok(!("difficulties" in r), "GET rules still ships the difficulty catalogue");
+  assert.ok(!/parabola|diabolical|decoy|sine/i.test(blob), "GET rules describes the function");
+  assert.strictEqual(r.limits.maxStep, LIMITS.maxStep);
   assert.deepStrictEqual(r.limits.learningRate, LIMITS.learningRate);
   assert.strictEqual(r.money.descentCostC, 100_000, "the flat descent fee is public");
   assert.ok(!("descentCostPct" in r.money));
@@ -133,7 +140,8 @@ await ok("joining gives credentials, $100,000 and one free point", async () => {
   assert.strictEqual(st.me.cashC, START);
   assert.strictEqual(st.me.points.length, 1);
   const pt = st.me.points[0];
-  assert.ok(pt.x >= 0 && pt.x <= SETTLE_MAX, `opening point at ${pt.x}`);
+  const [dlo, dhi] = MODES.gradient.xDomain;
+  assert.ok(pt.x >= dlo && pt.x <= dhi, `opening point at ${pt.x}`);
   assert.ok(Number.isFinite(pt.y) && Number.isFinite(pt.d));
 });
 
@@ -216,7 +224,7 @@ await ok("you can quote far outside where settlement can land, and it is margine
 await ok("balance rules are enforced through the API", async () => {
   const st = await GET("state", cred(carol));
   assert.strictEqual(st.me.buyC, START);
-  // 50 lots at 1000 ties up $50,000, so two of those orders is every cent.
+  // 50 shares at 1000 ties up $50,000, so two of those orders is every cent.
   const a = await POST("order", { ...cred(carol), side: "B", px: 1000, qty: 50 });
   const b = await POST("order", { ...cred(carol), side: "B", px: 1000, qty: 50 });
   assert.strictEqual(a.filled + b.filled, 0, "there was nothing resting to trade against");
@@ -271,48 +279,29 @@ await ok("concurrent orders all land — the CAS loses nothing", async () => {
 
 console.log("\ninformation");
 
-await ok("a point costs 5% and comes back with a real gradient", async () => {
+await ok("a step of gradient descent costs a flat $1,000 and lands where it says", async () => {
   const before = await GET("state", cred(carol));
-  const anchor = before.me.points[0].x;
-  const offset = anchor < 500 ? 125 : -125;
-  const cost = before.me.probeCostC;
-  assert.strictEqual(cost, Math.ceil(before.me.cashC * 0.05));
-  const r = await POST("probe", { ...cred(carol), anchorX: anchor, offset });
-  assert.strictEqual(r.costC, cost);
-  assert.strictEqual(r.me.cashC, before.me.cashC - cost);
-  assert.strictEqual(r.me.points.length, 2);
-  assert.ok(Math.abs(r.point.x - (anchor + offset)) < 0.01);
-  assert.ok(Number.isFinite(r.point.d));
-});
-
-await ok("a probe must start from a point you own, and cannot jump the domain", async () => {
-  const st = await GET("state", cred(carol));
-  await rejects(() => POST("probe", { ...cred(carol), anchorX: 99999, offset: 1 }), /point you already own/);
-  await rejects(() => POST("probe", { ...cred(carol), anchorX: st.me.points[0].x, offset: 0 }), /already own the point/);
-  // The step cap is what stops anyone binary-searching for the edges of a
-  // domain they are supposed to be blind to.
-  const e = await rejects(() => POST("probe", { ...cred(carol), anchorX: st.me.points[0].x, offset: 50_000 }), /at most/);
-  assert.ok(!bound(e.message), `the cap message leaked a bound: ${e.message}`);
-});
-
-await ok("one step of gradient descent costs a flat $1,000 and lands where it says", async () => {
-  const before = await GET("state", cred(carol));
-  const from = before.me.points.find((p) => Math.abs(p.d) > 1e-6) ?? before.me.points[0];
+  const from = before.me.points.find((p) => Math.abs(p.d) > 1e-9) ?? before.me.points[0];
   assert.strictEqual(before.me.descentCostC, 100_000, "a flat $1,000, whatever the stack");
-  assert.ok(before.me.probeCostC > before.me.descentCostC, "at a full stack, descending is the cheap option");
 
-  // A small step is what descent actually guarantees will go downhill; a big
-  // one may legitimately overshoot the bottom and come up the far side.
-  const lr = 2 / Math.abs(from.d);
+  // A SMALL step is what descent actually guarantees will go downhill, and
+  // small has to mean small relative to the domain: a fifth of a unit on a
+  // hundred-wide axis. A big step may legitimately overshoot the bottom and
+  // come up the far side, which is the whole hazard the game is about.
+  const lr = 0.2 / Math.abs(from.d);
   const expected = from.x - lr * from.d;
   const r = await POST("descend", { ...cred(carol), anchorX: from.x, lr });
-  assert.strictEqual(r.costC, before.me.descentCostC);
+  assert.strictEqual(r.costC, 100_000);
   assert.strictEqual(r.me.cashC, before.me.cashC - r.costC);
   assert.ok(Math.abs(r.point.x - expected) < 0.02, `landed at ${r.point.x}, expected ${expected}`);
   assert.strictEqual(r.me.descents, 1);
-  // Descent goes downhill: that is the entire point of paying for it.
-  assert.ok(r.point.y < from.y, `a small descent step must go downhill: ${from.y} → ${r.point.y}`);
-  assert.ok(Math.abs(Math.abs(r.step) - 2) < 0.01, `the step should be 2 units, was ${r.step}`);
+  assert.ok(Math.abs(Math.abs(r.step) - 0.2) < 0.01, `the step should be 0.2 units, was ${r.step}`);
+  assert.ok(Number.isFinite(r.point.y) && Number.isFinite(r.point.d), "the new point is a real point");
+  // NOT asserted here: that f went down. Descent only guarantees that for a
+  // step small relative to the LOCAL curvature, and on a random round curve
+  // this test cannot know what that is - a sharp well turns any fixed step
+  // into an overshoot, which is exactly the hazard the game is built on. The
+  // guarantee is asserted on a parabola in engine.test.js, where it holds.
 });
 
 await ok("descent is refused for a bad rate, a foreign anchor, or a step that does not move", async () => {
@@ -322,31 +311,24 @@ await ok("descent is refused for a bad rate, a foreign anchor, or a step that do
   await rejects(() => POST("descend", { ...cred(carol), anchorX: from.x, lr: 0 }), /learning rate/);
   await rejects(() => POST("descend", { ...cred(carol), anchorX: from.x, lr: -5 }), /learning rate/);
   await rejects(() => POST("descend", { ...cred(carol), anchorX: from.x, lr: 1e9 }), /learning rate/);
-  // A rate so large the step would leave the neighbourhood is refused, not clamped.
-  const huge = await rejects(() => POST("descend", { ...cred(carol), anchorX: from.x, lr: 300 / Math.abs(from.d) }), /at most/);
-  assert.ok(!bound(huge.message), `the step-cap message leaked a bound: ${huge.message}`);
-  // And nothing was charged for any of those.
-  assert.strictEqual((await GET("state", cred(carol))).me.cashC, st.me.cashC);
+  // A rate whose step would leave the neighborhood is refused, not clamped —
+  // clamping would quietly hand over where the domain ends. On a very shallow
+  // slope no legal rate can produce an oversized step at all, so the cap is
+  // only asserted where it is actually reachable.
+  const overshoot = (LIMITS.maxStep * 2) / Math.abs(from.d);
+  if (overshoot <= LIMITS.learningRate[1]) {
+    const huge = await rejects(() => POST("descend", { ...cred(carol), anchorX: from.x, lr: overshoot }), /at most/);
+    assert.ok(!bound(huge.message), `the step-cap message leaked a bound: ${huge.message}`);
+  }
+  assert.strictEqual((await GET("state", cred(carol))).me.cashC, st.me.cashC, "none of that was charged for");
 });
 
-await ok("the lottery ticket charges 5% and only sometimes opens the curve", async () => {
-  const frank = await join("Frank");
-  const teams = (await GET("admin/inspect", { token: admin })).teams;
-  await POST("team/join", { ...cred(frank), code: teams[1].code });
-  // Stay under the per-player rate limit; one win is all the test needs.
-  for (let i = 0; i < 20; i++) {
-    const r = await POST("ticket", { ...cred(frank) });
-    if (r.won) break;
-  }
-  const st = await GET("state", cred(frank));
-  assert.ok(st.me.tickets > 0, "tickets must be charged for");
-  assert.ok(st.me.cashC < START, "tickets are not free");
-  if (st.me.sawAll) {
-    const rev = await GET("reveal", cred(frank));
-    assert.ok(rev.early, "a winner sees the curve early");
-    assert.ok(rev.curve.length > 100);
-  } else {
-    await rejects(() => GET("reveal", cred(frank)), /not open yet/);
+await ok("there is nothing else to buy", async () => {
+  await rejects(() => POST("probe", { ...cred(carol), anchorX: 1, offset: 1 }), /no route/);
+  await rejects(() => POST("ticket", cred(carol)), /no route/);
+  const st = await GET("state", cred(carol));
+  for (const gone of ["probeCostC", "ticketCostC", "sawAll", "probes", "tickets"]) {
+    assert.ok(!(gone in st.me), `the player payload still carries ${gone}`);
   }
 });
 
@@ -354,17 +336,23 @@ await ok("the lottery ticket charges 5% and only sometimes opens the curve", asy
 
 console.log("\nsettlement");
 
-await ok("a gradient round settles itself at x*, and only then reveals", async () => {
+await ok("a gradient round settles itself at the MINIMUM VALUE, and only then reveals", async () => {
   const inspect = await GET("admin/inspect", { token: admin });
-  const truth = inspect.xStar;
-  assert.ok(truth >= 0 && truth <= SETTLE_MAX);
+  const low = inspect.yStar; // how low f gets — the contract
+  const where = inspect.xStar; // where it gets there — not the contract
+  assert.ok(low >= 0 && low <= SETTLE_MAX);
   await POST("admin/end", { token: admin });
   const cfg = await GET("config");
   assert.strictEqual(cfg.round.status, "settled");
-  assert.strictEqual(cfg.round.xStar, truth);
+  assert.strictEqual(cfg.round.xStar, low, "the market settles on the value, not the location");
+  assert.strictEqual(cfg.round.settleC, Math.round(low * 100));
   const rev = await GET("reveal");
-  assert.strictEqual(rev.xStar, truth);
-  assert.strictEqual(rev.settleC, Math.round(truth * 100));
+  assert.strictEqual(rev.yStar, low);
+  assert.strictEqual(rev.xStar, where);
+  // And the revealed curve really does bottom out at that value.
+  let lowest = Infinity;
+  for (const [, y] of rev.curve) lowest = Math.min(lowest, y);
+  assert.ok(Math.abs(lowest - low) < 1, `the drawn curve bottoms at ${lowest}, settlement was ${low}`);
   assert.deepStrictEqual((await GET("health")).audit, []);
 });
 
@@ -372,19 +360,23 @@ await ok("the leaderboard is by team and every member's number is inside it", as
   const lb = (await GET("leaderboard")).leaderboard;
   assert.ok(lb.length >= 2);
   assert.ok(lb[0].valueC >= lb[1].valueC);
-  assert.strictEqual(lb[0].valueC, lb[0].members.reduce((t, m) => t + m.valueC, 0));
+  assert.strictEqual(
+    lb[0].valueC,
+    Math.round(lb[0].members.reduce((t, m) => t + m.valueC, 0) / lb[0].size),
+    "a team is scored on the average of its members"
+  );
   for (const row of lb) for (const m of row.members) assert.ok(m.valueC >= 0, "nobody finishes below zero");
 });
 
-await ok("a settled round is closed to trading, buying and new players", async () => {
+await ok("a settled round is closed to trading, stepping and new players", async () => {
   await rejects(() => POST("order", { ...cred(alice), side: "B", px: 100, qty: 1 }), /closed/);
-  await rejects(() => POST("probe", { ...cred(alice), anchorX: 0, offset: 1 }), /not running/);
   await rejects(() => POST("descend", { ...cred(alice), anchorX: 0, lr: 1 }), /not running/);
   await rejects(() => POST("join", { name: "Latecomer", deviceId: "device-late-aaaaaaaa" }), /over/);
 });
 
-await ok("the admin cannot hand-pick a gradient settlement", async () => {
+await ok("the admin cannot hand-pick a gradient settlement, or preload one", async () => {
   await rejects(() => POST("admin/resolve", { token: admin, value: 500 }), /already resolved|not the admin's/);
+  await rejects(() => POST("admin/preload", { token: admin, value: 500 }), /already resolved|nothing to preload/);
 });
 
 /* ── prediction mode ──────────────────────────────────────────────────── */
@@ -413,15 +405,13 @@ await ok("a prediction round forces 0–100 in ticks of 1, and has no curve", as
   assert.strictEqual(g.settleMax, 100);
 });
 
-await ok("players get no points and cannot buy information", async () => {
+await ok("players get no points and there is nothing to step on", async () => {
   pat = await POST("join", { name: "Pat", deviceId: "device-pat-11111111" });
   await POST("team/create", { ...cred(pat), name: "Basis Points" });
   const st = await GET("state", cred(pat));
   assert.strictEqual(st.me.points.length, 0);
   await POST("admin/start", { token: admin, minutes: 5 });
-  await rejects(() => POST("probe", { ...cred(pat), anchorX: 10, offset: 5 }), /no curve/);
   await rejects(() => POST("descend", { ...cred(pat), anchorX: 10, lr: 1 }), /no curve/);
-  await rejects(() => POST("ticket", cred(pat)), /no curve/);
 });
 
 await ok("the book works exactly the same, at a tick of 1", async () => {
@@ -454,6 +444,51 @@ await ok("the admin resolves it to whatever they say, and it settles there", asy
   assert.strictEqual(rev.value, 100);
   assert.deepStrictEqual((await GET("health")).audit, []);
   await rejects(() => POST("admin/resolve", { token: admin, value: 0 }), /already resolved/);
+});
+
+await ok("an answer can be loaded in advance and changes nothing until the bell", async () => {
+  await POST("admin/round", { token: admin, mode: "prediction", question: "Loaded?", minutes: 5, keepPlayers: true });
+  await POST("admin/start", { token: admin, minutes: 5 });
+
+  const before = await GET("state", cred(pat));
+  await POST("admin/preload", { token: admin, value: 73 });
+
+  // Nothing a player can see has moved, and nothing they can do has changed.
+  const after = await GET("state", cred(pat));
+  assert.strictEqual(after.round.status, "live", "the market is still trading");
+  assert.strictEqual(after.me.cashC, before.me.cashC);
+  // Structural, not a substring hunt: a millisecond timestamp will happily
+  // contain "73" by chance, which is how this assertion first passed by luck.
+  assert.ok(!("preset" in after.round), "the loaded answer must not appear on the round");
+  assert.ok(!JSON.stringify(after.me).includes("preset"), "nor anywhere on the player");
+  assert.strictEqual(after.round.xStar, null, "and nothing is settled yet");
+  assert.strictEqual(after.round.settleC, null);
+  const ok1 = await POST("order", { ...cred(pat), side: "B", px: 20, qty: 1 });
+  assert.ok(ok1.resting, "and trading still works exactly as before");
+
+  // The admin can see it, change it, and clear it.
+  assert.strictEqual((await GET("admin/inspect", { token: admin })).preset, 73);
+  await POST("admin/preload", { token: admin, value: 88 });
+  assert.strictEqual((await GET("admin/inspect", { token: admin })).preset, 88);
+  await POST("admin/preload", { token: admin, value: null });
+  assert.strictEqual((await GET("admin/inspect", { token: admin })).preset, null);
+  await POST("admin/preload", { token: admin, value: 88 });
+
+  // At the bell it settles there by itself, with nobody to press anything.
+  await POST("admin/end", { token: admin });
+  const done = await GET("config");
+  assert.strictEqual(done.round.status, "settled", "a loaded answer settles the market at the bell");
+  assert.strictEqual(done.round.xStar, 88);
+  assert.deepStrictEqual((await GET("health")).audit, []);
+});
+
+await ok("without a loaded answer the bell still waits for a human", async () => {
+  await POST("admin/round", { token: admin, mode: "prediction", question: "Unloaded?", minutes: 5, keepPlayers: true });
+  await POST("admin/start", { token: admin, minutes: 5 });
+  await POST("admin/end", { token: admin });
+  assert.strictEqual((await GET("config")).round.status, "ended");
+  await POST("admin/resolve", { token: admin, value: 12 });
+  assert.strictEqual((await GET("config")).round.xStar, 12);
 });
 
 await ok("a fractional resolution works too", async () => {
@@ -520,7 +555,7 @@ await ok("60 players, 15 teams, 900 simultaneous actions — nothing dropped or 
       } else if (roll < 0.9) {
         calls.push(POST("cancel", { ...cred(p), all: true }));
       } else {
-        calls.push(POST("ticket", cred(p)));
+        calls.push(POST("descend", { ...cred(p), anchorX: 0, lr: 1 }).catch((e) => e));
       }
     }
     for (const r of await Promise.allSettled(calls)) {
@@ -537,10 +572,32 @@ await ok("60 players, 15 teams, 900 simultaneous actions — nothing dropped or 
   assert.deepStrictEqual((await GET("health")).audit, []);
   const lb = (await GET("leaderboard")).leaderboard;
   assert.strictEqual(lb.length, 15);
-  const total = lb.reduce((t, r) => t + r.valueC, 0);
+  const total = lb.reduce((t, r) => t + r.totalC, 0);
   const spent = lb.reduce((t, r) => t + r.spentC, 0);
   assert.strictEqual(total, 60 * START - spent, "the room's money must add up to what it started with, less what it burned");
   for (const row of lb) for (const m of row.members) assert.ok(m.valueC >= 0);
+});
+
+await ok("the global reset wipes the game and leaves the admin logged in", async () => {
+  const before = await GET("admin/inspect", { token: admin });
+  assert.ok(before.players.length > 0, "there is something to wipe");
+  await rejects(() => POST("admin/reset", { token: admin }), /confirm/);
+  const out = await POST("admin/reset", { token: admin, confirm: "RESET" });
+  assert.ok(out.cleared.players > 0);
+
+  // Everything is gone.
+  assert.strictEqual((await GET("config")).round, null);
+  assert.deepStrictEqual((await GET("leaderboard")).leaderboard, []);
+  assert.deepStrictEqual((await GET("history")).history, []);
+  await rejects(() => GET("state", cred(pat)), /no round/);
+
+  // But the password still works, and a new round starts clean.
+  const still = await POST("admin/auth", { password: "hunter2" });
+  assert.strictEqual(still.token, admin, "the admin is not locked out of their own control room");
+  await POST("admin/round", { token: admin, mode: "gradient", difficulty: "wavy", minutes: 5 });
+  const fresh = await GET("admin/inspect", { token: admin });
+  assert.strictEqual(fresh.players.length, 0, "nobody carried over");
+  assert.strictEqual(fresh.round.teams, 0);
 });
 
 console.log(`\n${passed} passed, ${failed} failed\n`);

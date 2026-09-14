@@ -3,18 +3,24 @@
 One game, two modes, one order book.
 
 **Gradient Trading.** A differentiable function `f` lives on a domain the
-players are never told. Its global minimum sits at `x*`, drawn from a normal
-distribution with **mean 500 and standard deviation 100**, and `x*` is the
-settlement price of the only contract on the board: one lot pays `x*` dollars at
-the end of the round. The ladder trades in **ticks of 5** and opens at 500.
+players are never told. The contract settles at **`min f(x)`** — *how low the
+function gets*, not where it gets there — and that minimum value is drawn from a
+normal distribution with **mean 500 and standard deviation 100**. One share pays
+it in dollars. The ladder trades in **ticks of 5** and opens at 500.
 
-Everyone starts with **$100,000** and exactly one private point on the curve:
-its `x`, its height `f(x)`, and its exact gradient `f'(x)`, drawn as a tangent
-arrow and printed as a number. Three things cost money — a gradient-descent
-step, a point anywhere, and a lottery ticket.
+That matters more than it sounds: a player's own points are quoted in the same
+units as the ladder. See `f(37) = 612` and you know the answer is **at or below
+612**; the game is working out how much further down it goes, and whether the
+room agrees with you. The chart draws that bound as a line across itself,
+because it is the single most useful thing anyone owns.
 
-Sixty people each hold a different sliver of the same secret. The market is how
-the room pools it.
+Everyone starts with **$100,000** and exactly one private point: its `x`, its
+height `f(x)`, and its exact gradient `f'(x)`, drawn as an arrow pointing
+**downhill** and printed as a number.
+
+There is exactly **one thing to buy**: another step of gradient descent, for a
+flat **$1,000**. Sixty people each hold a different sliver of the same secret.
+The market is how the room pools it.
 
 **Prediction Market.** The same book, the same money rules, the same teams — but
 no curve. Forced to **ticks of 1 settling 0–100**, so the price reads as a
@@ -32,7 +38,9 @@ error message:
 - the domain of `f`
 - the range of `f`
 - the settlement bounds
-- the distribution `x*` was drawn from
+- the distribution the minimum was drawn from
+- **which difficulty they are on** — the preset names and blurbs describe the
+  shape of the function, so the whole catalogue lives behind the admin token
 
 The chart fits **both** axes to the player's own points, so it cannot hand over
 the domain by drawing it. The ladder has no visible end in either direction. A
@@ -45,10 +53,10 @@ because you asked for it. Everything else is yours to say out loud.
 
 > **One inference channel worth knowing about.** A player who posts an offer can
 > read what it reserved and solve for the settlement ceiling, because the
-> reserve *is* `(ceiling − price) × lots` and you asked for reserved cash to be
-> visible. Closing it would mean hiding the number. Knowing the ceiling says
-> very little about `x*` — it is 500 ± 100 — so I left the number visible and am
-> flagging it rather than quietly making the panel less useful.
+> reserve *is* `(ceiling − price) × shares` and you asked for reserved cash to
+> be visible. Closing it would mean hiding the number. Knowing the ceiling says
+> very little about a minimum that is 500 ± 100, so I left the number visible
+> and am flagging it rather than quietly making the panel less useful.
 
 ---
 
@@ -104,7 +112,7 @@ says so in a red banner.
    out) or **join** one with a code. Four to a team.
 5. **Open** the market. Players trade.
 6. The clock runs out, or you **close now**.
-   - *Gradient* settles itself at `x*`, immediately and automatically.
+   - *Gradient* settles itself at `min f`, immediately and automatically.
    - *Prediction* stops at "closed" and waits for you to **resolve** it.
 7. The curve unfurls, the podium rises, the leaderboard is final.
 8. **Build round** again. Tick *keep players* and the teams survive with fresh
@@ -112,31 +120,37 @@ says so in a red banner.
 
 ---
 
-## What you can buy
+## The one thing you can buy
 
-The point and the ticket are priced off your **current** cash, so they get
-cheaper as you spend and you can always afford another look — it just buys less
-each time. The descent is a **flat fee**, deliberately: it is the only purchase
-whose cost does not shrink as you lose, so a step stays a real decision at every
-stack size rather than becoming free once you are down to your last few dollars.
-At a full stack it is the cheapest of the three; below $20,000 it is dearer than
-a point.
+One iteration of gradient descent, from a point you own, for a flat **$1,000**:
 
-| | cost | what it does |
-|---|---|---|
-| **Descend** | **flat $1,000** | One iteration of gradient descent: `x ← x − rate × f'(x)`. You choose the learning rate on a log slider and the panel shows exactly where the step lands before you pay. |
-| **Point** | 5% of cash | Any x you like, as an offset from a point you already hold. |
-| **Ticket** | 5% of cash | 1 in 20 to see the **entire function**, immediately, on your own chart. |
+```
+x ← x − rate × f'(x)
+```
 
-A large learning rate legitimately overshoots the bottom and comes up the far
-side — that is gradient descent, not a bug, and the tests assert the guarantee
-only for a small step.
+The control sits **inside the chart panel**, directly under the curve, so a step
+is chosen while looking at the thing being stepped on. You pick the learning
+rate on a log slider and see exactly where the step lands before you pay.
+
+The **top of the slider is the largest legal step**, and it moves with the slope
+you are standing on — so "as far as one step can take me" is always the far
+right, and there is no way to drag somewhere and then be told off for it.
+
+One price, one purchase, no menu. The only question a player ever answers is how
+big a step to take, which is the question the game is about. A flat fee also
+means the cost does not shrink as you lose, so a step stays a real decision at
+every stack size.
+
+A large rate legitimately overshoots the bottom and comes up the far side — that
+is gradient descent, not a bug. The guarantee that a step goes downhill only
+holds for a step small relative to the *local curvature*, which is why the tests
+assert it on a parabola and not on a random round curve.
 
 ---
 
 ## The parts that had to be right
 
-### The minimum really is where the game says it is
+### The minimum really is what the game says it is
 
 `shared/curve.js` does not draw a random function and hope. It builds
 
@@ -168,16 +182,26 @@ parabola. A well reaches full depth within a few `σ` and then stops growing, so
 the texture keeps its strength everywhere else. Measured decoy valleys per
 curve: Parabola 0, Tilted 0.3, Wavy 1.6, Rugged 2.4, Diabolical 3.6.
 
+Then the piece that makes it a *contract*. `shape(x)` is ≥ 0 everywhere and
+exactly 0 at the low point, and `f = yOffset + yScale·shape`, so **`min f` is
+exactly `yOffset`** for any positive scale. Setting `yOffset` to the drawn `y*`
+therefore makes the minimum value precisely the number we drew, to the cent,
+while a positive scale cannot move an argmin — so every line of the proof above
+survives untouched. `yScale` is then free to decide only how far `f` climbs
+above its own floor, which is what makes a single point informative or useless.
+
 Everything is written in terms of the domain's center and half-width, so the
 construction works on **any** domain, including one that runs negative. Tests
-brute-force the argmin on `[0,1000]`, `[-500,1500]`, `[-1000,0]` and `[0,100]`
-and get zero error on all of them. The admin panel re-runs the same self-check
+brute-force both the minimum value and its location on four domains, negative
+ones included, and get zero error. The admin panel re-runs the same self-check
 per round, and the server refuses to start a round that fails it.
 
-Two bugs worth recording, both caught by these tests: rounding the detrend
-constants to 4dp left a residual tilt that walked the true minimum up to 0.1 off
-`x*` — the contract would have settled at a lie — and the original quadratic
-core made `diabolical` average 0.5 decoy valleys.
+Three bugs worth recording. Rounding the detrend constants to 4dp left a
+residual tilt that walked the true minimum off its intended spot — the contract
+would have settled at a lie. The original quadratic core made `diabolical`
+average 0.5 decoy valleys. And the first version of this whole game settled on
+the *location* of the minimum rather than its value, which is a different game
+entirely — that one was caught by you, not by a test.
 
 ### Nobody can go bust, and nobody can print money
 
@@ -219,8 +243,8 @@ wash-trade a team total upward.
 
 Also enforced: price–time priority; self-trade prevention that cancels your own
 resting order rather than printing against yourself (so nobody can walk the
-mark); order and position caps; and `x*` never leaving the server until the bell
-or your 1-in-20 ticket.
+mark); order and position caps; and the curve never leaving the server until
+the bell.
 
 ### Sixty people clicking at once
 
@@ -239,26 +263,45 @@ The load test fires 900 actions across 60 players in six simultaneous waves:
 nothing dropped, the audit passes after every wave, and the room's money
 reconciles to the cent.
 
+### The book
+
+Virtualized, so only the visible slice is ever in the DOM, and it scrolls
+indefinitely in both directions — there is no visible end, because a ladder that
+stopped somewhere would disclose a settlement bound for free.
+
+It opens **fully zoomed out**, because the first thing a trader needs is the
+shape of the whole book; zoom in once you know where to look. Zoom changes the
+row height, which is arithmetic the virtualizer depends on, so it is a JS
+constant rather than a CSS rule — and it also grows to a touch target on a
+phone. There is a test for that, because a mismatch would misplace every row.
+
+If the book is empty on screen but has orders above or below, a bar at that edge
+says so and jumps you there — otherwise an empty stretch of ladder looks
+identical whether the book is empty or you have simply scrolled away from it.
+
+Your **net position sits immediately above the ladder**, so nobody clicks a side
+without knowing which way they already are.
+
 ### Desktop and phone
 
-The ladder is virtualized, so only the visible slice is ever in the DOM and it
-can be scrolled indefinitely in both directions. Row height is arithmetic the
-virtualizer depends on, so it is a JS constant rather than a CSS rule, and it
-grows to a 40px touch target on a phone — there is a test for that, because a
-mismatch would misplace every row.
-
 On a phone the header collapses to one line, a sticky bar keeps cash, position
-and P&L on screen while you scroll the book, sliders get 40px thumbs, toasts
-span the bottom instead of floating in a corner, the admin table scrolls
-sideways, and safe-area insets keep everything clear of the notch and the home
-indicator. There is a short-landscape rule so the book does not eat the screen.
+and P&L on screen while you scroll the book, sliders get 40px thumbs, the admin
+table scrolls sideways, and safe-area insets keep everything clear of the notch
+and the home indicator. There is a short-landscape rule so the book does not eat
+the screen.
+
+**Notifications**: one trade is one notification, whether the click ate one
+resting order or five, and it says which side of it you were on — *you lifted
+Bob*, *you hit Bob*, *Dave lifted you*. On a phone only the newest is shown,
+because a stack of them covers the ladder; they still queue and expire normally
+underneath.
 
 ---
 
 ## Tests
 
 ```bash
-npm test            # engine (50) + api (36) + render (17)
+npm test            # engine (50) + api (37) + render (16)
 npm run build
 npm run test:e2e    # real HTTP through serve.js (11)
 ```
@@ -266,7 +309,7 @@ npm run test:e2e    # real HTTP through serve.js (11)
 | suite | what it covers |
 |---|---|
 | `test/engine.test.js` | the curve on four domains; matching, priority, the four-term margin, solvency at every price, settlement, teams, and that no message leaks a bound |
-| `test/api.test.js` | auth, one-account-per-device, teams, both modes, all three purchases, what leaks, CAS under load |
+| `test/api.test.js` | auth, one-account-per-device, teams, both modes, the descent, the preloaded answer, the global reset, what leaks, CAS under load |
 | `test/render.test.js` | every screen against realistic mock data, plus the phone layout |
 | `test/e2e.test.js` | boots `serve.js` and plays a whole round over HTTP |
 
@@ -288,6 +331,27 @@ week2/
 api/week2/router.mjs   the Vercel entry point
 ```
 
+## Running the room
+
+- **Teams** are formed by a code. After you create one the screen **holds for a
+  few seconds** so you actually read the code out — without it the person who
+  made the team clicks straight through and nobody else ever sees it. The code
+  also stays in the top corner all round.
+- **Nothing advances on its own.** The reveal moves when you click NEXT, and a
+  new round waits behind a NEXT button rather than yanking anyone out of a board
+  they are still reading. The projector is the exception: it has nobody to click
+  it, so it runs on a timer.
+- **Prediction markets can be resolved in advance.** If you already know how a
+  question turned out, load the answer while the market is still trading: it is
+  stored and nothing else — trading is untouched, no player payload carries it,
+  and the bell settles there by itself. Clear it or change it any time; resolving
+  by hand afterwards clears it, so the two can never disagree.
+- **Global reset** wipes the round, every player, every team and the history in
+  two clicks. Your admin password survives, because locking yourself out of the
+  control room is not a reset, it is an outage.
+- **Teams are scored on the AVERAGE of their members**, not the sum, so a team of
+  three and a team of four are playing the same game. The total is still shown.
+
 ## Cheating
 
 One account per device, enforced server-side on a device id kept in both
@@ -305,7 +369,7 @@ server refuses to boot without it.
 
 Everything the game is tuned by lives in `shared/rules.js`: the settlement range
 and tick per mode, where the ladder opens, how far past the settlement range it
-runs, the mean and standard deviation of `x*`, the starting stack, the three
-prices, and the difficulty presets. The engine and the curve read all of it, so
+runs, the mean and standard deviation of the minimum, the starting stack, the
+one price, and the difficulty presets. The engine and the curve read all of it, so
 a change there is a change everywhere — including to a negative floor, which is
 supported and tested.

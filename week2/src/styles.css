@@ -340,7 +340,7 @@ select { appearance: none; cursor: pointer; }
 .book-head span:last-child { text-align: left; color: var(--ask); }
 
 .book {
-  max-height: 62vh; overflow-y: auto; overflow-x: hidden;
+  max-height: 78vh; overflow-y: auto; overflow-x: hidden;
   border: 3px solid var(--line-dim); background: #06101f;
   scrollbar-width: thin; scrollbar-color: var(--line) #06101f;
 }
@@ -704,7 +704,7 @@ select { appearance: none; cursor: pointer; }
   .tab { font-size: 8px; padding: 10px 10px 8px; flex: 1; justify-content: center; }
 
   /* the ladder is the point of the screen: give it room and bigger targets */
-  .book { max-height: 56vh; }
+  .book { max-height: 62vh; }
   .bookrow { min-height: 40px; }
   .px { font-size: 15px; }
   .side { font-size: 15px; padding: 0 8px; }
@@ -798,3 +798,96 @@ select { appearance: none; cursor: pointer; }
   .gate { margin-top: 0; }
   .gate .delta-big { display: none; }
 }
+
+/* ── the step box, built into the chart panel ───────────────────────── */
+
+.floor-note {
+  margin-top: 10px; padding: 9px 12px; font-size: 13px; color: var(--muted);
+  background: #0a1a14; border-left: 5px solid var(--bid);
+}
+.floor-note b { color: var(--bid); font-family: var(--mono); font-size: 15px; }
+
+.stepbox { margin-top: 14px; border: 3px solid var(--line-dim); background: #0a1424; padding: 12px; }
+.stepbox-head {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  font-family: var(--px); font-size: 9px; color: var(--gold); letter-spacing: 1px; margin-bottom: 12px;
+}
+.stepbox-head b { color: var(--ink); }
+.stepbox-head code {
+  margin-left: auto; font-family: var(--mono); font-size: 13px; color: var(--muted);
+  background: #081124; border: 2px solid var(--line-dim); padding: 4px 8px; letter-spacing: 0;
+}
+.steprow { display: grid; grid-template-columns: minmax(0, 1fr) 220px; gap: 16px; align-items: start; }
+@media (max-width: 760px) { .steprow { grid-template-columns: 1fr; gap: 10px; } .stepbox-head code { margin-left: 0; } }
+
+.stepsize {
+  font-family: var(--px); font-size: clamp(15px, 3.4vw, 22px); color: var(--ink);
+  text-align: center; padding: 6px 0 2px; text-shadow: 0 3px 0 #060d1c;
+}
+.stepsize.left { color: var(--bid); }
+.stepsize.right { color: var(--ask); }
+.steppreview { background: #06101f; border: 2px solid var(--line-dim); padding: 10px; }
+
+.chip.low { border-color: var(--bid); color: var(--bid); background: #0a1a14; }
+.chip small { display: block; color: var(--dim); margin-left: 0; font-size: 10px; }
+
+/* zoom control sits with the size picker */
+.zoompick { align-items: center; }
+.zoompick .zoomlbl {
+  font-family: var(--px); font-size: 7px; color: var(--muted); letter-spacing: 1px;
+  padding: 0 6px; align-self: center;
+}
+.zoompick button { min-width: 30px; font-size: 15px; line-height: 1; }
+.bookrow.tight .px { font-size: 11px; }
+.bookrow.tight .side { font-size: 11px; }
+.bookrow.tight .mylots { font-size: 7px; padding: 2px 4px; }
+
+/* ── your position, directly above the ladder ───────────────────────── */
+
+.posbar {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  background: #0a1424; border: 3px solid var(--line-dim);
+  border-left-width: 6px; border-left-color: var(--line);
+  padding: 8px 12px; margin-bottom: 10px;
+}
+.posbar.long { border-left-color: var(--bid); background: #08180f; }
+.posbar.short { border-left-color: var(--ask); background: #1b0c10; }
+.posbar i { font-style: normal; font-family: var(--px); font-size: 7px; color: var(--muted); letter-spacing: 1px; }
+.posbar b { font-family: var(--mono); font-size: 17px; font-weight: 700; color: var(--ink); }
+.posbar em { font-style: normal; color: var(--muted); font-size: 12px; }
+.posbar .up { color: var(--bid); }
+.posbar .down { color: var(--ask); }
+.posbar-main { display: flex; align-items: baseline; gap: 8px; }
+.posbar-main b { font-size: 24px; }
+.posbar.long .posbar-main b, .posbar.long .posbar-main i { color: var(--bid); }
+.posbar.short .posbar-main b, .posbar.short .posbar-main i { color: var(--ask); }
+.posbar-cell { display: flex; align-items: baseline; gap: 6px; margin-left: auto; }
+.posbar-cell + .posbar-cell { margin-left: 0; }
+@media (max-width: 760px) {
+  .posbar { gap: 6px 12px; padding: 7px 10px; }
+  .posbar-main b { font-size: 20px; }
+  .posbar b { font-size: 14px; }
+  .posbar-cell { margin-left: 0; }
+  .posbar-main { width: 100%; }
+}
+
+/* ── out-of-view order markers ──────────────────────────────────────── */
+
+.bookwrap { position: relative; }
+.bookedge {
+  position: absolute; left: 0; right: 0; z-index: 5;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  font-family: var(--px); font-size: 8px; letter-spacing: 1px;
+  background: linear-gradient(180deg, #10233fee, #10233fbb);
+  color: var(--gold); border: 0; border-bottom: 2px solid var(--gold-deep);
+  padding: 7px 10px; cursor: pointer; text-transform: uppercase;
+}
+.bookedge:hover { background: #16304fee; color: #fff; }
+.bookedge.top { top: 0; }
+.bookedge.bottom { bottom: 0; border-bottom: 0; border-top: 2px solid var(--gold-deep); }
+
+/* very tight rows: numbers only, no room for anything else */
+.bookrow.vtight .px { font-size: 10px; }
+.bookrow.vtight .side { font-size: 10px; padding: 0 6px; }
+.bookrow.vtight .mylots { font-size: 6px; padding: 1px 3px; box-shadow: none; }
+.steprange { display: flex; justify-content: space-between; font-size: 10.5px; color: var(--dim); margin-top: -4px; }

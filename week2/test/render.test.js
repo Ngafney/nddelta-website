@@ -37,17 +37,16 @@ import App from "./src/App.jsx";
 import Gate from "./src/components/Gate.jsx";
 import Scope from "./src/components/Scope.jsx";
 import OrderBook from "./src/components/OrderBook.jsx";
-import ProbePanel from "./src/components/ProbePanel.jsx";
 import YouPanel from "./src/components/YouPanel.jsx";
 import Leaderboard from "./src/components/Leaderboard.jsx";
-import Toasts, { fillToast } from "./src/components/Toasts.jsx";
+import Toasts, { fillToasts } from "./src/components/Toasts.jsx";
 import Reveal from "./src/components/Reveal.jsx";
 import Rules from "./src/components/Rules.jsx";
 import AdminPanel from "./src/components/AdminPanel.jsx";
 import BigBoard from "./src/components/BigBoard.jsx";
 import { money, moneyShort, num, clock } from "./src/components/PixelBits.jsx";
-export const C = { App, Gate, Scope, OrderBook, ProbePanel, YouPanel, Leaderboard, Toasts, Reveal, Rules, AdminPanel, BigBoard };
-export { React, renderToStaticMarkup, fillToast, money, moneyShort, num, clock };
+export const C = { App, Gate, Scope, OrderBook, YouPanel, Leaderboard, Toasts, Reveal, Rules, AdminPanel, BigBoard };
+export { React, renderToStaticMarkup, fillToasts, money, moneyShort, num, clock };
 `;
 
 // Inside the project, so node can resolve react from week2/node_modules.
@@ -124,8 +123,8 @@ const h = React.createElement;
 /* ── mock data, shaped exactly like the API's ─────────────────────────── */
 
 const points = [
-  { x: 312.5, y: -220.418, d: -14.8123 },
-  { x: 437.25, y: -388.902, d: 2.0071 },
+  { x: 31.25, y: 720.418, d: -14.8123 },
+  { x: 43.72, y: 588.902, d: 2.0071 },
 ];
 
 const me = {
@@ -142,13 +141,8 @@ const me = {
   valueC: 10_025_000,
   spentC: 975_000,
   startC: 10_000_000,
-  probes: 2,
   descents: 3,
-  tickets: 1,
-  sawAll: false,
-  probeCostC: 421_250,
   descentCostC: 100_000,
-  ticketCostC: 421_250,
   points,
   orders: [
     { id: 3, side: "B", px: 300, qty: 2, ts: 1, holdC: 60_000 },
@@ -192,9 +186,9 @@ const market = {
 };
 
 const leaderboard = [
-  { rank: 1, id: "t1", name: "Convex Hull", valueC: 30_100_000, startC: 30_000_000, pos: 2, spentC: 1_400_000, sawAll: false, size: 3, members: team.members },
-  { rank: 2, id: "t2", name: "Second Derivative", valueC: 24_000_000, startC: 20_000_000, pos: -3, spentC: 500_000, sawAll: true, size: 2, members: [{ id: "p4", name: "Dave", valueC: 14_000_000, pos: -3, points: 5 }, { id: "p5", name: "Erin", valueC: 10_000_000, pos: 0, points: 1 }] },
-  { rank: 3, id: "t3", name: "Tail Risk", valueC: 9_000_000, startC: 10_000_000, pos: 1, spentC: 2_000_000, sawAll: false, size: 1, members: [{ id: "p6", name: "Pat", valueC: 9_000_000, pos: 1, points: 3 }] },
+  { rank: 1, id: "t1", name: "Convex Hull", valueC: 10_033_333, startC: 10_000_000, totalC: 30_100_000, pos: 2, spentC: 1_400_000, size: 3, members: team.members },
+  { rank: 2, id: "t2", name: "Second Derivative", valueC: 12_000_000, startC: 10_000_000, totalC: 24_000_000, pos: -3, spentC: 500_000, size: 2, members: [{ id: "p4", name: "Dave", valueC: 14_000_000, pos: -3, points: 5 }, { id: "p5", name: "Erin", valueC: 10_000_000, pos: 0, points: 1 }] },
+  { rank: 3, id: "t3", name: "Tail Risk", valueC: 9_000_000, startC: 10_000_000, totalC: 9_000_000, pos: 1, spentC: 2_000_000, size: 1, members: [{ id: "p6", name: "Pat", valueC: 9_000_000, pos: 1, points: 3 }] },
 ];
 
 const round = {
@@ -207,9 +201,6 @@ const round = {
   startedAt: Date.now() - 60_000,
   endsAt: Date.now() + 300_000,
   msLeft: 300_000,
-  difficulty: "rugged",
-  difficultyName: "Rugged",
-  difficultyBlurb: "Decoy valleys.",
   startCashC: 10_000_000,
   lateJoin: true,
   players: 42,
@@ -222,29 +213,47 @@ const round = {
   xStar: null,
 };
 
-const curve = Array.from({ length: 200 }, (_, i) => [i * (1000 / 199), Math.pow(i / 20 - 5, 2) * 7 - 300]);
+const curve = Array.from({ length: 200 }, (_, i) => [i * (100 / 199), Math.pow(i / 20 - 5, 2) * 7 + 500]);
 
 /* ── the tests ────────────────────────────────────────────────────────── */
 
 console.log("\nrender");
 
-ok("the scope draws your points and reads out the active gradient", () => {
-  // f'(437.25) is positive, so the function rises with x and downhill is left.
-  const up = render(h(C.Scope, { points, activeX: 437.25 }));
-  assert.ok(up.includes("437.25"), "the active x must be on screen");
-  assert.ok(up.includes("GRADIENT"), "the gradient must be labeled");
-  assert.ok(up.includes("to the left"), "a POSITIVE gradient means downhill is to the left");
-  // f'(312.5) is negative, so downhill is the other way.
-  const down = render(h(C.Scope, { points, activeX: 312.5 }));
-  assert.ok(down.includes("to the right"), "a NEGATIVE gradient means downhill is to the right");
-  assert.ok(down.includes("-14.8123"), "the gradient number itself is printed");
+ok("the scope reads out where you are, how high, and the lowest you have seen", () => {
+  const out = render(h(C.Scope, { points, activeX: 43.72 }));
+  assert.ok(out.includes("43.72"), "the active x must be on screen");
+  assert.ok(out.includes("GRADIENT"), "the gradient must be labeled");
+  assert.ok(out.includes("HEIGHT"), "the height is the thing being traded");
+  assert.ok(out.includes("LOWEST SEEN"), "and the bound it gives you");
+  assert.ok(out.includes("588.90"), "the lowest height owned is shown");
+  assert.ok(out.includes("at or below"), "explained as a bound on the answer");
+  assert.ok(out.includes("-14.8123") || out.includes("2.007"), "the gradient number is printed");
 });
 
 ok("the scope never names the ends of the domain", () => {
   // The axes are fitted to the player's own points, so nothing on the chart
-  // can hint at where the domain — and therefore the minimum — has to be.
-  const out = render(h(C.Scope, { points, activeX: 437.25 }));
+  // can hint at where the domain — and therefore the answer — has to be.
+  const out = render(h(C.Scope, { points, activeX: 43.72 }));
   assert.ok(!/toward 0|toward 100|\b1000\b/.test(out), `the scope leaked a bound: ${out.slice(0, 400)}`);
+});
+
+ok("the step control lives in the chart, with the top of the slider as the max step", () => {
+  const out = render(
+    h(C.Scope, {
+      points,
+      activeX: 43.72,
+      me,
+      onDescend() {},
+      busy: null,
+      disabled: false,
+      limits: { maxStep: 25, learningRate: [0.0001, 1000] },
+    })
+  );
+  assert.ok(out.includes("TAKE A STEP DOWNHILL"), "the one purchase is on the chart itself");
+  assert.ok(out.includes("$1,000.00"), "at a flat fee");
+  assert.ok(out.includes("LEARNING RATE") && out.includes("THE STEP"), "rate in, step out");
+  assert.ok(out.includes("max step · 25"), "the slider tops out at the largest legal step");
+  assert.ok(!/TOO BIG/.test(out), "so there is never a too-big state to hit");
 });
 
 ok("the scope survives having no points yet", () => {
@@ -252,10 +261,11 @@ ok("the scope survives having no points yet", () => {
   assert.ok(out.includes("waiting for your opening point"));
 });
 
-ok("the book renders a window of ticks with depth, my lots and the market's", () => {
+ok("the book renders a window of ticks with depth, my shares and the market's", () => {
   const props = {
     book: market,
     last: 360,
+    me,
     center: 500,
     tick: 5,
     mine: me.orders,
@@ -268,7 +278,9 @@ ok("the book renders a window of ticks with depth, my lots and the market's", ()
   };
   const out = render(h(C.OrderBook, props));
   assert.ok(out.includes("SPREAD"), "the spread strip must render");
-  assert.ok(out.includes("JUMP TO MIDDLE"), "there must be a way back to the middle");
+  assert.ok(out.includes("MIDDLE"), "there must be a way back to the middle");
+  assert.ok(out.includes("ZOOM"), "and a zoom control");
+  assert.ok(out.includes("FLAT") || out.includes("LONG") || out.includes("SHORT"), "the net position sits above the book");
   assert.ok(out.includes("CANCEL ALL"), "and a cancel-all");
   assert.ok(/data-px="\d+"/.test(out), "rows must render");
   // Virtualised: a window, not thousands of rows.
@@ -286,67 +298,43 @@ ok("the you panel shows cash, reserved, position and P&L", () => {
   const out = render(h(C.YouPanel, { me, team, mark: 360, settled: false, onCancel() {}, onCancelAll() {} }));
   assert.ok(out.includes("$84,250.00"), "cash");
   assert.ok(out.includes("$750.00"), "reserved = $600 bids + $150 offers");
-  assert.ok(out.includes("+4 lots"), "position");
+  assert.ok(out.includes("+4 shares"), "position");
   assert.ok(out.includes("+$250.00"), "P&L against the starting stack");
   assert.ok(out.includes("Convex Hull"));
   assert.ok(out.includes("2 @ 300") && out.includes("1 @ 850"), "working orders");
   assert.ok(out.includes("$600.00 held") && out.includes("$150.00 held"), "each order says what it is holding");
 });
 
-ok("the buy panel offers a descent, a point and a ticket, priced 2/5/5", () => {
-  const props = {
-    me,
-    anchorX: 437.25,
-    onAnchor() {},
-    onProbe() {},
-    onDescend() {},
-    onTicket() {},
-    busy: null,
-    disabled: false,
-    limits: { maxProbeStep: 250, learningRate: [0.01, 10000] },
-  };
-  const out = render(h(C.ProbePanel, props));
-  assert.ok(out.includes("DESCEND") && out.includes("POINT") && out.includes("TICKET"), "all three offers");
-  assert.ok(out.includes("5%"), "the share-priced ones show a share");
-  // The descent tab opens first, and shows the step the current rate implies.
-  assert.ok(out.includes("f′(x)"), "the update rule is on screen");
-  assert.ok(out.includes("$1,000.00"), "the descent is a flat $1,000");
-  assert.ok(out.includes("LEARNING RATE"));
-  assert.ok(out.includes("-14.8123") || out.includes("2.0071"), "the slope you stand on is shown");
-});
-
-ok("the buy panel never names a bound", () => {
-  const out = render(
-    h(C.ProbePanel, {
-      me,
-      anchorX: 437.25,
-      onAnchor() {},
-      onProbe() {},
-      onDescend() {},
-      onTicket() {},
-      busy: null,
-      disabled: false,
-      limits: { maxProbeStep: 250, learningRate: [0.01, 10000] },
-    })
-  );
-  assert.ok(!/\b1000\b/.test(out.replace(/10000/g, "")), "the buy panel leaked a settlement bound");
-});
-
 ok("the leaderboard ranks teams and opens up my own", () => {
   const out = render(h(C.Leaderboard, { rows: leaderboard, myTeamId: "t1", settled: false }));
   assert.ok(out.includes("Convex Hull") && out.includes("Second Derivative"));
-  assert.ok(out.includes("$301,000.00"), "a team total is its members added up");
+  assert.ok(out.includes("$100,333.33"), "a team is scored on the average of its members");
   assert.ok(out.includes("Bob") && out.includes("Carol"), "my own team opens out");
   assert.ok(!out.includes("Dave"), "other teams stay closed until the bell");
-  assert.ok(out.includes("+$1,000.00") && out.includes("−$10,000.00"), "team P&L, up and down");
+  assert.ok(out.includes("+$333.33") && out.includes("−$10,000.00"), "team P&L, up and down");
 });
 
-ok("toasts render fills from both sides", () => {
-  const t1 = M.fillToast({ s: 1, side: "B", px: 40, qty: 2, ts: 1, taker: true, cp: "Bob" });
-  const t2 = M.fillToast({ s: 2, side: "A", px: 41, qty: 1, ts: 1, taker: false, cp: "Carol" });
-  const out = render(h(C.Toasts, { items: [t1, t2], onExpire() {} }));
-  assert.ok(out.includes("BOUGHT") && out.includes("SOLD"));
-  assert.ok(out.includes("you crossed") && out.includes("Carol hit you"));
+ok("one trade makes one notification, and says whether you lifted or hit", () => {
+  // You crossed and bought: you LIFTED them. Three resting orders eaten by one
+  // click is still one thing that happened, so it is one notification.
+  const lifted = M.fillToasts([
+    { s: 1, side: "B", px: 40, qty: 2, ts: 1, taker: true, cp: "Bob" },
+    { s: 2, side: "B", px: 45, qty: 1, ts: 1, taker: true, cp: "Bob" },
+  ]);
+  assert.strictEqual(lifted.length, 1, "one trade, one notification");
+  assert.ok(lifted[0].title.includes("YOU LIFTED BOB"), lifted[0].title);
+  assert.ok(lifted[0].body.includes("Bought 3 shares at 40–45"), lifted[0].body);
+
+  // You crossed and sold: you HIT them.
+  const hit = M.fillToasts([{ s: 3, side: "A", px: 41, qty: 1, ts: 1, taker: true, cp: "Carol" }]);
+  assert.ok(hit[0].title.includes("YOU HIT CAROL"), hit[0].title);
+
+  // Somebody traded into your resting orders: they did it to you.
+  const passive = M.fillToasts([{ s: 4, side: "A", px: 41, qty: 1, ts: 1, taker: false, cp: "Dave" }]);
+  assert.ok(passive[0].title.includes("DAVE LIFTED YOU"), passive[0].title);
+
+  const out = render(h(C.Toasts, { items: [...lifted, ...hit], onExpire() {} }));
+  assert.ok(out.includes("LIFTED") && out.includes("HIT"));
 });
 
 ok("the reveal mounts for a curve and for a resolution", () => {

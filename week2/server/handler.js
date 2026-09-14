@@ -28,9 +28,7 @@ import {
   powers,
   spendableC,
   lotReserveC,
-  probeCostC,
   descentCostC,
-  ticketCostC,
   grid,
   midPx,
   bookLevels,
@@ -52,7 +50,7 @@ import {
   DIFFICULTY_ORDER,
   MODES,
   MODE_ORDER,
-  domainFor,
+  curveConfigFor,
   LIMITS,
   MONEY,
   RULES_TEXT,
@@ -315,12 +313,19 @@ async function settleIfDue(state, version, now) {
       return false;
     }
     if (prediction) {
+      s.orders = []; // nothing rests through the bell in either mode
+      // A preloaded answer takes effect HERE and nowhere earlier: setting it
+      // during the round changes nothing anyone can see or trade against, it
+      // just means the bell does not have to wait for a human.
+      if (s.preset != null) {
+        settle(s, s.preset, now);
+        return true;
+      }
       s.status = "ended";
       s.endedAt = now;
-      s.orders = []; // nothing rests through the bell in either mode
       return false;
     }
-    settle(s, spec.xStar, now);
+    settle(s, spec.yStar, now);
     return true;
   });
   const after = await readMarket({ fresh: true });
@@ -335,9 +340,8 @@ async function recordHistory(state, now) {
     {
       roundId: state.roundId,
       mode: state.mode ?? "gradient",
-      difficulty: state.difficulty,
       question: state.question ?? null,
-      xStar: state.xStar,
+      settles: state.xStar,
       at: now,
       podium: leaderboard(state, 5).map((r) => ({ name: r.name, valueC: r.valueC })),
     },
@@ -366,7 +370,6 @@ function requirePlayer(state, body) {
  * them would hand over the settlement range by arithmetic.
  */
 function publicRound(state, now) {
-  const diff = DIFFICULTIES[state.difficulty] ?? null;
   const mode = state.mode ?? "gradient";
   const g = grid(state);
   return {
@@ -379,9 +382,9 @@ function publicRound(state, now) {
     startedAt: state.startedAt,
     endsAt: state.endsAt,
     msLeft: state.endsAt == null ? null : Math.max(0, state.endsAt - now),
-    difficulty: state.difficulty,
-    difficultyName: diff?.name ?? state.difficulty,
-    difficultyBlurb: diff?.blurb ?? "",
+    // NOT sent: which difficulty this is. The presets describe the shape of
+    // the function — decoy valleys, how wavy, what it is built from — and that
+    // is exactly the sort of thing players are supposed to work out.
     startCashC: state.startCashC,
     lateJoin: state.lateJoin,
     players: Object.keys(state.players ?? {}).length,
@@ -426,13 +429,8 @@ function meView(state, p) {
     valueC: valueC(state, p),
     spentC: p.spentC,
     startC: p.startC,
-    probes: p.probes,
     descents: p.descents ?? 0,
-    tickets: p.tickets,
-    sawAll: p.sawAll,
-    probeCostC: probeCostC(p),
     descentCostC: descentCostC(p),
-    ticketCostC: ticketCostC(p),
     points: p.points,
     // Each order carries what it is actually holding, computed by the engine.
     // The client must never derive this: the formula contains a settlement
@@ -478,15 +476,13 @@ export async function handle(method, route, body, query) {
         game: GAME,
         tip: GRADIENT_TIP,
         limits: LIMITS,
-        money: { probeCostPct: MONEY.probeCostPct, descentCostC: MONEY.descentCostC, ticketCostPct: MONEY.ticketCostPct, revealOdds: MONEY.revealOdds },
+        money: { descentCostC: MONEY.descentCostC },
         modes: Object.fromEntries(
           MODE_ORDER.map((k) => [k, { key: k, name: MODES[k].name, icon: MODES[k].icon, blurb: MODES[k].blurb, hasCurve: MODES[k].hasCurve }])
         ),
         modeOrder: MODE_ORDER,
-        difficulties: Object.fromEntries(
-          DIFFICULTY_ORDER.map((k) => [k, { key: k, name: DIFFICULTIES[k].name, blurb: DIFFICULTIES[k].blurb }])
-        ),
-        order: DIFFICULTY_ORDER,
+        // No difficulty catalogue: the names and blurbs describe the shape of
+        // the curve. The admin panel gets them from admin/inspect instead.
       };
 
     case "GET config": {
@@ -624,56 +620,15 @@ export async function handle(method, route, body, query) {
       });
     }
 
-    /* ── information ── */
-    case "POST probe": {
-      rateLimit(`probe:${body.playerId}`, 25, 10_000);
-      await requireCurveMode();
-      const spec = await currentSpec();
-      return tx((state) => {
-        const p = requirePlayer(state, body);
-        if (state.status !== "live") throw httpError(409, "the round is not running", "closed");
-        if (!p.teamId) throw httpError(409, "join or create a team first", "no-team");
-        if (p.points.length >= LIMITS.maxPointsPerPlayer) {
-          throw httpError(400, `you already own ${LIMITS.maxPointsPerPlayer} points — that is the cap`);
-        }
-        const anchor = Number(body.anchorX);
-        const offset = Number(body.offset);
-        if (!Number.isFinite(anchor) || !Number.isFinite(offset)) throw httpError(400, "bad offset");
-        if (Math.abs(offset) > LIMITS.maxProbeStep) {
-          // Capping the step is what stops anyone binary-searching the edges of
-          // the domain, which they are supposed to be blind to, for one fee.
-          throw httpError(400, `one step can move at most ${LIMITS.maxProbeStep}`, "too-far");
-        }
-        if (!p.points.some((pt) => Math.abs(pt.x - anchor) < 1e-6)) {
-          throw httpError(400, "you can only measure an offset from a point you already own");
-        }
-        const x = clampToDomain(spec, anchor + offset);
-        if (p.points.some((pt) => Math.abs(pt.x - x) < 0.005)) {
-          throw httpError(400, `you already own the point at x = ${x} — pick a different offset`, "duplicate");
-        }
-        const costC = probeCostC(p);
-        if (costC > spendableC(state, p)) {
-          throw httpError(400, "out of balance — your cash is committed to resting orders", "balance");
-        }
-        p.cash -= costC;
-        p.spentC += costC;
-        p.probes += 1;
-        const pt = pointAt(spec, x);
-        p.points.push(pt);
-        p.points.sort((a, b) => a.x - b.x);
-        return { point: pt, costC, me: meView(state, p) };
-      });
-    }
-
     /**
-     * One iteration of gradient descent from a point you own:
+     * The only purchase in the game: one iteration of gradient descent from a
+     * point you own,
      *     x_next = x - rate * f'(x)
-     * Cheaper than a free-choice point because the step is the mathematics
-     * choosing, not you. The gradient used is the ROUNDED one the player was
-     * shown, so where the client says the step lands is exactly where it lands.
+     * at a flat fee. The gradient used is the ROUNDED one the player was shown,
+     * so where the client says the step lands is exactly where it lands.
      */
     case "POST descend": {
-      rateLimit(`descend:${body.playerId}`, 25, 10_000);
+      rateLimit(`descend:${body.playerId}`, 30, 10_000);
       await requireCurveMode();
       const spec = await currentSpec();
       return tx((state) => {
@@ -681,7 +636,7 @@ export async function handle(method, route, body, query) {
         if (state.status !== "live") throw httpError(409, "the round is not running", "closed");
         if (!p.teamId) throw httpError(409, "join or create a team first", "no-team");
         if (p.points.length >= LIMITS.maxPointsPerPlayer) {
-          throw httpError(400, `you already own ${LIMITS.maxPointsPerPlayer} points — that is the cap`);
+          throw httpError(400, `you have taken ${LIMITS.maxPointsPerPlayer} steps — that is the cap`);
         }
         const anchor = Number(body.anchorX);
         const lr = Number(body.lr);
@@ -690,13 +645,13 @@ export async function handle(method, route, body, query) {
           throw httpError(400, `the learning rate must be between ${lrMin} and ${lrMax}`);
         }
         const from = p.points.find((pt) => Math.abs(pt.x - anchor) < 1e-6);
-        if (!from) throw httpError(400, "you can only descend from a point you already own");
+        if (!from) throw httpError(400, "you can only step from a point you already own");
 
         const step = -lr * from.d;
-        if (Math.abs(step) > LIMITS.maxProbeStep) {
+        if (Math.abs(step) > LIMITS.maxStep) {
           throw httpError(
             400,
-            `that rate would move ${Math.abs(step).toFixed(1)}, and one step can move at most ${LIMITS.maxProbeStep} — turn it down`,
+            `that rate would move ${Math.abs(step).toFixed(2)}, and one step can move at most ${LIMITS.maxStep} — turn it down`,
             "too-far"
           );
         }
@@ -720,30 +675,6 @@ export async function handle(method, route, body, query) {
       });
     }
 
-    case "POST ticket": {
-      rateLimit(`ticket:${body.playerId}`, 25, 10_000);
-      await requireCurveMode();
-      // Rolled out here, from the system CSPRNG, so it is not a function of
-      // anything a player can see, replay, or grind.
-      const roll = crypto.randomInt(0, MONEY.revealOdds);
-      return tx((state) => {
-        const p = requirePlayer(state, body);
-        if (state.status !== "live") throw httpError(409, "the round is not running", "closed");
-        if (!p.teamId) throw httpError(409, "join or create a team first", "no-team");
-        if (p.sawAll) throw httpError(400, "you have already seen the whole curve", "duplicate");
-        const costC = ticketCostC(p);
-        if (costC > spendableC(state, p)) {
-          throw httpError(400, "out of balance — your cash is committed to resting orders", "balance");
-        }
-        p.cash -= costC;
-        p.spentC += costC;
-        p.tickets += 1;
-        const won = roll === 0;
-        if (won) p.sawAll = true;
-        return { won, costC, odds: MONEY.revealOdds, me: meView(state, p) };
-      });
-    }
-
     /* ── the reveal ── */
     case "GET reveal": {
       const r = await readMarket();
@@ -760,24 +691,19 @@ export async function handle(method, route, body, query) {
           status: state.status,
         };
       }
-      let allowed = state.status === "settled";
-      let early = false;
-      if (!allowed && query.playerId) {
-        const p = requirePlayer(state, query);
-        allowed = !!p.sawAll; // the 1-in-20 ticket
-        early = allowed;
-      }
-      if (!allowed) throw httpError(403, "the curve is not open yet", "locked");
+      // There is no early door any more: the curve opens at the bell, for
+      // everybody, at once.
+      if (state.status !== "settled") throw httpError(403, "the curve is not open yet", "locked");
       const spec = await loadSpec(state.roundId);
       if (!spec) throw httpError(404, "that round's curve is gone");
       return {
         roundId: state.roundId,
         mode: "gradient",
-        early,
         difficulty: state.difficulty,
         curve: sampleCurve(spec, 700),
+        // Where the bottom is, and — the thing actually traded — how low it is.
         xStar: spec.xStar,
-        yStar: round4(fAt(spec, spec.xStar)),
+        yStar: spec.yStar,
         curvature: round4(d2At(spec, spec.xStar)),
         settleC: state.settleC,
         status: state.status,
@@ -839,13 +765,16 @@ export async function handle(method, route, body, query) {
       let diagnostics = null;
       let spec = null;
       if (mode === "gradient") {
-        const built = makeCurve(seed, DIFFICULTIES[dkey], domainFor("gradient"));
+        const built = makeCurve(seed, DIFFICULTIES[dkey], curveConfigFor("gradient"));
         diagnostics = built.diagnostics;
         spec = built.spec;
         if (!diagnostics.ok) {
           // The construction proves this cannot happen; if it ever did, refuse
           // to run a round whose settlement price would be a lie.
-          throw httpError(500, `curve self-check failed (argmin ${diagnostics.numericArgmin} vs x* ${diagnostics.xStar})`);
+          throw httpError(
+            500,
+            `curve self-check failed (min ${diagnostics.numericMin} vs y* ${diagnostics.yStar}, argmin ${diagnostics.numericArgmin} vs x* ${diagnostics.xStar})`
+          );
         }
         await kv.setJSON(SPEC(roundId), built.spec);
         specCache.set(roundId, built.spec);
@@ -862,12 +791,9 @@ export async function handle(method, route, body, query) {
         startCashC,
         lateJoin,
       });
-      if (spec) {
-        // The curve's domain IS the settlement range; keep them welded together
-        // so margin can never be computed against a bound the curve ignores.
-        market.settleMin = spec.lo;
-        market.settleMax = spec.hi;
-      }
+      // The settlement range comes from the MODE, not from the curve's x axis:
+      // what settles is min f, a height, and the ladder is a ladder of heights.
+      // The curve's own [lo, hi] is the x axis and never touches the margin.
       market.minutes = minutes;
       if (keepPlayers && prev) {
         for (const p of Object.values(prev.players)) {
@@ -940,6 +866,31 @@ export async function handle(method, route, body, query) {
     }
 
     /**
+     * Load the answer in advance. It is stored and nothing else: trading is
+     * untouched, no player payload carries it, and the market does not settle
+     * until the clock runs out. Useful when you already know how a question
+     * turned out and want the bell to be clean.
+     */
+    case "POST admin/preload": {
+      await requireAdmin(body);
+      const clear = body.value === null || body.value === "";
+      const value = clear ? null : Math.round(Number(body.value) * 100) / 100;
+      if (!clear && !Number.isFinite(value)) throw httpError(400, "preload a number, or null to clear it");
+      return tx((state) => {
+        const g = grid(state);
+        if ((state.mode ?? "gradient") !== "prediction") {
+          throw httpError(409, "a gradient round settles at its own minimum — there is nothing to preload");
+        }
+        if (state.status === "settled") throw httpError(409, "this market is already resolved");
+        if (!clear && (value < g.settleMin || value > g.settleMax)) {
+          throw httpError(400, `preload a number between ${g.settleMin} and ${g.settleMax}`);
+        }
+        state.preset = value;
+        return { preset: value, round: publicRound(state, now) };
+      });
+    }
+
+    /**
      * Resolve a prediction market. This is the ONLY route that lets a human
      * choose a settlement price, and it is deliberately impossible in gradient
      * mode: there, x* was drawn and proved when the round was created, so not
@@ -959,11 +910,28 @@ export async function handle(method, route, body, query) {
         }
         if (state.status === "settled") throw httpError(409, "this market is already resolved");
         if (state.status === "lobby") throw httpError(409, "the market never opened");
+        state.preset = null;
         settle(state, value, now);
         return publicRound(state, now);
       });
       await recordHistory((await readMarket({ fresh: true })).state, now);
       return { round: out, value };
+    }
+
+    /**
+     * Wipe everything: the market, every player, team and device binding, and
+     * the round history. The admin password survives, because locking yourself
+     * out of the control room is not a reset, it is an outage.
+     */
+    case "POST admin/reset": {
+      await requireAdmin(body);
+      if (body.confirm !== "RESET") throw httpError(400, "send confirm:\"RESET\" to wipe the game");
+      const prev = (await readMarket({ fresh: true })).state;
+      if (prev?.roundId) await kv.del(SPEC(prev.roundId));
+      await kv.del(MKT, MKTV, HISTORY);
+      cached = { value: null, version: "", at: 0 };
+      specCache.clear();
+      return { ok: true, cleared: { round: prev?.roundId ?? null, players: Object.keys(prev?.players ?? {}).length } };
     }
 
     case "POST admin/kick": {
@@ -972,7 +940,7 @@ export async function handle(method, route, body, query) {
         const p = state.players[body.playerId];
         if (!p) throw httpError(404, "no such player");
         cancelAll(state, p.id);
-        if (p.pos !== 0) throw httpError(409, `${p.name} is holding ${p.pos} lots — they cannot be removed mid-position`);
+        if (p.pos !== 0) throw httpError(409, `${p.name} is holding ${p.pos} shares — they cannot be removed mid-position`);
         delete state.players[p.id];
         for (const [dev, pid] of Object.entries(state.devices)) if (pid === p.id) delete state.devices[dev];
         return { ok: true };
@@ -994,7 +962,17 @@ export async function handle(method, route, body, query) {
     case "GET admin/inspect": {
       await requireAdmin(query);
       const r = await readMarket({ fresh: true });
-      if (!r.state) return { round: null, persistent: kv.KV_PERSISTENT, kv: kv.KV_MODE };
+      if (!r.state) {
+        return {
+          round: null,
+          persistent: kv.KV_PERSISTENT,
+          kv: kv.KV_MODE,
+          difficulties: Object.fromEntries(
+            DIFFICULTY_ORDER.map((k) => [k, { key: k, name: DIFFICULTIES[k].name, blurb: DIFFICULTIES[k].blurb }])
+          ),
+          difficultyOrder: DIFFICULTY_ORDER,
+        };
+      }
       const state = r.state;
       const spec = await loadSpec(state.roundId);
 
@@ -1016,6 +994,7 @@ export async function handle(method, route, body, query) {
         audit: auditState(state),
         diagnostics: spec ? diagnose(spec) : null,
         xStar: spec ? spec.xStar : null,
+        yStar: spec ? spec.yStar : null,
         suspicious,
         players: Object.values(state.players)
           .map((p) => ({
@@ -1027,7 +1006,6 @@ export async function handle(method, route, body, query) {
             pos: state.status === "settled" ? p.settledPos ?? 0 : p.pos,
             valueC: valueC(state, p),
             points: p.points.length,
-            sawAll: p.sawAll,
             spentC: p.spentC,
             orders: state.orders.filter((o) => o.pid === p.id).length,
           }))
@@ -1039,6 +1017,12 @@ export async function handle(method, route, body, query) {
           members: t.members.map((pid) => state.players[pid]?.name).filter(Boolean),
         })),
         grid: grid(state),
+        preset: state.preset ?? null,
+        difficulty: state.difficulty,
+        difficulties: Object.fromEntries(
+          DIFFICULTY_ORDER.map((k) => [k, { key: k, name: DIFFICULTIES[k].name, blurb: DIFFICULTIES[k].blurb }])
+        ),
+        difficultyOrder: DIFFICULTY_ORDER,
         openOrders: state.orders.length,
         volume: state.volume,
       };
