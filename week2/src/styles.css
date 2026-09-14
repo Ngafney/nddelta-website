@@ -823,7 +823,13 @@ select { appearance: none; cursor: pointer; }
   background: #081124; border: 2px solid var(--line-dim); padding: 4px 8px; letter-spacing: 0;
 }
 .steprow { display: grid; grid-template-columns: minmax(0, 1fr) 220px; gap: 16px; align-items: start; }
-@media (max-width: 760px) { .steprow { grid-template-columns: 1fr; gap: 10px; } .stepbox-head code { margin-left: 0; } }
+@media (max-width: 760px) {
+  .steprow { grid-template-columns: 1fr; gap: 10px; }
+  /* On a phone the button is what you came for, so it goes first and the
+     learning rate sits under it. Grid honors order; desktop is unchanged. */
+  .steprow .steppreview { order: -1; }
+  .stepbox-head code { margin-left: 0; }
+}
 
 .stepsize {
   font-family: var(--px); font-size: clamp(15px, 3.4vw, 22px); color: var(--ink);

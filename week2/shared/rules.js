@@ -69,7 +69,7 @@ export const MODES = {
     xDomain: [0, 100],
     /** y* = min f ~ N(mean, sd), clamped inside the settlement range. */
     yStarMean: 500,
-    yStarSd: 100,
+    yStarSd: 150,
     yStarClamp: [20, 980],
     /** How far f climbs above its own floor across the domain. */
     climb: [60, 700],

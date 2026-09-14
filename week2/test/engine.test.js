@@ -135,7 +135,11 @@ ok("the MINIMUM VALUE is exactly y*, on every difficulty (brute force)", () => {
   }
 });
 
-ok("the settlement y* is normal with mean 500 and sd 100", () => {
+ok("the settlement y* is normal, on whatever spread the rules set", () => {
+  // Read the target off the rules rather than hardcoding it, so widening the
+  // spread is a one-line change and this test keeps checking the real thing.
+  const MEAN = MODES.gradient.yStarMean;
+  const SD = MODES.gradient.yStarSd;
   const ys = [];
   const xs = [];
   for (let i = 0; i < 4000; i++) {
@@ -145,9 +149,10 @@ ok("the settlement y* is normal with mean 500 and sd 100", () => {
   }
   const mean = ys.reduce((a, b) => a + b) / ys.length;
   const sd = Math.sqrt(ys.reduce((a, b) => a + (b - mean) ** 2, 0) / ys.length);
-  assert.ok(Math.abs(mean - 500) < 6, `mean ${mean}`);
-  assert.ok(Math.abs(sd - 100) < 6, `sd ${sd}`);
-  const within1 = ys.filter((y) => Math.abs(y - 500) <= 100).length / ys.length;
+  assert.ok(Math.abs(mean - MEAN) < 8, `mean ${mean} vs ${MEAN}`);
+  // Clamping the tails pulls the measured spread in a hair; allow for it.
+  assert.ok(Math.abs(sd - SD) < 8, `sd ${sd} vs ${SD}`);
+  const within1 = ys.filter((y) => Math.abs(y - MEAN) <= SD).length / ys.length;
   assert.ok(Math.abs(within1 - 0.683) < 0.03, `${(within1 * 100).toFixed(1)}% within one sd`);
   for (const y of ys) assert.ok(y >= MODES.gradient.settleMin && y <= MODES.gradient.settleMax, `y* ${y} is unsettleable`);
   // And WHERE the bottom sits is spread across the domain, not bunched up.

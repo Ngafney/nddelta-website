@@ -412,6 +412,28 @@ ok("the book switches to touch-sized rows on a phone", () => {
   assert.ok(rowHeight(phone) >= 40, "touch targets must be at least 40px tall");
 });
 
+ok("on a phone the step button sits above the learning rate", () => {
+  const css = fs.readFileSync(path.join(root, "src", "styles.css"), "utf8");
+
+  // Desktop keeps the dial on the left and the button on its right.
+  const wide = css.match(/^\.steprow\s*\{([^}]*)\}/m);
+  assert.ok(wide, "expected a base .steprow rule");
+  assert.ok(/grid-template-columns:[^;]*\d+px/.test(wide[1]), "desktop should still be two columns");
+  assert.ok(!/order:/.test(wide[1]), "desktop must not be reordered");
+
+  // The narrow block has to collapse to one column AND lift the preview,
+  // which is the half holding the STEP button, above the rate slider.
+  const narrow = [...css.matchAll(/@media\s*\(max-width:\s*(\d+)px\)\s*\{([\s\S]*?)\n\}/g)]
+    .filter((m) => Number(m[1]) <= 760 && m[2].includes(".steprow"))
+    .map((m) => m[2]);
+  assert.ok(narrow.length, "expected a mobile .steprow block");
+  const phone = narrow.join("\n");
+  assert.match(phone, /\.steprow\s*\{[^}]*grid-template-columns:\s*1fr/, "mobile should be a single column");
+  const ord = phone.match(/\.steppreview\s*\{[^}]*order:\s*(-?\d+)/);
+  assert.ok(ord, "mobile must give .steppreview an explicit order");
+  assert.ok(Number(ord[1]) < 0, `.steppreview order is ${ord[1]}; it must come first`);
+});
+
 ok("the stylesheet cannot override the row height the virtualizer places rows by", () => {
   // THE BUG THIS EXISTS FOR: .bookrow carried `min-height: 30px`, which beat
   // the inline height the virtualizer sets from the zoom level. Rows rendered
