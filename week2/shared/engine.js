@@ -107,6 +107,7 @@ export function newMarket(round) {
     startedAt: null,
     endsAt: null,
     startCashC: round.startCashC ?? MONEY.startCashC,
+    descentCostC: round.descentCostC ?? MONEY.descentCostC,
     lateJoin: round.lateJoin !== false,
     players: {},
     teams: {},
@@ -231,8 +232,11 @@ export function spendableC(state, p) {
   return Math.max(0, Math.min(pw.buyC, pw.sellC));
 }
 
-/** The only price in the game: one step downhill, flat, whatever your stack. */
-export const descentCostC = () => MONEY.descentCostC;
+/**
+ * The only price in the game: one step downhill. Flat whatever your stack, and
+ * whatever the admin set for this round.
+ */
+export const descentCostC = (state) => state?.descentCostC ?? MONEY.descentCostC;
 
 /* ── book ─────────────────────────────────────────────────────────────── */
 

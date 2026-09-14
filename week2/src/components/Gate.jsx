@@ -11,7 +11,7 @@ import React, { useEffect, useState } from "react";
 import { api, deviceId, fingerprint, withPlayer } from "../api.js";
 import { PixelSprite, PxButton, Spinner, DELTA, DELTA_PALETTE } from "./PixelBits.jsx";
 
-export default function Gate({ player, round, limits, onPlayer, onTeam }) {
+export default function Gate({ player, round, limits, team, onHold, onPlayer, onTeam }) {
   const [step, setStep] = useState(player ? "choose" : "name");
   const [err, setErr] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -67,6 +67,8 @@ export default function Gate({ player, round, limits, onPlayer, onTeam }) {
           <TeamStep
             mode="create"
             limits={limits}
+            team={team}
+            onHold={onHold}
             player={player}
             busy={busy}
             setBusy={setBusy}
@@ -84,6 +86,8 @@ export default function Gate({ player, round, limits, onPlayer, onTeam }) {
           <TeamStep
             mode="join"
             limits={limits}
+            team={team}
+            onHold={onHold}
             player={player}
             busy={busy}
             setBusy={setBusy}
@@ -145,19 +149,19 @@ function NameStep({ busy, setBusy, err, setErr, onDone }) {
   );
 }
 
-function TeamStep({ mode, player, limits, busy, setBusy, err, setErr, onBack, onDone }) {
+function TeamStep({ mode, player, limits, team, onHold, busy, setBusy, err, setErr, onBack, onDone }) {
   const [value, setValue] = useState("");
   const [made, setMade] = useState(null);
-  // The code screen holds for a few seconds. Without it the person who made
-  // the team clicks straight through and nobody else ever sees the code.
-  const hold = limits?.codeHoldSeconds ?? 6;
-  const [left, setLeft] = useState(hold);
+
+  // The code screen stays up until the player says they are done with it.
+  // `onHold` tells the app to keep this gate mounted: the poll notices the new
+  // team about a second after it is created, and without the hold the whole
+  // gate would unmount while the code was still being read out.
   useEffect(() => {
     if (!made) return undefined;
-    setLeft(hold);
-    const t = setInterval(() => setLeft((n) => (n <= 1 ? 0 : n - 1)), 1000);
-    return () => clearInterval(t);
-  }, [made, hold]);
+    onHold?.(true);
+    return () => onHold?.(false);
+  }, [made, onHold]);
 
   async function go(e) {
     e.preventDefault();
@@ -180,6 +184,8 @@ function TeamStep({ mode, player, limits, busy, setBusy, err, setErr, onBack, on
   }
 
   if (made) {
+    // The live team, so you can watch people arrive before you walk in.
+    const here = team?.members ?? [];
     return (
       <>
         <div className="field-label" style={{ textAlign: "center" }}>
@@ -187,16 +193,31 @@ function TeamStep({ mode, player, limits, busy, setBusy, err, setErr, onBack, on
         </div>
         <div className="codebox">{made.code}</div>
         <div className="hint" style={{ textAlign: "center" }}>
-          <b style={{ color: "var(--gold)" }}>Read this out to your team now.</b> Up to {made.max} of you, including
-          you. They can join at any time, but they need this code — and it is easier to say it than to find it later.
+          <b style={{ color: "var(--gold)" }}>Read this out to your team.</b> Up to {made.max} of you, including you.
+          This screen waits for you — take as long as you need.
         </div>
+
+        <div className="joinlist">
+          {Array.from({ length: made.max }, (_, i) => {
+            const m = here[i];
+            return (
+              <div key={i} className={`joinslot ${m ? "in" : ""}`}>
+                {m ? m.name : "empty"}
+              </div>
+            );
+          })}
+        </div>
+        <div className="hint" style={{ textAlign: "center" }}>
+          {here.length} of {made.max} in so far. They can still join after you go in.
+        </div>
+
         <div className="mt">
-          <PxButton variant="green" disabled={left > 0} onClick={() => onDone(made)}>
-            {left > 0 ? `TO THE FLOOR IN ${left}…` : "TO THE FLOOR →"}
+          <PxButton variant="green" onClick={() => onDone(made)}>
+            I HAVE READ IT OUT — GO →
           </PxButton>
         </div>
         <div className="hint" style={{ textAlign: "center" }}>
-          It stays in the top corner all round, so you can read it out again.
+          The code stays in the top corner all round, so you can read it again.
         </div>
       </>
     );

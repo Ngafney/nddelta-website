@@ -516,6 +516,68 @@ await ok("a re-roll keeps the room but deals fresh money, points and a new curve
   for (const p of everyone) assert.strictEqual(p.points, 1, `${p.name} should hold one opening point`);
 });
 
+await ok("the admin can set the price of a step, and the round carries it", async () => {
+  await POST("admin/round", { token: admin, mode: "gradient", difficulty: "wavy", minutes: 10, descentCost: 2500 });
+  const cfg = await GET("config");
+  assert.strictEqual(cfg.round.descentCostC, 250_000, "$2,500 a step");
+
+  const p = await POST("join", { name: "Pricey", deviceId: "device-pricey-99999999" });
+  await POST("team/create", { ...cred(p), name: "Expensive Tastes" });
+  await POST("admin/start", { token: admin, minutes: 10 });
+  const st = await GET("state", cred(p));
+  assert.strictEqual(st.me.descentCostC, 250_000, "and the player is quoted it");
+
+  const from = st.me.points[0];
+  const r = await POST("descend", { ...cred(p), anchorX: from.x, lr: 0.2 / Math.abs(from.d) });
+  assert.strictEqual(r.costC, 250_000);
+  assert.strictEqual(r.me.cashC, st.me.cashC - 250_000, "and actually charged it");
+
+  // Free steps are a legitimate setting too.
+  await POST("admin/round", { token: admin, mode: "gradient", difficulty: "wavy", minutes: 10, descentCost: 0, keepPlayers: true });
+  assert.strictEqual((await GET("config")).round.descentCostC, 0);
+});
+
+await ok("the admin can pin the true minimum, and the curve really bottoms out there", async () => {
+  const built = await POST("admin/round", {
+    token: admin,
+    mode: "gradient",
+    difficulty: "diabolical",
+    minutes: 10,
+    minValue: 317.5,
+  });
+  assert.strictEqual(built.diagnostics.yStar, 317.5, "the draw was overridden");
+  assert.ok(built.diagnostics.ok, "and the curve still passes its self-check");
+  assert.ok(built.diagnostics.valueError <= 0.01, "the minimum really is 317.5");
+  assert.strictEqual((await GET("admin/inspect", { token: admin })).yStar, 317.5);
+
+  // It settles there, to the cent, like any other round.
+  await POST("admin/start", { token: admin, minutes: 10 });
+  await POST("admin/end", { token: admin });
+  const done = await GET("config");
+  assert.strictEqual(done.round.xStar, 317.5);
+  assert.strictEqual(done.round.settleC, 31_750);
+  const rev = await GET("reveal");
+  let low = Infinity;
+  for (const [, y] of rev.curve) low = Math.min(low, y);
+  assert.ok(Math.abs(low - 317.5) < 1, `the drawn curve bottoms at ${low}`);
+
+  // Out of the settleable range is refused rather than silently clamped.
+  await rejects(() => POST("admin/round", { token: admin, mode: "gradient", minutes: 10, minValue: 5000 }), /between/);
+  await rejects(() => POST("admin/round", { token: admin, mode: "gradient", minutes: 10, minValue: -20 }), /between/);
+});
+
+await ok("neither setting leaks to a player", async () => {
+  await POST("admin/round", { token: admin, mode: "gradient", difficulty: "wavy", minutes: 10, minValue: 642.25, keepPlayers: true });
+  await POST("admin/start", { token: admin, minutes: 10 });
+  // The pinned minimum lives on the spec, and the spec never leaves the server.
+  const blob = JSON.stringify(await GET("config")) + JSON.stringify(await GET("board"));
+  assert.ok(!blob.includes("642.25"), "the pinned minimum reached a public payload");
+  assert.strictEqual((await GET("config")).round.xStar, null);
+  // The step price, by contrast, is meant to be visible — you must know what
+  // you are being charged.
+  assert.strictEqual((await GET("config")).round.descentCostC, 100_000);
+});
+
 /* ── the event-day rehearsal ──────────────────────────────────────────── */
 
 console.log("\nload");

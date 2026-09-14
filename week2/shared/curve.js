@@ -287,7 +287,15 @@ export function makeCurve(seed, diff, cfg) {
   // 1b. HOW DEEP the bottom is. This is the number the market settles on, so
   //     it is drawn from the bell curve the room is trading against, and
   //     clamped to the range the margin rules are built on.
-  const yStar = round2(clamp(cfg.yMean + cfg.ySd * r.gauss(), cfg.yClamp[0], cfg.yClamp[1]));
+  //
+  //     An admin may pin it instead, to run a demonstration where they already
+  //     know the answer. Pinned or drawn, everything downstream is identical:
+  //     the value still becomes the exact minimum of the curve, and it is
+  //     still clamped into the settleable range.
+  const yStar =
+    cfg.forceY == null
+      ? round2(clamp(cfg.yMean + cfg.ySd * r.gauss(), cfg.yClamp[0], cfg.yClamp[1]))
+      : round2(clamp(cfg.forceY, cfg.yClamp[0], cfg.yClamp[1]));
 
   // 2. The texture.
   const terms = [];

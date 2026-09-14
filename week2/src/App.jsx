@@ -64,6 +64,11 @@ function Floor() {
   // Which round this player has actually stepped into. A new one never takes
   // the screen out from under them — they click through to it.
   const [entered, setEntered] = useState(null);
+  // The gate is showing something the player has to dismiss themselves — the
+  // team code. Without this the poll notices they now HAVE a team about a
+  // second later and the whole gate unmounts mid-read, which is exactly what
+  // it looked like: the code flashed up and vanished.
+  const [gateHolding, setGateHolding] = useState(false);
 
   const narrow = useMedia(NARROW);
   const sinceRef = useRef(0);
@@ -257,17 +262,22 @@ function Floor() {
     );
   }
 
-  if (!player || (state && !me?.teamId)) {
+  if (!player || (state && !me?.teamId) || gateHolding) {
     return (
       <Gate
         player={player}
         round={round}
         limits={limits}
+        team={state?.team ?? null}
         onPlayer={(p) => {
           savePlayer(p);
           setPlayer(p);
         }}
-        onTeam={() => pull()}
+        onHold={setGateHolding}
+        onTeam={() => {
+          setGateHolding(false);
+          pull();
+        }}
       />
     );
   }

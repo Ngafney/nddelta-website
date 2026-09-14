@@ -118,8 +118,10 @@ export const GAME = {
 export const MONEY = {
   startCashC: 10_000_000, // $100,000.00
   /**
-   * The only price in the game: one more step downhill. Flat, so it stays a
-   * real decision at every stack size instead of getting cheaper as you lose.
+   * The DEFAULT price of the only thing you can buy: one more step downhill.
+   * Flat, so it stays a real decision at every stack size instead of getting
+   * cheaper as you lose. The admin can set a different price per round, and
+   * the round carries whatever they chose.
    */
   descentCostC: 100_000, // $1,000.00
 };

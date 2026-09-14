@@ -102,6 +102,8 @@ function Controls({ token, onLogout }) {
   const [difficulty, setDifficulty] = useState("wavy");
   const [minutes, setMinutes] = useState(12);
   const [startCash, setStartCash] = useState(100000);
+  const [descentCost, setDescentCost] = useState(1000);
+  const [minValue, setMinValue] = useState("");
   const [question, setQuestion] = useState("");
   const [keepPlayers, setKeepPlayers] = useState(true);
   const [lateJoin, setLateJoin] = useState(true);
@@ -200,7 +202,10 @@ function Controls({ token, onLogout }) {
               <div className="stat">
                 <i>VOLUME</i>
                 <b>{info.volume} shares</b>
-                <small>start money {money(round.startCashC)} each</small>
+                <small>
+                  {money(round.startCashC)} each
+                  {round.mode === "gradient" ? ` · ${money(round.descentCostC)} a step` : ""}
+                </small>
               </div>
             </div>
 
@@ -409,6 +414,40 @@ function Controls({ token, onLogout }) {
           </>
         )}
 
+        {mode === "gradient" && (
+          <div className="admin-grid mt">
+            <div>
+              <span className="field-label">COST OF ONE STEP ($)</span>
+              <input
+                type="number"
+                min={0}
+                max={1000000}
+                step={100}
+                value={descentCost}
+                onChange={(e) => setDescentCost(Number(e.target.value))}
+              />
+            </div>
+            <div>
+              <span className="field-label">THE MINIMUM (BLANK = RANDOM)</span>
+              <input
+                type="number"
+                min={20}
+                max={980}
+                step="0.01"
+                placeholder="drawn N(500, 100)"
+                value={minValue}
+                onChange={(e) => setMinValue(e.target.value)}
+              />
+            </div>
+          </div>
+        )}
+        {mode === "gradient" && (
+          <div className="hint">
+            Leave the minimum blank and it is drawn from the bell curve. Set it and the curve is built to bottom out
+            exactly there — useful for a worked example where you already know the answer.
+          </div>
+        )}
+
         <div className="admin-grid mt">
           <div>
             <span className="field-label">MINUTES</span>
@@ -439,7 +478,18 @@ function Controls({ token, onLogout }) {
             disabled={busy || (mode === "prediction" && question.trim().length < 3)}
             onClick={() =>
               act("built a new round", () =>
-                api.post("admin/round", { token, mode, difficulty, minutes, startCash, question, keepPlayers, lateJoin })
+                api.post("admin/round", {
+                  token,
+                  mode,
+                  difficulty,
+                  minutes,
+                  startCash,
+                  descentCost,
+                  minValue,
+                  question,
+                  keepPlayers,
+                  lateJoin,
+                })
               )
             }
           >

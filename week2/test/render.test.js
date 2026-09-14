@@ -116,6 +116,9 @@ globalThis.requestAnimationFrame = () => 0;
 globalThis.cancelAnimationFrame = () => {};
 if (!globalThis.performance) globalThis.performance = { now: () => 0 };
 
+const appSource = fs.readFileSync(path.join(root, "src", "App.jsx"), "utf8");
+const gateSource = fs.readFileSync(path.join(root, "src", "components", "Gate.jsx"), "utf8");
+
 const M = await import(pathToFileURL(outFile).href);
 const { React, renderToStaticMarkup: render, C } = M;
 const h = React.createElement;
@@ -403,6 +406,91 @@ ok("the book switches to touch-sized rows on a phone", () => {
   // virtualizer depends on - it has to change with the screen, not just in CSS.
   assert.ok(rowHeight(phone) > rowHeight(desktop), `phone rows ${rowHeight(phone)} vs desktop ${rowHeight(desktop)}`);
   assert.ok(rowHeight(phone) >= 40, "touch targets must be at least 40px tall");
+});
+
+ok("the stylesheet cannot override the row height the virtualizer places rows by", () => {
+  // THE BUG THIS EXISTS FOR: .bookrow carried `min-height: 30px`, which beat
+  // the inline height the virtualizer sets from the zoom level. Rows rendered
+  // 30px tall but were positioned 11px apart, so every row overlapped the one
+  // above and the opaque price cells painted the prices out entirely.
+  const css = fs.readFileSync(path.join(root, "src", "styles.css"), "utf8");
+  const blocks = [...css.matchAll(/\.bookrow[^{]*\{([^}]*)\}/g)].map((m) => m[1]);
+  assert.ok(blocks.length, "expected some .bookrow rules");
+  for (const b of blocks) {
+    const mh = b.match(/min-height:\s*([\d.]+)px/);
+    if (mh) {
+      assert.ok(
+        Number(mh[1]) <= 14,
+        `.bookrow sets min-height ${mh[1]}px, which would override the tightest zoom and overlap the rows`
+      );
+    }
+    // strip min-height AND line-height before looking for a fixed height
+    const stripped = b.replace(/(?:min|line)-height:[^;]*;/g, "");
+    assert.ok(!/\bheight:\s*\d/.test(stripped), ".bookrow must not set a fixed height in CSS");
+  }
+});
+
+ok("every price renders, at a size that fits its row, at every zoom", () => {
+  const props = {
+    book: market,
+    last: 360,
+    me,
+    center: 500,
+    tick: 5,
+    mine: me.orders,
+    size: 1,
+    onSize() {},
+    onOrder() {},
+    onCancelLevel() {},
+    onCancelAll() {},
+    disabled: true, // the lobby: prices must still be legible before the open
+  };
+  for (const narrow of [false, true]) {
+    NARROW_SCREEN = narrow;
+    const out = render(h(C.OrderBook, props));
+    const rows = [...out.matchAll(/data-px="(-?\d+)"[^>]*style="([^"]*)"/g)];
+    assert.ok(rows.length > 10, `expected a window of rows, got ${rows.length}`);
+    for (const [, px, style] of rows.slice(0, 20)) {
+      // the number itself is on screen, not just the attribute
+      assert.ok(out.includes(`>${px}</div>`), `price ${px} is not rendered as text`);
+      const height = Number(style.match(/height:\s*(\d+)px/)?.[1]);
+      const font = Number(style.match(/font-size:\s*(\d+)px/)?.[1]);
+      assert.ok(height > 0, `row ${px} has no height`);
+      assert.ok(font > 0, `row ${px} has no font size`);
+      assert.ok(font <= height, `row ${px}: ${font}px type in a ${height}px row will overflow onto its neighbour`);
+    }
+  }
+  NARROW_SCREEN = false;
+});
+
+ok("the gate keeps the team code up until the player dismisses it", () => {
+  // THE BUG THIS EXISTS FOR: the app decided whether to show the gate from
+  // me.teamId, which the poll sets about a second after the team is created —
+  // so the code screen was unmounted mid-read. The gate now holds the app.
+  let held = null;
+  const gate = render(
+    h(C.Gate, {
+      player: { playerId: "p", token: "t", name: "Alice" },
+      round,
+      limits: { codeHoldSeconds: 6 },
+      team: null,
+      onHold: (v) => {
+        held = v;
+      },
+      onPlayer() {},
+      onTeam() {},
+    })
+  );
+  assert.ok(gate.includes("CREATE TEAM"), "the choice screen still renders");
+  // The app must offer the hold hook at all — without it there is nothing the
+  // gate can do to stop the poll pulling it out from under the player.
+  assert.ok(appSource.includes("gateHolding"), "App does not track a gate hold");
+  assert.ok(
+    /\|\|\s*gateHolding\)/.test(appSource),
+    "App's gate condition does not consider the hold, so a poll can still unmount it"
+  );
+  assert.ok(!gateSource.includes("TO THE FLOOR IN"), "the code screen still auto-counts down instead of waiting");
+  assert.ok(gateSource.includes("onHold?.(true)"), "the code screen does not ask the app to hold");
 });
 
 ok("money formatting is exact and signed where it should be", () => {

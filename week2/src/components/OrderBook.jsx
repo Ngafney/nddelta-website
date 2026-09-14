@@ -24,8 +24,8 @@ import { PxButton, money, useMedia, NARROW } from "./PixelBits.jsx";
 // The default is the WIDEST view, not a comfortable one: the first thing a
 // trader needs is the shape of the whole book, and they can zoom in once they
 // know where to look.
-const ZOOMS_DESKTOP = [11, 14, 18, 24, 32];
-const ZOOMS_TOUCH = [14, 18, 24, 32, 42];
+const ZOOMS_DESKTOP = [14, 18, 24, 32, 42];
+const ZOOMS_TOUCH = [20, 26, 34, 42, 52];
 const DEFAULT_ZOOM = 0;
 const SLAB = 300; // ticks added each time you reach an edge
 const EDGE = 40; // rows from the edge that triggers another slab
@@ -140,8 +140,10 @@ export default function OrderBook({
   const visible = [];
   for (let r = first; r <= lastRow; r++) visible.push(pxOf(span.hi - r));
 
-  const tight = ROW <= 18;
-  const veryTight = ROW <= 12;
+  const tight = ROW <= 20;
+  // The type size is derived from the row height rather than set in CSS, so a
+  // stylesheet can never disagree with the arithmetic the rows are placed by.
+  const fontPx = Math.max(9, Math.min(15, Math.round(ROW * 0.62)));
 
   const pos = me?.pos ?? 0;
   const pnl = me ? me.valueC - me.startC : 0;
@@ -262,8 +264,15 @@ export default function OrderBook({
                 data-px={px}
                 className={`bookrow ${myHere ? "mine" : ""} ${isInside ? "inside" : ""} ${
                   last === px ? "lastpx" : ""
-                } ${tight ? "tight" : ""} ${veryTight ? "vtight" : ""}`}
-                style={{ position: "absolute", top: r * ROW, left: 0, right: 0, height: ROW }}
+                } ${tight ? "tight" : ""}`}
+                style={{
+                  position: "absolute",
+                  top: r * ROW,
+                  left: 0,
+                  right: 0,
+                  height: ROW,
+                  fontSize: fontPx,
+                }}
               >
                 <button
                   className="side bid"

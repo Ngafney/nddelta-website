@@ -279,6 +279,13 @@ If the book is empty on screen but has orders above or below, a bar at that edge
 says so and jumps you there — otherwise an empty stretch of ladder looks
 identical whether the book is empty or you have simply scrolled away from it.
 
+The type size is derived from the row height in JavaScript rather than set in
+CSS, because those two disagreeing is exactly how the prices disappeared once:
+`.bookrow` carried a `min-height` that beat the inline height, so rows rendered
+30px tall while being positioned 11px apart and each opaque price cell painted
+over the one above. There is a test that reads the stylesheet and fails if any
+`.bookrow` rule can floor the height again.
+
 Your **net position sits immediately above the ladder**, so nobody clicks a side
 without knowing which way they already are.
 
@@ -301,7 +308,7 @@ underneath.
 ## Tests
 
 ```bash
-npm test            # engine (50) + api (37) + render (16)
+npm test            # engine (50) + api (40) + render (19)
 npm run build
 npm run test:e2e    # real HTTP through serve.js (11)
 ```
@@ -309,8 +316,8 @@ npm run test:e2e    # real HTTP through serve.js (11)
 | suite | what it covers |
 |---|---|
 | `test/engine.test.js` | the curve on four domains; matching, priority, the four-term margin, solvency at every price, settlement, teams, and that no message leaks a bound |
-| `test/api.test.js` | auth, one-account-per-device, teams, both modes, the descent, the preloaded answer, the global reset, what leaks, CAS under load |
-| `test/render.test.js` | every screen against realistic mock data, plus the phone layout |
+| `test/api.test.js` | auth, one-account-per-device, teams, both modes, the descent, the configurable price and pinned minimum, the preloaded answer, the global reset, what leaks, CAS under load |
+| `test/render.test.js` | every screen against realistic mock data, the phone layout, and two regressions: that the stylesheet cannot override the row height the virtualizer places rows by, and that the gate holds the team code open |
 | `test/e2e.test.js` | boots `serve.js` and plays a whole round over HTTP |
 
 Tests never touch the shared store: they set `KV_FORCE_MEMORY=1`.
@@ -333,10 +340,12 @@ api/week2/router.mjs   the Vercel entry point
 
 ## Running the room
 
-- **Teams** are formed by a code. After you create one the screen **holds for a
-  few seconds** so you actually read the code out — without it the person who
-  made the team clicks straight through and nobody else ever sees it. The code
-  also stays in the top corner all round.
+- **Teams** are formed by a code. After you create one the screen **waits for
+  you** — it shows the code, fills in team-mates live as they join, and only
+  moves on when you click. It does not time out. (It used to vanish after about
+  a second: the app decided whether to show the gate from whether you had a
+  team, and the poll set that a second after creation, unmounting the screen
+  mid-read. The gate now holds the app open until you dismiss it.)
 - **Nothing advances on its own.** The reveal moves when you click NEXT, and a
   new round waits behind a NEXT button rather than yanking anyone out of a board
   they are still reading. The projector is the exception: it has nobody to click
@@ -351,6 +360,12 @@ api/week2/router.mjs   the Vercel entry point
   control room is not a reset, it is an outage.
 - **Teams are scored on the AVERAGE of their members**, not the sum, so a team of
   three and a team of four are playing the same game. The total is still shown.
+- **Two dials per round**: what one step costs (default $1,000, and zero is
+  allowed), and the true minimum — leave it blank to draw from the bell curve,
+  or pin it for a worked example where you already know the answer. A pinned
+  minimum goes through exactly the same construction, so the curve really does
+  bottom out there, to the cent. The step price is shown to players, because
+  they have to know what they are being charged; the minimum never is.
 
 ## Cheating
 

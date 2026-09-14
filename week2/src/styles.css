@@ -352,8 +352,14 @@ select { appearance: none; cursor: pointer; }
   display: grid; grid-template-columns: 1fr 62px 1fr;
   align-items: stretch;
   border-bottom: 1px solid #0d1a2f;
-  min-height: 30px;
+  /* NO min-height. The row height is set inline from the zoom level and the
+     virtualizer positions rows by that exact number — a CSS floor silently
+     wins over the inline value, leaving rows overlapping and the prices
+     painted over by the row below. test/render.test.js guards this. */
+  min-height: 0;
+  line-height: 1;
   scroll-margin: 120px;
+  overflow: hidden;
 }
 .bookrow:last-child { border-bottom: 0; }
 .bookrow.mine { background: #10182c; }
@@ -362,7 +368,8 @@ select { appearance: none; cursor: pointer; }
 
 .px {
   display: flex; align-items: center; justify-content: center;
-  font-family: var(--mono); font-size: 14px; font-weight: 700; color: var(--muted);
+  font-family: var(--mono); font-weight: 700; color: var(--muted);
+  line-height: 1;
   background: #0a1424; border-left: 1px solid #0d1a2f; border-right: 1px solid #0d1a2f;
   letter-spacing: 0.5px;
 }
@@ -372,7 +379,7 @@ select { appearance: none; cursor: pointer; }
 .side {
   position: relative; display: flex; align-items: center; gap: 8px;
   padding: 0 10px; cursor: pointer; overflow: hidden; border: 0; background: transparent;
-  font-family: var(--mono); font-size: 14px; color: var(--ink); width: 100%;
+  font-family: var(--mono); color: var(--ink); width: 100%; line-height: 1;
 }
 .side.bid { justify-content: flex-end; }
 .side.ask { justify-content: flex-start; }
@@ -705,9 +712,7 @@ select { appearance: none; cursor: pointer; }
 
   /* the ladder is the point of the screen: give it room and bigger targets */
   .book { max-height: 62vh; }
-  .bookrow { min-height: 40px; }
-  .px { font-size: 15px; }
-  .side { font-size: 15px; padding: 0 8px; }
+  .side { padding: 0 8px; }
   .mylots { font-size: 9px; padding: 4px 6px; }
   .book-head { font-size: 6px; }
   .book-head span, .bookrow, .spread-strip { grid-template-columns: 1fr 66px 1fr; }
@@ -838,9 +843,7 @@ select { appearance: none; cursor: pointer; }
   padding: 0 6px; align-self: center;
 }
 .zoompick button { min-width: 30px; font-size: 15px; line-height: 1; }
-.bookrow.tight .px { font-size: 11px; }
-.bookrow.tight .side { font-size: 11px; }
-.bookrow.tight .mylots { font-size: 7px; padding: 2px 4px; }
+.bookrow.tight .mylots { font-size: 7px; padding: 2px 4px; box-shadow: none; }
 
 /* ── your position, directly above the ladder ───────────────────────── */
 
@@ -887,7 +890,14 @@ select { appearance: none; cursor: pointer; }
 .bookedge.bottom { bottom: 0; border-bottom: 0; border-top: 2px solid var(--gold-deep); }
 
 /* very tight rows: numbers only, no room for anything else */
-.bookrow.vtight .px { font-size: 10px; }
-.bookrow.vtight .side { font-size: 10px; padding: 0 6px; }
 .bookrow.vtight .mylots { font-size: 6px; padding: 1px 3px; box-shadow: none; }
 .steprange { display: flex; justify-content: space-between; font-size: 10.5px; color: var(--dim); margin-top: -4px; }
+
+/* ── who has joined your team so far ────────────────────────────────── */
+
+.joinlist { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; margin: 14px 0 8px; }
+.joinslot {
+  background: #081124; border: 2px dashed var(--line-dim); color: var(--dim);
+  padding: 9px 8px; font-size: 13px; text-align: center;
+}
+.joinslot.in { border-style: solid; border-color: var(--bid); color: var(--ink); background: #0a1a14; }

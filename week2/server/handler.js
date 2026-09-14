@@ -386,6 +386,7 @@ function publicRound(state, now) {
     // the function — decoy valleys, how wavy, what it is built from — and that
     // is exactly the sort of thing players are supposed to work out.
     startCashC: state.startCashC,
+    descentCostC: descentCostC(state),
     lateJoin: state.lateJoin,
     players: Object.keys(state.players ?? {}).length,
     teams: Object.keys(state.teams ?? {}).length,
@@ -430,7 +431,7 @@ function meView(state, p) {
     spentC: p.spentC,
     startC: p.startC,
     descents: p.descents ?? 0,
-    descentCostC: descentCostC(p),
+    descentCostC: descentCostC(state),
     points: p.points,
     // Each order carries what it is actually holding, computed by the engine.
     // The client must never derive this: the formula contains a settlement
@@ -661,7 +662,7 @@ export async function handle(method, route, body, query) {
           // is charged, because nothing new was learned.
           throw httpError(400, "that step lands where you already are — try a larger rate", "duplicate");
         }
-        const costC = descentCostC(p);
+        const costC = descentCostC(state);
         if (costC > spendableC(state, p)) {
           throw httpError(400, "out of balance — your cash is committed to resting orders", "balance");
         }
@@ -761,11 +762,27 @@ export async function handle(method, route, body, query) {
       const roundId = rid(5);
       const seed = String(body.seed || "").trim() || `${roundId}-${crypto.randomBytes(4).toString("hex")}`;
       const question = String(body.question ?? "").trim().slice(0, 160);
+      // What a step costs this round, and — if the admin wants a rigged
+      // demonstration — what the curve's minimum should be instead of a draw.
+      const descentCostC =
+        body.descentCost == null || body.descentCost === ""
+          ? MONEY.descentCostC
+          : Math.round(Math.min(1_000_000, Math.max(0, Number(body.descentCost))) * 100);
+      if (!Number.isFinite(descentCostC)) throw httpError(400, "the step price must be a number");
+      const forceY = body.minValue == null || body.minValue === "" ? null : Number(body.minValue);
+      if (forceY != null && !Number.isFinite(forceY)) throw httpError(400, "the minimum must be a number");
 
       let diagnostics = null;
       let spec = null;
       if (mode === "gradient") {
-        const built = makeCurve(seed, DIFFICULTIES[dkey], curveConfigFor("gradient"));
+        const cfg = curveConfigFor("gradient");
+        if (forceY != null) {
+          if (forceY < cfg.yClamp[0] || forceY > cfg.yClamp[1]) {
+            throw httpError(400, `the minimum has to be between ${cfg.yClamp[0]} and ${cfg.yClamp[1]}`);
+          }
+          cfg.forceY = forceY;
+        }
+        const built = makeCurve(seed, DIFFICULTIES[dkey], cfg);
         diagnostics = built.diagnostics;
         spec = built.spec;
         if (!diagnostics.ok) {
@@ -789,6 +806,7 @@ export async function handle(method, route, body, query) {
         difficulty: mode === "gradient" ? dkey : null,
         question: mode === "prediction" ? question : null,
         startCashC,
+        descentCostC,
         lateJoin,
       });
       // The settlement range comes from the MODE, not from the curve's x axis:
