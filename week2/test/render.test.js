@@ -44,8 +44,9 @@ import Reveal from "./src/components/Reveal.jsx";
 import Rules from "./src/components/Rules.jsx";
 import AdminPanel from "./src/components/AdminPanel.jsx";
 import BigBoard from "./src/components/BigBoard.jsx";
+import StaleBuild from "./src/components/StaleBuild.jsx";
 import { money, moneyShort, num, clock } from "./src/components/PixelBits.jsx";
-export const C = { App, Gate, Scope, OrderBook, YouPanel, Leaderboard, Toasts, Reveal, Rules, AdminPanel, BigBoard };
+export const C = { App, Gate, Scope, OrderBook, YouPanel, Leaderboard, Toasts, Reveal, Rules, AdminPanel, BigBoard, StaleBuild };
 export { React, renderToStaticMarkup, fillToasts, money, moneyShort, num, clock };
 `;
 
@@ -491,6 +492,38 @@ ok("the gate keeps the team code up until the player dismisses it", () => {
   );
   assert.ok(!gateSource.includes("TO THE FLOOR IN"), "the code screen still auto-counts down instead of waiting");
   assert.ok(gateSource.includes("onHold?.(true)"), "the code screen does not ask the app to hold");
+});
+
+ok("the HTML entry points are never cached, so a reload always gets the current build", () => {
+  // THE BUG THIS EXISTS FOR: index.html was served with a cacheable policy, so
+  // an already-open tab (and a CDN edge holding it for over an hour) kept
+  // handing out a stale document pointing at a stale bundle. The hashed assets
+  // SHOULD cache hard — their names change when their contents do — but the
+  // document that names them must not.
+  const cfg = JSON.parse(fs.readFileSync(path.join(root, "..", "vercel.json"), "utf8"));
+  const headers = cfg.headers ?? [];
+  for (const entry of ["/week2/", "/week2/index.html", "/week2/admin", "/week2/board"]) {
+    const rule = headers.find((h) => h.source === entry);
+    assert.ok(rule, `${entry} has no cache-control rule`);
+    const cc = rule.headers.find((h) => h.key.toLowerCase() === "cache-control");
+    assert.ok(cc && /no-store/.test(cc.value), `${entry} is cacheable: ${cc && cc.value}`);
+  }
+  // And the rewrites those entry points depend on are still there.
+  const rewrites = (cfg.rewrites ?? []).map((r) => r.source);
+  for (const r of ["/week2/admin", "/week2/board", "/api/week2/:path*"]) {
+    assert.ok(rewrites.includes(r), `missing rewrite ${r}`);
+  }
+});
+
+ok("the app carries the stale-build check, and it shows nothing when current", () => {
+  const out = render(h(C.StaleBuild, {}));
+  assert.strictEqual(out, "", "it must be invisible until the build actually is stale");
+  assert.ok(appSource.includes("<StaleBuild />"), "App does not mount the stale-build check");
+  const src = fs.readFileSync(path.join(root, "src", "components", "StaleBuild.jsx"), "utf8");
+  assert.ok(/import\.meta\.url/.test(src), "it must identify its own bundle to compare against");
+  assert.ok(/cache:\s*"no-store"/.test(src), "its own check must not be served from cache");
+  assert.ok(!/location\.reload\(\)\s*;?\s*}\s*,\s*\[/.test(src), "it must not reload on its own");
+  assert.ok(/visibilityState/.test(src), "it should not poll a backgrounded tab");
 });
 
 ok("money formatting is exact and signed where it should be", () => {

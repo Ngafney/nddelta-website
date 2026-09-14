@@ -22,12 +22,19 @@ import Reveal from "./components/Reveal.jsx";
 import Rules from "./components/Rules.jsx";
 import AdminPanel from "./components/AdminPanel.jsx";
 import BigBoard from "./components/BigBoard.jsx";
+import StaleBuild from "./components/StaleBuild.jsx";
 
 export default function App() {
   const path = window.location.pathname.replace(/\/$/, "");
-  if (path.endsWith("/admin")) return <AdminPanel />;
-  if (path.endsWith("/board")) return <BigBoard />;
-  return <Floor />;
+  const page = path.endsWith("/admin") ? <AdminPanel /> : path.endsWith("/board") ? <BigBoard /> : <Floor />;
+  return (
+    <>
+      {/* A tab left open across a redeploy runs old code forever unless
+          something tells it. This does. */}
+      <StaleBuild />
+      {page}
+    </>
+  );
 }
 
 /** Reveals already played on this browser, so a refresh does not replay one. */
@@ -337,6 +344,7 @@ function Floor() {
             )}
             {team && round.status !== "settled" && (
               <div className="badge badge--code" title="read this out to add a team-mate">
+                <span>CODE</span>
                 {team.code}
               </div>
             )}
