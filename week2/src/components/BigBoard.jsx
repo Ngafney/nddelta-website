@@ -5,7 +5,7 @@
  */
 import React, { useEffect, useRef, useState } from "react";
 import { api } from "../api.js";
-import { PixelSprite, clock, money, num, DELTA, DELTA_PALETTE } from "./PixelBits.jsx";
+import { PixelSprite, clock, num, DELTA, DELTA_PALETTE } from "./PixelBits.jsx";
 import Leaderboard from "./Leaderboard.jsx";
 import Reveal from "./Reveal.jsx";
 

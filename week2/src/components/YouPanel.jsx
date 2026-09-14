@@ -7,7 +7,7 @@
  * your team.
  */
 import React from "react";
-import { PxButton, money, num } from "./PixelBits.jsx";
+import { money, num } from "./PixelBits.jsx";
 
 export default function YouPanel({ me, team, mark, settled, onCancel, onCancelAll }) {
   if (!me) return null;

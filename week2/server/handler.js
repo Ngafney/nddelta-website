@@ -16,7 +16,7 @@
 import crypto from "node:crypto";
 import * as kv from "./kv.js";
 import { STORE_CONFIG } from "./store-config.mjs";
-import { makeCurve, sampleCurve, pointAt, fAt, d2At, diagnose } from "../shared/curve.js";
+import { makeCurve, sampleCurve, pointAt, d2At, diagnose } from "../shared/curve.js";
 import {
   newMarket,
   newPlayer,
