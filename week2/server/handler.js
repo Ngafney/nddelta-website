@@ -387,6 +387,7 @@ function publicRound(state, now) {
     // is exactly the sort of thing players are supposed to work out.
     startCashC: state.startCashC,
     descentCostC: descentCostC(state),
+    defaultSize: state.defaultSize ?? LIMITS.defaultOrderSize,
     lateJoin: state.lateJoin,
     players: Object.keys(state.players ?? {}).length,
     teams: Object.keys(state.teams ?? {}).length,
@@ -779,6 +780,10 @@ export async function handle(method, route, body, query) {
       if (!Number.isFinite(descentCostC)) throw httpError(400, "the step price must be a number");
       const forceY = body.minValue == null || body.minValue === "" ? null : Number(body.minValue);
       if (forceY != null && !Number.isFinite(forceY)) throw httpError(400, "the minimum must be a number");
+      const defaultSize = Math.round(
+        Math.min(LIMITS.maxSharesPerOrder, Math.max(1, Number(body.defaultSize ?? LIMITS.defaultOrderSize)))
+      );
+      if (!Number.isFinite(defaultSize)) throw httpError(400, "the click size must be a number");
 
       let diagnostics = null;
       let spec = null;
@@ -815,6 +820,7 @@ export async function handle(method, route, body, query) {
         question: mode === "prediction" ? question : null,
         startCashC,
         descentCostC,
+        defaultSize,
         lateJoin,
       });
       // The settlement range comes from the MODE, not from the curve's x axis:

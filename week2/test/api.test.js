@@ -326,11 +326,11 @@ await ok("descent is refused for a bad rate, a foreign anchor, or a step that do
 await ok("a step onto a point you own is refused free, and names no coordinate", async () => {
   const st = await GET("state", cred(carol));
   const from = st.me.points[0];
-  // The smallest rate cannot move you off where you stand.
-  const e = await rejects(
-    () => POST("descend", { ...cred(carol), anchorX: from.x, lr: LIMITS.learningRate[0] }),
-    /already walked/
-  );
+  // A rate chosen from the slope actually under foot, so the step is certainly
+  // below the one-hundredth resolution points are stored at. A fixed tiny rate
+  // is not enough: on a steep curve even 0.0001 moves you.
+  const lr = Math.max(LIMITS.learningRate[0], 0.001 / Math.abs(from.d));
+  const e = await rejects(() => POST("descend", { ...cred(carol), anchorX: from.x, lr }), /already walked/);
   // A step aimed past the end of the domain is clamped to the edge, so naming
   // the landing point in this message would announce where the domain stops.
   assert.ok(!/\d/.test(e.message), `the refusal names a coordinate: ${e.message}`);
@@ -351,29 +351,37 @@ await ok("points record which is newest, and repeated steps walk downhill from i
 
   let movedEveryTime = true;
   let leftward = 0;
+  let steps = 0;
   for (let i = 0; i < 6; i++) {
     const points = st.me.points;
     const active = newestOf(points);
-    let lr = 0.6 / Math.abs(active.d || 1);
     const round2 = (v) => Math.round(v * 100) / 100;
     const owned = (t) => points.some((q) => Math.abs(q.x - t) < 0.005);
-    // the panel's escape hatch, so a duplicate landing does not end the walk
-    if (owned(round2(active.x - lr * active.d))) {
-      for (let k = 1.02; k < 6; k += 0.02) {
-        if (!owned(round2(active.x - lr * k * active.d))) {
-          lr *= k;
+    // The panel's escape hatch: hunt outward for a rate that lands somewhere
+    // new. Searched over a wide range and in both directions, because a narrow
+    // search genuinely does come up empty sometimes.
+    const base = 0.6 / Math.abs(active.d || 1);
+    let lr = null;
+    for (let k = 1; k <= 40 && lr === null; k *= 1.05) {
+      for (const cand of [base * k, base / k]) {
+        const t = round2(active.x - cand * active.d);
+        if (Math.abs(cand * active.d) >= 0.01 && !owned(t)) {
+          lr = cand;
           break;
         }
       }
     }
+    if (lr === null) break; // nowhere new to stand from here; the walk is done
     const r = await POST("descend", { ...cred(walker), anchorX: active.x, lr });
-    assert.strictEqual(r.point.n, i + 1, "each step is numbered in order");
+    steps++;
+    assert.strictEqual(r.point.n, steps, "each step is numbered in order");
     st = await GET("state", cred(walker));
     const now = newestOf(st.me.points);
     if (now.x === active.x) movedEveryTime = false;
     if (now.x < active.x) leftward++;
     assert.strictEqual(now.x, r.point.x, "the newest point is the one just bought");
   }
+  assert.ok(steps >= 3, `expected to be able to walk, took ${steps} steps`);
   assert.ok(movedEveryTime, "a step must move where you are standing");
 
   // And prove the trap was real: on a leftward walk the rightmost point is an
@@ -639,6 +647,28 @@ await ok("neither setting leaks to a player", async () => {
   // The step price, by contrast, is meant to be visible — you must know what
   // you are being charged.
   assert.strictEqual((await GET("config")).round.descentCostC, 100_000);
+});
+
+await ok("a click is ten shares by default, and the admin can set it", async () => {
+  assert.strictEqual(LIMITS.defaultOrderSize, 10);
+  assert.strictEqual((await GET("config")).round.defaultSize, 10, "rounds carry the default");
+
+  await POST("admin/round", { token: admin, mode: "gradient", difficulty: "wavy", minutes: 10, defaultSize: 3 });
+  assert.strictEqual((await GET("config")).round.defaultSize, 3, "and whatever the admin chose");
+
+  // Nonsense is clamped into the tradable range rather than accepted.
+  await POST("admin/round", { token: admin, mode: "gradient", minutes: 10, defaultSize: 9999 });
+  assert.strictEqual((await GET("config")).round.defaultSize, LIMITS.maxSharesPerOrder);
+  await POST("admin/round", { token: admin, mode: "gradient", minutes: 10, defaultSize: 0 });
+  assert.strictEqual((await GET("config")).round.defaultSize, 1);
+
+  // It is a default for the click, not a limit on the order.
+  await POST("admin/round", { token: admin, mode: "gradient", minutes: 10, defaultSize: 10 });
+  const q = await POST("join", { name: "Clicker", deviceId: "device-clicker-00000" });
+  await POST("team/create", { ...cred(q), name: "Ten At A Time" });
+  await POST("admin/start", { token: admin, minutes: 10 });
+  const r = await POST("order", { ...cred(q), side: "B", px: 300, qty: 25 });
+  assert.strictEqual(r.resting.qty, 25, "a bigger order is still allowed");
 });
 
 /* ── the event-day rehearsal ──────────────────────────────────────────── */

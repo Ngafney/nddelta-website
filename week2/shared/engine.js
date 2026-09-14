@@ -108,6 +108,7 @@ export function newMarket(round) {
     endsAt: null,
     startCashC: round.startCashC ?? MONEY.startCashC,
     descentCostC: round.descentCostC ?? MONEY.descentCostC,
+    defaultSize: round.defaultSize ?? LIMITS.defaultOrderSize,
     lateJoin: round.lateJoin !== false,
     players: {},
     teams: {},

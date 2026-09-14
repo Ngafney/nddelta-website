@@ -213,6 +213,8 @@ const round = {
   serverNow: Date.now(),
   tick: 5,
   center: 500,
+  defaultSize: 10,
+  descentCostC: 100_000,
   settleC: null,
   xStar: null,
 };
@@ -578,6 +580,39 @@ ok("you can click a point on the chart, and the app stands on the newest", () =>
   assert.ok(followNewest.includes("20.00"), "should be standing on the newest point");
   const pinned = render(h(C.Scope, { points: walked, activeX: 60, onPick() {} }));
   assert.ok(pinned.includes("60.00"), "an explicit pick should win");
+});
+
+ok("the size picker always contains the round's own default", () => {
+  const base = {
+    book: market,
+    last: 360,
+    me,
+    center: 500,
+    tick: 5,
+    mine: me.orders,
+    onSize() {},
+    onOrder() {},
+    onCancelLevel() {},
+    onCancelAll() {},
+    disabled: false,
+  };
+  // An admin who picks 3 a click must see 3 as a choice, and selected.
+  const odd = render(h(C.OrderBook, { ...base, size: 3 }));
+  const buttons = [...odd.matchAll(/<button[^>]*class="([^"]*)"[^>]*>(\d+)<\/button>/g)].map((m) => ({
+    on: m[1].includes("on"),
+    n: Number(m[2]),
+  }));
+  assert.ok(buttons.some((b) => b.n === 3 && b.on), "the round's size is missing or unselected in the picker");
+  assert.ok(buttons.length >= 4 && buttons.length <= 6, `picker has ${buttons.length} choices`);
+  for (const b of buttons) assert.ok(b.n >= 1 && b.n <= 50, `choice ${b.n} is out of range`);
+
+  // And the ordinary default shows ten selected.
+  const ten = render(h(C.OrderBook, { ...base, size: 10 }));
+  const tenBtns = [...ten.matchAll(/<button[^>]*class="([^"]*)"[^>]*>(\d+)<\/button>/g)];
+  assert.ok(tenBtns.some((m) => m[2] === "10" && m[1].includes("on")), "ten should be the selected size");
+
+  // The app must take the size from the round, not a hardcoded 1.
+  assert.ok(/sizePick \?\? round\.defaultSize/.test(appSource), "App ignores the round's default click size");
 });
 
 ok("money formatting is exact and signed where it should be", () => {

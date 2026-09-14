@@ -206,11 +206,16 @@ export default function OrderBook({
           SHARES
         </span>
         <div className="sizepick">
-          {[1, 2, 5, 10, 25].map((n) => (
-            <button key={n} className={size === n ? "on" : ""} onClick={() => onSize(n)}>
-              {n}
-            </button>
-          ))}
+          {/* Always offer the round's own default, whatever the admin set it to. */}
+          {[...new Set([1, 5, size, 10, 25, 50])]
+            .filter((n) => n >= 1 && n <= 50)
+            .sort((a, b) => a - b)
+            .slice(0, 6)
+            .map((n) => (
+              <button key={n} className={size === n ? "on" : ""} onClick={() => onSize(n)}>
+                {n}
+              </button>
+            ))}
         </div>
         <div className="sizepick zoompick" title="how many prices fit on screen at once">
           <button disabled={zoom <= 0} onClick={() => changeZoom(-1)} aria-label="show more prices">

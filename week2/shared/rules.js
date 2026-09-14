@@ -131,6 +131,8 @@ export const LIMITS = {
   teamNameMax: 20,
   codeLength: 4,
   maxSharesPerOrder: 50,
+  /** How many shares one click buys or sells, unless the admin says otherwise. */
+  defaultOrderSize: 10,
   maxOrdersPerPlayer: 40,
   maxOpenOrders: 4000,
   maxPointsPerPlayer: 60,

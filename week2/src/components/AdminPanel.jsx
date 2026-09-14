@@ -103,6 +103,7 @@ function Controls({ token, onLogout }) {
   const [minutes, setMinutes] = useState(12);
   const [startCash, setStartCash] = useState(100000);
   const [descentCost, setDescentCost] = useState(1000);
+  const [defaultSize, setDefaultSize] = useState(10);
   const [minValue, setMinValue] = useState("");
   const [question, setQuestion] = useState("");
   const [keepPlayers, setKeepPlayers] = useState(true);
@@ -203,7 +204,7 @@ function Controls({ token, onLogout }) {
                 <i>VOLUME</i>
                 <b>{info.volume} shares</b>
                 <small>
-                  {money(round.startCashC)} each
+                  {money(round.startCashC)} each · {round.defaultSize} a click
                   {round.mode === "gradient" ? ` · ${money(round.descentCostC)} a step` : ""}
                 </small>
               </div>
@@ -450,6 +451,17 @@ function Controls({ token, onLogout }) {
 
         <div className="admin-grid mt">
           <div>
+            <span className="field-label">SHARES PER CLICK</span>
+            <input
+              type="number"
+              min={1}
+              max={50}
+              step={1}
+              value={defaultSize}
+              onChange={(e) => setDefaultSize(Number(e.target.value))}
+            />
+          </div>
+          <div>
             <span className="field-label">MINUTES</span>
             <input type="number" min={0.5} max={180} step="0.5" value={minutes} onChange={(e) => setMinutes(Number(e.target.value))} />
           </div>
@@ -485,6 +497,7 @@ function Controls({ token, onLogout }) {
                   minutes,
                   startCash,
                   descentCost,
+                  defaultSize,
                   minValue,
                   question,
                   keepPlayers,

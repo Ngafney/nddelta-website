@@ -61,7 +61,9 @@ function Floor() {
   const [toasts, setToasts] = useState([]);
   const [busy, setBusy] = useState(null);
   const [busyPx, setBusyPx] = useState(null);
-  const [size, setSize] = useState(1);
+  // null means "use whatever the round says". Picking a size pins it for the
+  // rest of the round, the same way picking a point pins the anchor.
+  const [sizePick, setSizePick] = useState(null);
   // null means "follow the newest point". Clicking a point on the chart pins
   // it instead. Deriving the active point rather than storing it is what stops
   // the poll racing a descent and snapping the selection back.
@@ -174,6 +176,7 @@ function Floor() {
   const enterRound = () => {
     setEntered(round.roundId);
     setPick(null);
+    setSizePick(null);
     sinceRef.current = 0;
     setReveal(null);
     setShowReveal(false);
@@ -327,6 +330,7 @@ function Floor() {
   }
 
   const mark = state.market.mark;
+  const size = sizePick ?? round.defaultSize ?? 1;
   const timerClass = msLeft == null ? "" : msLeft <= 0 ? "dead" : msLeft < 60_000 ? "warn" : "";
   const pnl = me.valueC - me.startC;
 
@@ -467,7 +471,7 @@ function Floor() {
                   tick={round.tick}
                   mine={me.orders}
                   size={size}
-                  onSize={setSize}
+                  onSize={setSizePick}
                   onOrder={order}
                   onCancelLevel={cancelLevel}
                   onCancelAll={cancelAll}
