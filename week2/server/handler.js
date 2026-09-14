@@ -106,6 +106,20 @@ const playerToken = (pid) => sha(`${SECRET}|player|${pid}`);
 const adminTokenFor = (hash) => sha(`${SECRET}|admin|${hash}`);
 const slug = (name) => name.toLowerCase().replace(/[^a-z0-9]+/g, "").trim();
 
+/**
+ * A number from a form field, or the fallback.
+ *
+ * Number("") is 0, which is a genuinely dangerous default in a form full of
+ * money: clearing the step-cost box made every step free, and clearing the
+ * starting-cash box would have dealt the room a dollar each. An empty field
+ * means "I did not set this", so it has to mean the default.
+ */
+function numOr(value, fallback) {
+  if (value == null || value === "") return fallback;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
+}
+
 function httpError(status, message, code) {
   const e = new Error(message);
   e.status = status;
@@ -762,9 +776,9 @@ export async function handle(method, route, body, query) {
       await requireAdmin(body);
       const mode = MODES[body.mode] ? body.mode : "gradient";
       const dkey = DIFFICULTIES[body.difficulty] ? body.difficulty : "wavy";
-      const minutes = Math.min(180, Math.max(0.5, Number(body.minutes) || 12));
+      const minutes = Math.min(180, Math.max(0.5, numOr(body.minutes, 12)));
       const startCashC = Math.round(
-        Math.min(10_000_000, Math.max(100, Number(body.startCash ?? MONEY.startCashC / 100))) * 100
+        Math.min(10_000_000, Math.max(100, numOr(body.startCash, MONEY.startCashC / 100))) * 100
       );
       const keepPlayers = !!body.keepPlayers;
       const lateJoin = body.lateJoin !== false;
@@ -773,17 +787,14 @@ export async function handle(method, route, body, query) {
       const question = String(body.question ?? "").trim().slice(0, 160);
       // What a step costs this round, and — if the admin wants a rigged
       // demonstration — what the curve's minimum should be instead of a draw.
-      const descentCostC =
-        body.descentCost == null || body.descentCost === ""
-          ? MONEY.descentCostC
-          : Math.round(Math.min(1_000_000, Math.max(0, Number(body.descentCost))) * 100);
-      if (!Number.isFinite(descentCostC)) throw httpError(400, "the step price must be a number");
+      const descentCostC = Math.round(
+        Math.min(1_000_000, Math.max(0, numOr(body.descentCost, MONEY.descentCostC / 100))) * 100
+      );
       const forceY = body.minValue == null || body.minValue === "" ? null : Number(body.minValue);
       if (forceY != null && !Number.isFinite(forceY)) throw httpError(400, "the minimum must be a number");
       const defaultSize = Math.round(
-        Math.min(LIMITS.maxSharesPerOrder, Math.max(1, Number(body.defaultSize ?? LIMITS.defaultOrderSize)))
+        Math.min(LIMITS.maxSharesPerOrder, Math.max(1, numOr(body.defaultSize, LIMITS.defaultOrderSize)))
       );
-      if (!Number.isFinite(defaultSize)) throw httpError(400, "the click size must be a number");
 
       let diagnostics = null;
       let spec = null;

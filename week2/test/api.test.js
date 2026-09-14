@@ -608,6 +608,38 @@ await ok("the admin can set the price of a step, and the round carries it", asyn
   assert.strictEqual((await GET("config")).round.descentCostC, 0);
 });
 
+await ok("a box the admin cleared falls back to the default, not to zero", async () => {
+  // Number("") is 0. A form full of money fields that coerce on every keystroke
+  // will happily read a half-deleted entry as "steps are free" or "everyone
+  // gets a dollar", and nobody notices until the round is live.
+  const cleared = await POST("admin/round", {
+    token: admin,
+    mode: "gradient",
+    difficulty: "wavy",
+    minutes: "",
+    startCash: "",
+    descentCost: "",
+    defaultSize: "",
+  });
+  assert.ok(cleared.ok !== false);
+  const r = (await GET("config")).round;
+  assert.strictEqual(r.descentCostC, MONEY.descentCostC, "a cleared price must not mean free");
+  assert.strictEqual(r.startCashC, MONEY.startCashC, "a cleared stack must not mean a dollar");
+  assert.strictEqual(r.defaultSize, LIMITS.defaultOrderSize, "a cleared click size must not mean one");
+
+  // Garbage is treated the same way rather than becoming NaN.
+  await POST("admin/round", { token: admin, mode: "gradient", minutes: 10, descentCost: "abc", startCash: "abc" });
+  const g = (await GET("config")).round;
+  assert.strictEqual(g.descentCostC, MONEY.descentCostC);
+  assert.strictEqual(g.startCashC, MONEY.startCashC);
+
+  // But a deliberate zero still means zero: free steps are a real setting.
+  await POST("admin/round", { token: admin, mode: "gradient", minutes: 10, descentCost: 0 });
+  assert.strictEqual((await GET("config")).round.descentCostC, 0, "an explicit zero must survive");
+  await POST("admin/round", { token: admin, mode: "gradient", minutes: 10, descentCost: "0" });
+  assert.strictEqual((await GET("config")).round.descentCostC, 0, '"0" from a text field is still zero');
+});
+
 await ok("the admin can pin the true minimum, and the curve really bottoms out there", async () => {
   const built = await POST("admin/round", {
     token: admin,

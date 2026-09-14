@@ -100,10 +100,14 @@ function Controls({ token, onLogout }) {
   // round setup form
   const [mode, setMode] = useState("gradient");
   const [difficulty, setDifficulty] = useState("wavy");
-  const [minutes, setMinutes] = useState(12);
-  const [startCash, setStartCash] = useState(100000);
-  const [descentCost, setDescentCost] = useState(1000);
-  const [defaultSize, setDefaultSize] = useState(10);
+  // Kept as text on purpose. Number("") is 0, so coercing on every keystroke
+  // turns a cleared box into a real, silently wrong setting — free steps, or a
+  // dollar of starting cash. Empty goes to the server as empty, and the server
+  // reads empty as "use the default".
+  const [minutes, setMinutes] = useState("12");
+  const [startCash, setStartCash] = useState("100000");
+  const [descentCost, setDescentCost] = useState("1000");
+  const [defaultSize, setDefaultSize] = useState("10");
   const [minValue, setMinValue] = useState("");
   const [question, setQuestion] = useState("");
   const [keepPlayers, setKeepPlayers] = useState(true);
@@ -219,8 +223,8 @@ function Controls({ token, onLogout }) {
 
             <div className="row">
               {status === "lobby" && (
-                <PxButton variant="green" disabled={busy} onClick={() => act("opened the market", () => api.post("admin/start", { token, minutes }))}>
-                  {busy === "opened the market" ? <Spinner text="OPENING" /> : `OPEN FOR ${minutes} MIN`}
+                <PxButton variant="green" disabled={busy} onClick={() => act("opened the market", () => api.post("admin/start", { token, minutes: Number(minutes) || 12 }))}>
+                  {busy === "opened the market" ? <Spinner text="OPENING" /> : `OPEN FOR ${Number(minutes) || 12} MIN`}
                 </PxButton>
               )}
               {status === "live" && (
@@ -425,7 +429,7 @@ function Controls({ token, onLogout }) {
                 max={1000000}
                 step={100}
                 value={descentCost}
-                onChange={(e) => setDescentCost(Number(e.target.value))}
+                onChange={(e) => setDescentCost(e.target.value)}
               />
             </div>
             <div>
@@ -445,7 +449,8 @@ function Controls({ token, onLogout }) {
         {mode === "gradient" && (
           <div className="hint">
             Leave the minimum blank and it is drawn from the bell curve. Set it and the curve is built to bottom out
-            exactly there — useful for a worked example where you already know the answer.
+            exactly there — useful for a worked example where you already know the answer. Any box left empty falls
+            back to its default rather than to zero.
           </div>
         )}
 
@@ -458,16 +463,16 @@ function Controls({ token, onLogout }) {
               max={50}
               step={1}
               value={defaultSize}
-              onChange={(e) => setDefaultSize(Number(e.target.value))}
+              onChange={(e) => setDefaultSize(e.target.value)}
             />
           </div>
           <div>
             <span className="field-label">MINUTES</span>
-            <input type="number" min={0.5} max={180} step="0.5" value={minutes} onChange={(e) => setMinutes(Number(e.target.value))} />
+            <input type="number" min={0.5} max={180} step="0.5" value={minutes} onChange={(e) => setMinutes(e.target.value)} />
           </div>
           <div>
             <span className="field-label">STARTING CASH EACH ($)</span>
-            <input type="number" min={100} max={10000000} step={5000} value={startCash} onChange={(e) => setStartCash(Number(e.target.value))} />
+            <input type="number" min={100} max={10000000} step={5000} value={startCash} onChange={(e) => setStartCash(e.target.value)} />
           </div>
         </div>
 
