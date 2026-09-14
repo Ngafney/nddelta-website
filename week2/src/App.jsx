@@ -250,7 +250,7 @@ function Floor() {
     act(
       "descend",
       async () => {
-        await api.post("descend", withPlayer(player, { anchorX: anchor, lr }));
+        const r = await api.post("descend", withPlayer(player, { anchorX: anchor, lr }));
         // Back to following the newest point, which is the one just bought — so
         // pressing step again walks on from where you landed.
         setPick(null);

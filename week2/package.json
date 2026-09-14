@@ -8,9 +8,10 @@
     "api": "node dev-server.js",
     "build": "vite build",
     "serve": "node serve.js",
-    "test": "node test/engine.test.js && node test/api.test.js && node test/render.test.js",
+    "test": "node test/engine.test.js && node test/api.test.js && node test/scope.test.js && node test/render.test.js",
     "test:api": "node test/api.test.js",
     "test:render": "node test/render.test.js",
+    "test:scope": "node test/scope.test.js",
     "test:e2e": "node test/e2e.test.js",
     "test:all": "npm test && npm run build && npm run test:e2e"
   },
