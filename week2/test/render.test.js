@@ -253,7 +253,8 @@ ok("the step control lives in the chart, with the top of the slider as the max s
       limits: { maxStep: 25, learningRate: [0.0001, 1000] },
     })
   );
-  assert.ok(out.includes("TAKE A STEP DOWNHILL"), "the one purchase is on the chart itself");
+  assert.ok(out.includes("STEP DOWNHILL FROM"), "the one purchase is on the chart itself");
+  assert.ok(out.includes("43.72"), "and it names the point you are standing on");
   assert.ok(out.includes("$1,000.00"), "at a flat fee");
   assert.ok(out.includes("LEARNING RATE") && out.includes("THE STEP"), "rate in, step out");
   assert.ok(out.includes("max step · 25"), "the slider tops out at the largest legal step");
@@ -556,6 +557,27 @@ ok("landing on a point you own is not the same as not moving", () => {
     })
   );
   assert.ok(out.includes("LEARNING RATE"), "the step control still renders");
+});
+
+ok("you can click a point on the chart, and the app stands on the newest", () => {
+  const src = fs.readFileSync(path.join(root, "src", "components", "Scope.jsx"), "utf8");
+  assert.ok(/onClick=\{pickAt\}/.test(src), "the chart is not clickable");
+  assert.ok(src.includes("bestD <= 34"), "there is no hit radius for a fingertip");
+
+  // The app must follow the NEWEST point, not the last in the array.
+  assert.ok(/reduce\(\(a, b\) => \(\(b\.n \?\? 0\) >= \(a\.n \?\? 0\) \? b : a\)\)/.test(appSource), "App does not derive the newest point from n");
+  assert.ok(!/points\[me\.points\.length - 1\]/.test(appSource), "App still uses the rightmost point as 'where you are'");
+  assert.ok(appSource.includes("setPick(null)"), "a step does not return to following the newest point");
+
+  // With an explicit pick the chart stands there; without one, on the newest.
+  const walked = [
+    { x: 60, y: 700, d: 3, n: 0 },
+    { x: 20, y: 500, d: -2, n: 1 },
+  ];
+  const followNewest = render(h(C.Scope, { points: walked, activeX: 20, onPick() {} }));
+  assert.ok(followNewest.includes("20.00"), "should be standing on the newest point");
+  const pinned = render(h(C.Scope, { points: walked, activeX: 60, onPick() {} }));
+  assert.ok(pinned.includes("60.00"), "an explicit pick should win");
 });
 
 ok("money formatting is exact and signed where it should be", () => {

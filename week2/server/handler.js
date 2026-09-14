@@ -675,7 +675,9 @@ export async function handle(method, route, body, query) {
         p.cash -= costC;
         p.spentC += costC;
         p.descents = (p.descents ?? 0) + 1;
-        const pt = pointAt(spec, x);
+        // Points are kept sorted by x for drawing, so "the newest" is not the
+        // last element — it has to be recorded. `n` is that: the step number.
+        const pt = { ...pointAt(spec, x), n: p.points.length };
         p.points.push(pt);
         p.points.sort((a, b) => a.x - b.x);
         return { point: pt, from: from.x, step: Math.round(step * 100) / 100, lr, costC, me: meView(state, p) };
@@ -843,7 +845,7 @@ export async function handle(method, route, body, query) {
       // Deal everyone their opening point here, in the same document, rather
       // than one transaction per player — sixty round trips would take seconds
       // and leave the room staring at an empty chart.
-      if (spec) for (const p of Object.values(market.players)) p.points = [pointAt(spec, randomX(spec))];
+      if (spec) for (const p of Object.values(market.players)) p.points = [{ ...pointAt(spec, randomX(spec)), n: 0 }];
 
       await replaceMarket(market);
       return { round: publicRound((await readMarket({ fresh: true })).state, now), diagnostics, seed, mode };
@@ -1110,7 +1112,7 @@ async function grantOpeningPoint(playerId, now) {
       out.readOnly = true;
       return p.points[0];
     }
-    const pt = pointAt(spec, x);
+    const pt = { ...pointAt(spec, x), n: 0 };
     p.points.push(pt);
     p.openedAt = now;
     return pt;

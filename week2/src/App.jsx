@@ -62,7 +62,10 @@ function Floor() {
   const [busy, setBusy] = useState(null);
   const [busyPx, setBusyPx] = useState(null);
   const [size, setSize] = useState(1);
-  const [anchorX, setAnchorX] = useState(null);
+  // null means "follow the newest point". Clicking a point on the chart pins
+  // it instead. Deriving the active point rather than storing it is what stops
+  // the poll racing a descent and snapping the selection back.
+  const [pick, setPick] = useState(null);
   const [tab, setTab] = useState("floor");
   const [now, setNow] = useState(Date.now());
   const [reveal, setReveal] = useState(null);
@@ -170,7 +173,7 @@ function Floor() {
 
   const enterRound = () => {
     setEntered(round.roundId);
-    setAnchorX(null);
+    setPick(null);
     sinceRef.current = 0;
     setReveal(null);
     setShowReveal(false);
@@ -195,11 +198,12 @@ function Floor() {
       .catch(() => {});
   }, [settled, round?.roundId, reveal, newRoundWaiting]);
 
-  useEffect(() => {
-    if (me?.points?.length && !me.points.some((p) => p.x === anchorX)) {
-      setAnchorX(me.points[me.points.length - 1].x);
-    }
-  }, [me?.points, anchorX]);
+  // The newest point is the one with the highest step number, NOT the last in
+  // the array — the server keeps points sorted by x so they can be drawn.
+  const newest = me?.points?.length
+    ? me.points.reduce((a, b) => ((b.n ?? 0) >= (a.n ?? 0) ? b : a))
+    : null;
+  const activeX = pick != null && me?.points?.some((p) => p.x === pick) ? pick : newest?.x ?? null;
 
   /* ── actions ────────────────────────────────────────────────────────── */
 
@@ -243,8 +247,10 @@ function Floor() {
     act(
       "descend",
       async () => {
-        const r = await api.post("descend", withPlayer(player, { anchorX: anchor, lr }));
-        setAnchorX(r.point.x);
+        await api.post("descend", withPlayer(player, { anchorX: anchor, lr }));
+        // Back to following the newest point, which is the one just bought — so
+        // pressing step again walks on from where you landed.
+        setPick(null);
         push({
           key: `d-${r.point.x}-${Date.now()}`,
           kind: "win",
@@ -432,8 +438,8 @@ function Floor() {
                   </div>
                   <Scope
                     points={me.points}
-                    activeX={anchorX}
-                    onPick={setAnchorX}
+                    activeX={activeX}
+                    onPick={setPick}
                     height={narrow ? 230 : 300}
                     revealCurve={reveal?.curve ?? null}
                     yStar={settled ? reveal?.yStar ?? null : null}

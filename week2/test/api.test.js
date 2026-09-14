@@ -337,6 +337,55 @@ await ok("a step onto a point you own is refused free, and names no coordinate",
   assert.strictEqual((await GET("state", cred(carol))).me.cashC, st.me.cashC, "and nothing was charged");
 });
 
+await ok("points record which is newest, and repeated steps walk downhill from it", async () => {
+  // THE BUG THIS EXISTS FOR: points are kept sorted by x so they can be drawn,
+  // so the last element is the RIGHTMOST, not the newest. The app used that as
+  // "where you are standing", so a step to the left snapped the selection back
+  // to some old point and it looked like the descent had done nothing.
+  const walker = await POST("join", { name: "Walker", deviceId: "device-walker-000000" });
+  await POST("team/create", { ...cred(walker), name: "On Foot" });
+  let st = await GET("state", cred(walker));
+  assert.strictEqual(st.me.points[0].n, 0, "the opening point is step zero");
+
+  const newestOf = (points) => points.reduce((a, b) => ((b.n ?? 0) >= (a.n ?? 0) ? b : a));
+
+  let movedEveryTime = true;
+  let leftward = 0;
+  for (let i = 0; i < 6; i++) {
+    const points = st.me.points;
+    const active = newestOf(points);
+    let lr = 0.6 / Math.abs(active.d || 1);
+    const round2 = (v) => Math.round(v * 100) / 100;
+    const owned = (t) => points.some((q) => Math.abs(q.x - t) < 0.005);
+    // the panel's escape hatch, so a duplicate landing does not end the walk
+    if (owned(round2(active.x - lr * active.d))) {
+      for (let k = 1.02; k < 6; k += 0.02) {
+        if (!owned(round2(active.x - lr * k * active.d))) {
+          lr *= k;
+          break;
+        }
+      }
+    }
+    const r = await POST("descend", { ...cred(walker), anchorX: active.x, lr });
+    assert.strictEqual(r.point.n, i + 1, "each step is numbered in order");
+    st = await GET("state", cred(walker));
+    const now = newestOf(st.me.points);
+    if (now.x === active.x) movedEveryTime = false;
+    if (now.x < active.x) leftward++;
+    assert.strictEqual(now.x, r.point.x, "the newest point is the one just bought");
+  }
+  assert.ok(movedEveryTime, "a step must move where you are standing");
+
+  // And prove the trap was real: on a leftward walk the rightmost point is an
+  // old one, so the previous logic would have snapped back to it.
+  if (leftward > 0) {
+    const rightmost = st.me.points[st.me.points.length - 1];
+    const newest = newestOf(st.me.points);
+    assert.ok(rightmost.n < newest.n, "the rightmost point should be an older one after walking left");
+    assert.notStrictEqual(rightmost.x, newest.x, "which is exactly what the old code mistook for 'where you are'");
+  }
+});
+
 await ok("there is nothing else to buy", async () => {
   await rejects(() => POST("probe", { ...cred(carol), anchorX: 1, offset: 1 }), /no route/);
   await rejects(() => POST("ticket", cred(carol)), /no route/);

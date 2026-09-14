@@ -230,6 +230,9 @@ export default function Scope({
 }) {
   const ref = useRef(null);
   const [lrExp, setLrExp] = useState(-1);
+  // The last drawn mapping, so a click on the canvas can be turned back into a
+  // point without recomputing the window.
+  const view = useRef(null);
 
   useEffect(() => {
     const canvas = ref.current;
@@ -247,6 +250,7 @@ export default function Scope({
       }
       const { lo, hi } = windowFor(ys);
       const map = makeMap(w, h, lo, hi, pad, x0, x1);
+      view.current = { map, pad, w, h };
       drawFrame(ctx, w, h, map, pad);
 
       if (revealCurve) {
@@ -271,7 +275,11 @@ export default function Scope({
     return () => ro.disconnect();
   }, [points, activeX, height, revealCurve, yStar]);
 
-  const active = points.find((p) => p.x === activeX) ?? points[points.length - 1] ?? null;
+  // Fall back to the NEWEST point, not the rightmost: the list is sorted by x
+  // for drawing, so the last element is wherever the far right happens to be.
+  const active =
+    points.find((p) => p.x === activeX) ??
+    (points.length ? points.reduce((a, b) => ((b.n ?? 0) >= (a.n ?? 0) ? b : a)) : null);
   const best = points.length ? Math.min(...points.map((p) => p.y)) : null;
 
   const maxStep = limits?.maxStep ?? 25;
@@ -321,9 +329,34 @@ export default function Scope({
   const cost = me?.descentCostC ?? 0;
   const broke = cost > (me?.spendableC ?? 0);
 
+  /** Click the chart to stand on the nearest point you own. */
+  const pickAt = (e) => {
+    const v = view.current;
+    if (!v || !points.length || !onPick) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const cx = e.clientX - rect.left;
+    const cy = e.clientY - rect.top;
+    let best = null;
+    let bestD = Infinity;
+    for (const p of points) {
+      const d = Math.hypot(v.map.x(p.x) - cx, v.map.y(p.y) - cy);
+      if (d < bestD) {
+        bestD = d;
+        best = p;
+      }
+    }
+    // A generous radius on a phone, where the target is a fingertip.
+    if (best && bestD <= 34) onPick(best.x);
+  };
+
   return (
     <div className="scope">
-      <canvas ref={ref} className="scope-canvas" />
+      <canvas
+        ref={ref}
+        className={`scope-canvas ${points.length > 1 && onPick ? "pickable" : ""}`}
+        onClick={pickAt}
+        title={points.length > 1 ? "click a point to stand on it" : undefined}
+      />
 
       {!points.length ? (
         <div className="scope-empty">waiting for your opening point…</div>
@@ -357,7 +390,7 @@ export default function Scope({
           </div>
 
           {points.length > 1 && (
-            <div className="pointchips">
+            <div className="pointchips" title="or click a point on the chart">
               {points.map((p) => (
                 <button
                   key={p.x}
@@ -376,7 +409,7 @@ export default function Scope({
             <div className="stepbox">
               <div className="stepbox-head">
                 <span>
-                  TAKE A STEP DOWNHILL · <b>{money(cost)}</b>
+                  STEP DOWNHILL FROM x = {num(active.x, 2)} · <b>{money(cost)}</b>
                 </span>
                 <code>x ← x − rate × f'(x)</code>
               </div>
