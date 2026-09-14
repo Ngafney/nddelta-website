@@ -616,6 +616,10 @@ export async function handle(method, route, body, query) {
         const res = placeOrder(state, p.id, side, px, qty, now);
         return {
           filled: res.filled,
+          // What could trade traded; the rest could not be carried, so it was
+          // dropped rather than rested. The player is told, never left guessing.
+          canceled: res.canceled ?? 0,
+          ioc: !!res.ioc,
           resting: res.resting ? { id: res.resting.id, px: res.resting.px, qty: res.resting.qty, side } : null,
           trades: res.trades.map((t) => ({ px: t.px, qty: t.qty })),
           me: meView(state, p),

@@ -233,10 +233,21 @@ function Floor() {
     return act(
       "order",
       async () => {
-        // No optimistic toast here. The poll that follows carries the real
-        // fills and announces them once; echoing it locally was the second
-        // notification everybody was seeing.
-        await api.post("order", withPlayer(player, { side, px, qty: size }));
+        // No optimistic fill toast here. The poll that follows carries the
+        // real fills and announces them once; echoing it locally was the
+        // second notification everybody was seeing.
+        const res = await api.post("order", withPlayer(player, { side, px, qty: size }));
+        // A cancelled remainder is not a fill, so the poll will never mention
+        // it. Say it here, once, or the shares just quietly vanish.
+        if (res?.canceled > 0) {
+          push({
+            key: `ioc-${Date.now()}`,
+            kind: "bad",
+            title: `${res.filled} FILLED · ${res.canceled} CANCELED`,
+            body: "your balance could not carry the rest, so it was not left resting",
+            ttl: 7000,
+          });
+        }
       },
       `${side}${px}`
     );

@@ -497,6 +497,165 @@ ok("spending on information is checked against BOTH invariants", () => {
   clean(s);
 });
 
+/* ── immediate-or-cancel ────────────────────────────────── */
+
+/** Sell 200 at 500 on $100k, which is exactly the short cap. */
+function maxedShort(s, me = "a", mm = "b") {
+  for (let i = 0; i < 4; i++) {
+    B(s, mm, 500, 50);
+    A(s, me, 500, 50);
+  }
+  const pw = powers(s, s.players[me]);
+  assert.strictEqual(pw.sellC, 0, "the setup should sit exactly on the short cap");
+  return s;
+}
+
+ok("a cross is judged on what it actually fills at, not on its limit", () => {
+  const s = market(["a", "b"]);
+  A(s, "b", 300, 50);
+  const before = s.players.a.cash;
+  // A limit far through the book. Under the old rule this reserved 900 a share.
+  const r = B(s, "a", 900, 50);
+  assert.strictEqual(r.filled, 50);
+  assert.deepStrictEqual(r.trades.map((t) => t.px), [300]);
+  assert.strictEqual(before - s.players.a.cash, 300 * 50 * 100, "charged the print, not the limit");
+  clean(s);
+});
+
+ok("maxed short, you can still sweep out with a limit through the book", () => {
+  const s = market(["a", "b", "c"]);
+  maxedShort(s);
+  A(s, "c", 505, 50);
+  // A bid above the settlement ceiling cannot REST here -- it would load
+  // invariant B, and B has nothing left. It can still trade.
+  const r = B(s, "a", 1500, 50);
+  assert.strictEqual(r.filled, 50, "the cover should go through");
+  assert.strictEqual(r.trades[0].px, 505);
+  assert.strictEqual(r.resting, null, "and nothing may be left resting up there");
+  assert.ok(s.players.a.pos > -200, "the short actually came in");
+  clean(s);
+  settlesSafelyEverywhere(s, "after an IOC cover");
+});
+
+ok("the unfillable remainder is cancelled, counted, and reported", () => {
+  const s = market(["a", "b", "c"]);
+  maxedShort(s);
+  A(s, "c", 505, 20); // only 20 on offer, but I ask for 50
+  const r = B(s, "a", 1500, 50);
+  assert.strictEqual(r.ioc, true, "this had to become immediate-or-cancel");
+  assert.strictEqual(r.filled, 20);
+  assert.strictEqual(r.canceled, 30, "the 30 that could not rest must be reported");
+  assert.strictEqual(r.resting, null);
+  assert.strictEqual(s.orders.filter((o) => o.pid === "a").length, 0, "nothing of mine may be left on the book");
+  clean(s);
+});
+
+ok("an order that can simply rest is never turned into an IOC", () => {
+  const s = market(["a", "b"]);
+  const r = B(s, "a", 400, 10);
+  assert.strictEqual(r.ioc, false);
+  assert.strictEqual(r.canceled, 0);
+  assert.ok(r.resting, "it should be sitting on the book");
+  assert.strictEqual(r.resting.qty, 10);
+  clean(s);
+});
+
+ok("IOC cannot rescue an order that has nothing to trade against", () => {
+  const s = market(["a", "b", "c"]);
+  maxedShort(s);
+  // Empty book on the far side: there is no crossing part to keep.
+  throws(() => A(s, "a", 900, 10), /out of balance/);
+  assert.strictEqual(s.orders.filter((o) => o.pid === "a").length, 0);
+  clean(s);
+});
+
+ok("IOC never lets you deepen a position you cannot carry", () => {
+  const s = market(["a", "b", "c"]);
+  maxedShort(s);
+  B(s, "c", 495, 50); // a real bid to hit
+  // Crossing DOWN to sell makes the short bigger. No rule may allow this.
+  throws(() => A(s, "a", 495, 50), /out of balance/);
+  assert.strictEqual(s.players.a.pos, -200, "the position must not have moved");
+  clean(s);
+  settlesSafelyEverywhere(s, "after a refused deepening");
+});
+
+ok("your own resting orders still hold their cash against you", () => {
+  const s = market(["a", "b", "c"]);
+  maxedShort(s);
+  for (const px of [495, 490, 485, 480, 475, 470, 465, 460]) B(s, "a", px, 50);
+  A(s, "c", 505, 50);
+  // IOC does not touch OTHER orders, so this is still correctly refused: the
+  // eight bids would overdraw the account if they all filled.
+  const e = throws(() => B(s, "a", 505, 50), /out of balance/);
+  assert.match(e.message, /cancel some resting orders/, "the message must say what to do");
+  clean(s);
+});
+
+ok("the balance message names no settlement bound", () => {
+  const s = market(["a", "b", "c"]);
+  maxedShort(s);
+  const e = throws(() => A(s, "a", 900, 10));
+  const g = grid(s);
+  for (const bound of [g.settleMin, g.settleMax, g.orderMin, g.orderMax]) {
+    if (bound === 0) continue; // "$0.00" is an ordinary amount, not a disclosure
+    assert.ok(!e.message.includes(String(bound)), `the refusal leaked ${bound}`);
+  }
+});
+
+ok("what the plan promised is exactly what the book did", () => {
+  const s = market(["a", "b", "c"]);
+  A(s, "b", 400, 10);
+  A(s, "c", 405, 10);
+  A(s, "b", 410, 10);
+  const cash0 = s.players.a.cash;
+  const pos0 = s.players.a.pos;
+  const r = B(s, "a", 410, 25);
+  const paid = r.trades.reduce((n, t) => n + t.px * t.qty * 100, 0);
+  const got = r.trades.reduce((n, t) => n + t.qty, 0);
+  assert.strictEqual(r.filled, got, "filled must equal what the trades say");
+  assert.strictEqual(cash0 - s.players.a.cash, paid, "cash moved by exactly the printed trades");
+  assert.strictEqual(s.players.a.pos - pos0, got, "position moved by exactly the printed trades");
+  assert.deepStrictEqual(r.trades.map((t) => t.px), [400, 405, 410], "and swept in price order");
+  clean(s);
+});
+
+ok("self-trade prevention still prints nothing and keeps the reserve honest", () => {
+  const s = market(["a", "b"]);
+  B(s, "a", 500, 20);
+  const r = A(s, "a", 490, 10);
+  assert.strictEqual(r.trades.length, 0, "a player may never trade with themselves");
+  assert.strictEqual(s.players.a.pos, 0);
+  assert.strictEqual(s.orders.filter((o) => o.pid === "a" && o.side === "B").length, 0, "the bid was cancelled");
+  clean(s);
+});
+
+ok("a thousand crossing orders leave every invariant standing", () => {
+  const s = market(["a", "b", "c", "d"], 200_000_000);
+  let iocs = 0;
+  let took = 0;
+  for (let i = 0; i < 1000; i++) {
+    const pid = ["a", "b", "c", "d"][i % 4];
+    const side = i % 2 ? "B" : "A";
+    const px = 5 * Math.round((350 + ((i * 37) % 300)) / 5);
+    const qty = 1 + ((i * 13) % 20);
+    try {
+      const r = placeOrder(s, pid, side, px, qty, tick());
+      took++;
+      if (r.ioc) {
+        iocs++;
+        assert.ok(r.canceled > 0, "an IOC must report what it dropped");
+        assert.strictEqual(r.resting, null, "an IOC may never leave a resting order");
+      }
+    } catch (e) {
+      if (!(e instanceof EngineError)) throw e;
+    }
+  }
+  assert.ok(took > 200, `only ${took} orders were accepted`);
+  clean(s);
+  settlesSafelyEverywhere(s, "after a crossing fuzz");
+});
+
 /* ── the no-bankruptcy claim ──────────────────────────────────────────── */
 
 console.log("\nsolvency");

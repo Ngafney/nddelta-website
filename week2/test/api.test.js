@@ -608,6 +608,55 @@ await ok("the admin can set the price of a step, and the round carries it", asyn
   assert.strictEqual((await GET("config")).round.descentCostC, 0);
 });
 
+await ok("a cross that cannot rest its remainder comes back as an IOC", async () => {
+  await POST("admin/round", { token: admin, mode: "gradient", difficulty: "wavy", minutes: 10, startCash: 100000 });
+  const shorty = await POST("join", { name: "Shorty", deviceId: "device-shorty-0000001" });
+  const buyer = await POST("join", { name: "Buyer", deviceId: "device-buyer-00000001" });
+  const third = await POST("join", { name: "Third", deviceId: "device-third-00000001" });
+  await POST("team/create", { ...cred(shorty), name: "Downside" });
+  await POST("team/create", { ...cred(buyer), name: "Upside" });
+  await POST("team/create", { ...cred(third), name: "Sideways" });
+  await POST("admin/start", { token: admin, minutes: 10 });
+
+  // Sell 200 at 500 on $100,000: exactly the short cap.
+  for (let i = 0; i < 4; i++) {
+    await POST("order", { ...cred(buyer), side: "B", px: 500, qty: 50 });
+    await POST("order", { ...cred(shorty), side: "A", px: 500, qty: 50 });
+  }
+  const maxed = await GET("state", cred(shorty));
+  assert.strictEqual(maxed.me.pos, -200, "the setup should be exactly at the cap");
+  assert.strictEqual(maxed.me.sellC, 0, "and have no room left to sell");
+
+  // Only 20 on offer, and a bid above the ceiling cannot rest. So: fill 20,
+  // drop 30, and leave nothing behind.
+  await POST("order", { ...cred(third), side: "A", px: 505, qty: 20 });
+  const r = await POST("order", { ...cred(shorty), side: "B", px: 1500, qty: 50 });
+  assert.strictEqual(r.ioc, true, "this had to become immediate-or-cancel");
+  assert.strictEqual(r.filled, 20);
+  assert.strictEqual(r.canceled, 30, "the client needs to know what was dropped");
+  assert.strictEqual(r.resting, null);
+  assert.strictEqual(r.me.pos, -180, "the short really came in");
+
+  const after = await GET("state", cred(shorty));
+  assert.strictEqual(after.me.orders.length, 0, "nothing of mine may be left on the book");
+
+  // An ordinary order is untouched by any of this.
+  const plain = await POST("order", { ...cred(shorty), side: "B", px: 300, qty: 5 });
+  assert.strictEqual(plain.ioc, false);
+  assert.strictEqual(plain.canceled, 0);
+  assert.ok(plain.resting, "it should rest normally");
+
+  // And the refusal, when it comes, says what to do about it.
+  const e = await rejects(
+    () => POST("order", { ...cred(shorty), side: "A", px: 600, qty: 50 }),
+    /out of balance/
+  );
+  assert.match(e.message, /cancel some resting orders/);
+  for (const bound of [1000, 9000, -8000]) {
+    assert.ok(!e.message.includes(String(bound)), `the refusal leaked ${bound}`);
+  }
+});
+
 await ok("a box the admin cleared falls back to the default, not to zero", async () => {
   // Number("") is 0. A form full of money fields that coerce on every keystroke
   // will happily read a half-deleted entry as "steps are free" or "everyone

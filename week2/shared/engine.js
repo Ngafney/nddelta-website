@@ -241,19 +241,110 @@ export const descentCostC = (state) => state?.descentCostC ?? MONEY.descentCostC
 
 /* ── book ─────────────────────────────────────────────────────────────── */
 
-/** Best resting order on the other side that a limit at `px` can trade with. */
-function bestMatch(state, takerSide, px) {
-  let best = null;
-  for (const o of state.orders) {
-    if (takerSide === "B") {
-      if (o.side !== "A" || o.px > px) continue;
-      if (!best || o.px < best.px || (o.px === best.px && o.seq < best.seq)) best = o;
-    } else {
-      if (o.side !== "B" || o.px < px) continue;
-      if (!best || o.px > best.px || (o.px === best.px && o.seq < best.seq)) best = o;
+/**
+ * Everything this order would do, worked out without touching anything.
+ *
+ * The returned steps are the exact script the order then follows, so what the
+ * balance check judged and what the book actually does cannot drift apart --
+ * which is the only thing that makes a post-trade solvency check safe to write.
+ *
+ * A step is either { kill: id } (self-trade prevention removing one of my own
+ * resting orders) or { id, px, qty } (a fill against someone else, at THEIR
+ * price, so price improvement goes to the taker).
+ */
+function planMatch(state, pid, side, px, qty) {
+  const steps = [];
+  const done = new Set(); // makers exhausted, or my own orders already killed
+  const took = new Map(); // orderId -> shares this plan has already taken
+  const rest = (o) => o.qty - (took.get(o.id) ?? 0);
+  let left = qty;
+  let fills = 0;
+  // Bounded: every pass either fills a resting order or removes one.
+  for (let guard = 0; left > 0 && guard < LIMITS.maxOpenOrders + LIMITS.maxSharesPerOrder; guard++) {
+    let best = null;
+    for (const o of state.orders) {
+      if (done.has(o.id)) continue;
+      if (side === "B") {
+        if (o.side !== "A" || o.px > px) continue;
+        if (!best || o.px < best.px || (o.px === best.px && o.seq < best.seq)) best = o;
+      } else {
+        if (o.side !== "B" || o.px < px) continue;
+        if (!best || o.px > best.px || (o.px === best.px && o.seq < best.seq)) best = o;
+      }
     }
+    if (!best) break;
+    if (best.pid === pid) {
+      steps.push({ kill: best.id });
+      done.add(best.id);
+      continue;
+    }
+    const t = Math.min(left, rest(best));
+    steps.push({ id: best.id, px: best.px, qty: t });
+    took.set(best.id, (took.get(best.id) ?? 0) + t);
+    left -= t;
+    fills++;
+    if (rest(best) <= 0) done.add(best.id);
   }
-  return best;
+  return { steps, left, fills };
+}
+
+/**
+ * Where both invariants would stand once `plan` has run and `restQty` shares
+ * are left sitting on the book.
+ *
+ * This is the real solvency test. It charges each fill the price it actually
+ * prints at rather than the order's limit, moves the position, hands back the
+ * reserve of any of my own orders the cross cancels, and only then asks
+ * whether I am still good at both ends of the settlement range.
+ */
+function afterPlan(state, p, side, px, plan, restQty) {
+  const g = grid(state);
+  const dir = side === "B" ? 1 : -1;
+  const { a, b } = reserves(state, p.id);
+  let cash = p.cash;
+  let pos = p.pos;
+  let ra = a;
+  let rb = b;
+  for (const st of plan.steps) {
+    if (st.kill != null) {
+      const o = state.orders.find((x) => x.id === st.kill);
+      if (!o) continue;
+      const r = lotReserveC(g, o.side, o.px);
+      ra -= r.a * o.qty;
+      rb -= r.b * o.qty;
+      continue;
+    }
+    cash -= dir * st.px * st.qty * SHARE_C;
+    pos += dir * st.qty;
+  }
+  if (restQty > 0) {
+    const r = lotReserveC(g, side, px);
+    ra += r.a * restQty;
+    rb += r.b * restQty;
+  }
+  return { A: cash + g.settleMin * SHARE_C * pos - ra, B: cash + g.settleMax * SHARE_C * pos - rb };
+}
+
+/** Run a plan for real, mirroring planMatch step for step, in the same order. */
+function applyPlan(state, pid, side, px, plan, restQty, now) {
+  const taker = { pid, side };
+  const trades = [];
+  for (const st of plan.steps) {
+    if (st.kill != null) {
+      removeOrder(state, st.kill); // self-trade prevention: cancel, print nothing
+      continue;
+    }
+    const maker = state.orders.find((o) => o.id === st.id);
+    trades.push(execute(state, taker, maker, st.qty, st.px, now));
+    maker.qty -= st.qty;
+    if (maker.qty <= 0) removeOrder(state, maker.id);
+  }
+  let resting = null;
+  if (restQty > 0) {
+    resting = { id: state.nextOrderId++, pid, side, px, qty: restQty, ts: now, seq: state.seq++ };
+    state.orders.push(resting);
+  }
+  return { trades, resting };
 }
 
 function removeOrder(state, id) {
@@ -344,6 +435,11 @@ function execute(state, taker, maker, qty, px, now) {
  * (price improvement goes to the taker), then rests the remainder.
  * Self-trade prevention cancels the resting order and keeps going, so a player
  * can never print a trade against themselves and move the mark.
+ *
+ * If the resting remainder is the only thing that would break solvency, the
+ * order becomes immediate-or-cancel: the crossing part trades and the rest is
+ * dropped, reported back as `canceled`. This is the true solvency condition
+ * and never looser than it -- a fill is judged at the price it printed.
  */
 export function placeOrder(state, pid, side, px, qty, now) {
   const p = state.players[pid];
@@ -369,47 +465,35 @@ export function placeOrder(state, pid, side, px, qty, now) {
     throw new EngineError(`you already have ${LIMITS.maxOrdersPerPlayer} resting orders — cancel some first`, "too-many");
   }
 
-  // The balance check: worst case is the whole order filling at its limit.
-  // The message names only the player's own numbers — never a range bound.
-  const pw = powers(state, p);
-  const r = lotReserveC(g, side, px);
-  const needA = r.a * qty;
-  const needB = r.b * qty;
-  if (needA > pw.buyC || needB > pw.sellC) {
-    const need = Math.max(needA, needB);
-    const have = needA > pw.buyC ? pw.buyC : pw.sellC;
-    throw new EngineError(
-      `out of balance — ${qty} share${qty > 1 ? "s" : ""} at ${px} would tie up ${fmt(need)} and you have ${fmt(
-        Math.max(0, have)
-      )} free`,
-      "balance"
-    );
-  }
+  // Solvency is judged on the state this order would LEAVE BEHIND, not on the
+  // worst case of the whole thing resting at its limit. A cross that fills
+  // below its limit is charged what it really paid, and a limit set far
+  // through the book to sweep is no longer punished for how far through it is.
+  const plan = planMatch(state, pid, side, px, qty);
+  const whole = afterPlan(state, p, side, px, plan, plan.left);
 
-  const taker = { pid, side };
-  const trades = [];
-  let left = qty;
-  // Bounded: every pass either fills a resting order or removes one.
-  for (let guard = 0; left > 0 && guard < LIMITS.maxOpenOrders + LIMITS.maxSharesPerOrder; guard++) {
-    const maker = bestMatch(state, side, px);
-    if (!maker) break;
-    if (maker.pid === pid) {
-      removeOrder(state, maker.id); // self-trade prevention: cancel resting
-      continue;
+  // If the resting remainder is the only thing that breaks it, take what
+  // trades right now and drop the rest: immediate-or-cancel. Never silent —
+  // the caller is told how much was cut so the player can be told too.
+  let ioc = false;
+  if (whole.A < 0 || whole.B < 0) {
+    const canIOC = plan.fills > 0 && plan.left > 0;
+    const crossOnly = canIOC ? afterPlan(state, p, side, px, plan, 0) : whole;
+    if (canIOC && crossOnly.A >= 0 && crossOnly.B >= 0) {
+      ioc = true;
+    } else {
+      // One number, drawn from the player's own book, and what to do about it.
+      const shortC = -Math.min(whole.A, whole.B);
+      throw new EngineError(
+        `out of balance — ${qty} share${qty > 1 ? "s" : ""} at ${px} would leave you ${fmt(shortC)} short. ` +
+          `cancel some resting orders, or try fewer shares.`,
+        "balance"
+      );
     }
-    const t = Math.min(left, maker.qty);
-    trades.push(execute(state, taker, maker, t, maker.px, now));
-    left -= t;
-    maker.qty -= t;
-    if (maker.qty <= 0) removeOrder(state, maker.id);
   }
 
-  let resting = null;
-  if (left > 0) {
-    resting = { id: state.nextOrderId++, pid, side, px, qty: left, ts: now, seq: state.seq++ };
-    state.orders.push(resting);
-  }
-  return { trades, resting, filled: qty - left };
+  const { trades, resting } = applyPlan(state, pid, side, px, plan, ioc ? 0 : plan.left, now);
+  return { trades, resting, filled: qty - plan.left, canceled: ioc ? plan.left : 0, ioc };
 }
 
 export function cancelOrder(state, pid, orderId) {
