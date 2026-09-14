@@ -2,6 +2,9 @@
   "rewrites": [
     { "source": "/week1/board", "destination": "/week1/index.html" },
     { "source": "/week1/admin", "destination": "/week1/index.html" },
-    { "source": "/api/week1/:path*", "destination": "/api/week1/router?__path=:path*" }
+    { "source": "/api/week1/:path*", "destination": "/api/week1/router?__path=:path*" },
+    { "source": "/week2/board", "destination": "/week2/index.html" },
+    { "source": "/week2/admin", "destination": "/week2/index.html" },
+    { "source": "/api/week2/:path*", "destination": "/api/week2/router?__path=:path*" }
   ]
 }

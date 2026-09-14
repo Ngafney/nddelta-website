@@ -1,0 +1,546 @@
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import { api, loadPlayer, savePlayer, clearPlayer, withPlayer } from "./api.js";
+import { PixelSprite, clock, money, moneyShort, num, useMedia, NARROW, DELTA, DELTA_PALETTE } from "./components/PixelBits.jsx";
+import Gate from "./components/Gate.jsx";
+import Scope from "./components/Scope.jsx";
+import OrderBook from "./components/OrderBook.jsx";
+import ProbePanel from "./components/ProbePanel.jsx";
+import YouPanel from "./components/YouPanel.jsx";
+import Leaderboard from "./components/Leaderboard.jsx";
+import Toasts, { fillToast } from "./components/Toasts.jsx";
+import Reveal from "./components/Reveal.jsx";
+import Rules from "./components/Rules.jsx";
+import AdminPanel from "./components/AdminPanel.jsx";
+import BigBoard from "./components/BigBoard.jsx";
+
+export default function App() {
+  const path = window.location.pathname.replace(/\/$/, "");
+  if (path.endsWith("/admin")) return <AdminPanel />;
+  if (path.endsWith("/board")) return <BigBoard />;
+  return <Floor />;
+}
+
+/** Reveals already played on this browser, so a refresh does not replay one. */
+const SHOWN_KEY = "w2shownReveals";
+const loadShown = () => {
+  try {
+    return new Set(JSON.parse(localStorage.getItem(SHOWN_KEY)) ?? []);
+  } catch {
+    return new Set();
+  }
+};
+const markShown = (set, key) => {
+  set.add(key);
+  try {
+    localStorage.setItem(SHOWN_KEY, JSON.stringify([...set].slice(-40)));
+  } catch {}
+};
+
+function Floor() {
+  const [player, setPlayer] = useState(loadPlayer);
+  const [state, setState] = useState(null);
+  const [config, setConfig] = useState(null);
+  const [err, setErr] = useState(null);
+  const [toasts, setToasts] = useState([]);
+  const [busy, setBusy] = useState(null);
+  const [busyPx, setBusyPx] = useState(null);
+  const [size, setSize] = useState(1);
+  const [anchorX, setAnchorX] = useState(null);
+  const [tab, setTab] = useState("floor");
+  const [now, setNow] = useState(Date.now());
+  const [reveal, setReveal] = useState(null); // fetched curve / resolution
+  const [showReveal, setShowReveal] = useState(false);
+  const [limits, setLimits] = useState(null);
+
+  const narrow = useMedia(NARROW);
+  const sinceRef = useRef(0);
+  const shownRef = useRef(loadShown());
+  const clockSkew = useRef(0);
+
+  const push = useCallback((t) => setToasts((ts) => [...ts.slice(-4), t]), []);
+  const drop = useCallback((key) => setToasts((ts) => ts.filter((t) => t.key !== key)), []);
+
+  /* ── polling ────────────────────────────────────────────────────────── */
+
+  const pull = useCallback(async () => {
+    try {
+      if (!player) {
+        const c = await api.get("config");
+        setConfig(c);
+        setErr(null);
+        return;
+      }
+      const s = await api.get("state", { ...withPlayer(player), since: sinceRef.current });
+      clockSkew.current = s.round.serverNow - Date.now();
+      for (const f of s.fills) {
+        push(fillToast(f));
+        sinceRef.current = Math.max(sinceRef.current, f.s);
+      }
+      setState(s);
+      setConfig({ round: s.round });
+      setErr(null);
+    } catch (e) {
+      if (e.status === 401) {
+        clearPlayer();
+        setPlayer(null);
+        setState(null);
+      } else if (e.code === "no-round") {
+        setState(null);
+        setConfig({ round: null });
+      } else {
+        setErr(e.message);
+      }
+    }
+  }, [player, push]);
+
+  useEffect(() => {
+    let stopped = false;
+    let timer = null;
+    const loop = async () => {
+      if (stopped) return;
+      await pull();
+      if (stopped) return;
+      const live = document.visibilityState === "visible";
+      timer = setTimeout(loop, live ? 950 : 4000);
+    };
+    loop();
+    const onVis = () => {
+      if (document.visibilityState === "visible") pull();
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      stopped = true;
+      clearTimeout(timer);
+      document.removeEventListener("visibilitychange", onVis);
+    };
+  }, [pull]);
+
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 250);
+    return () => clearInterval(t);
+  }, []);
+
+  // The caps the buy panel needs to draw its sliders. Static for the round.
+  useEffect(() => {
+    api.get("rules").then((r) => setLimits(r.limits)).catch(() => {});
+  }, []);
+
+  const round = state?.round ?? config?.round ?? null;
+  const me = state?.me ?? null;
+  const team = state?.team ?? null;
+  const live = round?.status === "live";
+  const settled = round?.status === "settled";
+  const msLeft = round?.endsAt == null ? null : round.endsAt - (now + clockSkew.current);
+
+  /* ── the reveal ─────────────────────────────────────────────────────── */
+
+  // Once the round is settled, fetch the answer and play it — exactly once per
+  // round, per browser.
+  useEffect(() => {
+    if (!settled || !round?.roundId) return;
+    const key = `${round.roundId}:settled`;
+    if (reveal?.roundId === round.roundId && reveal.settleC != null) {
+      if (!shownRef.current.has(key)) {
+        markShown(shownRef.current, key);
+        setShowReveal(true);
+      }
+      return;
+    }
+    api
+      .get("reveal", player ? withPlayer(player) : undefined)
+      .then((r) => setReveal(r))
+      .catch(() => {});
+  }, [settled, round?.roundId, reveal, player]);
+
+  // The 1-in-20 winner sees the whole curve immediately, inline, no theater.
+  useEffect(() => {
+    if (!me?.sawAll || settled) return;
+    if (reveal?.roundId === round?.roundId) return;
+    api
+      .get("reveal", withPlayer(player))
+      .then((r) => {
+        setReveal(r);
+        push({ key: `saw-${round.roundId}`, kind: "win", title: "★ THE WHOLE CURVE", body: "Your ticket came in. It is on your chart.", ttl: 9000 });
+      })
+      .catch(() => {});
+  }, [me?.sawAll, settled, round?.roundId, reveal, player, push]);
+
+  // A new round hands out new points, so the old anchor is meaningless. Reset
+  // it with the round, and otherwise follow the most recent point you bought.
+  const roundRef = useRef(null);
+  useEffect(() => {
+    if (roundRef.current !== round?.roundId) {
+      roundRef.current = round?.roundId ?? null;
+      setAnchorX(null);
+      sinceRef.current = 0;
+      setReveal(null);
+      setShowReveal(false);
+      return;
+    }
+    if (me?.points?.length && !me.points.some((p) => p.x === anchorX)) {
+      setAnchorX(me.points[me.points.length - 1].x);
+    }
+  }, [round?.roundId, me?.points, anchorX]);
+
+  /* ── actions ────────────────────────────────────────────────────────── */
+
+  const act = useCallback(
+    async (label, fn, tag) => {
+      setBusy(tag ?? label);
+      setErr(null);
+      try {
+        await fn();
+        await pull();
+      } catch (e) {
+        setErr(e.message);
+        push({ key: `err-${Date.now()}-${Math.random()}`, kind: "bad", title: "✕ REJECTED", body: e.message, ttl: 6000 });
+      } finally {
+        setBusy(null);
+        setBusyPx(null);
+      }
+    },
+    [pull, push]
+  );
+
+  const order = (side, px) => {
+    setBusyPx(`${side}${px}`);
+    return act(
+      "order",
+      async () => {
+        const r = await api.post("order", withPlayer(player, { side, px, qty: size }));
+        if (r.filled) {
+          // the fill toast arrives from the poll; this is the instant echo
+          push({
+            key: `x-${Date.now()}`,
+            kind: side,
+            title: side === "B" ? "▲ CROSSED" : "▼ CROSSED",
+            body: `${r.filled} lot${r.filled > 1 ? "s" : ""} traded`,
+            ttl: 3000,
+          });
+        }
+      },
+      `${side}${px}`
+    );
+  };
+
+  const cancelLevel = (side, px) => act("cancel", () => api.post("cancel", withPlayer(player, { side, px })));
+  const cancelOne = (orderId) => act("cancel", () => api.post("cancel", withPlayer(player, { orderId })));
+  const cancelAll = () => act("cancel", () => api.post("cancel", withPlayer(player, { all: true })));
+
+  const probe = (anchor, offset) =>
+    act(
+      "probe",
+      async () => {
+        const r = await api.post("probe", withPlayer(player, { anchorX: anchor, offset }));
+        setAnchorX(r.point.x);
+        push({
+          key: `p-${r.point.x}-${Date.now()}`,
+          kind: "win",
+          title: "◎ NEW POINT",
+          body: `x = ${num(r.point.x, 2)} · f = ${num(r.point.y, 2)} · slope ${num(r.point.d, 3)}`,
+        });
+      },
+      "probe"
+    );
+
+  const descend = (anchor, lr) =>
+    act(
+      "descend",
+      async () => {
+        const r = await api.post("descend", withPlayer(player, { anchorX: anchor, lr }));
+        setAnchorX(r.point.x);
+        push({
+          key: `d-${r.point.x}-${Date.now()}`,
+          kind: "win",
+          title: "↓ ONE STEP DOWN",
+          body: `${r.step > 0 ? "+" : ""}${num(r.step, 2)} → x = ${num(r.point.x, 2)} · slope ${num(r.point.d, 3)}`,
+        });
+      },
+      "descend"
+    );
+
+  const ticket = () =>
+    act(
+      "ticket",
+      async () => {
+        const r = await api.post("ticket", withPlayer(player));
+        if (!r.won) {
+          push({ key: `t-${Date.now()}`, kind: "bad", title: "✕ NO LUCK", body: `That ticket missed. 1 in ${r.odds}.`, ttl: 4000 });
+        }
+      },
+      "ticket"
+    );
+
+  /* ── gates ──────────────────────────────────────────────────────────── */
+
+  if (!round) {
+    return (
+      <Shell>
+        <div className="dead-note">
+          NO ROUND IS OPEN
+          <br />
+          <span style={{ color: "var(--dim)", fontSize: 9 }}>WAIT FOR THE ADMIN TO SET ONE UP</span>
+        </div>
+      </Shell>
+    );
+  }
+
+  if (!player || (state && !me?.teamId)) {
+    return (
+      <Gate
+        player={player}
+        round={round}
+        onPlayer={(p) => {
+          savePlayer(p);
+          setPlayer(p);
+        }}
+        onTeam={() => pull()}
+      />
+    );
+  }
+
+  if (!state) {
+    return (
+      <Shell>
+        <div className="dead-note">CONNECTING…</div>
+      </Shell>
+    );
+  }
+
+  const mark = state.market.mark;
+  const timerClass = msLeft == null ? "" : msLeft <= 0 ? "dead" : msLeft < 60_000 ? "warn" : "";
+
+  return (
+    <>
+      <div className="wrap">
+        <header className="site-header">
+          <div className="logo-block">
+            <PixelSprite grid={DELTA} palette={DELTA_PALETTE} scale={3} />
+            <div>
+              <div className="title-main">{round.mode === "prediction" ? "DELTA MARKETS" : "GRADIENT TRADING"}</div>
+              <div className="title-sub">
+                WEEK 2 · {round.mode === "prediction" ? "PREDICTION" : (round.difficultyName ?? "").toUpperCase()}
+              </div>
+            </div>
+          </div>
+          <div className="header-right">
+            {team && (
+              <div className="badge">
+                <span>TEAM</span>
+                {team.name}
+              </div>
+            )}
+            {team && live && (
+              <div className="badge badge--code" title="read this out to add a team-mate">
+                {team.code}
+              </div>
+            )}
+            <div className={`clockbox ${timerClass}`}>
+              <i>{round.status === "settled" ? "SETTLED" : round.status === "ended" ? "CLOSED" : round.status === "lobby" ? "PRE-OPEN" : "TIME"}</i>
+              <b>{msLeft == null ? "—:—" : clock(msLeft)}</b>
+            </div>
+          </div>
+        </header>
+
+        {round.status === "lobby" && (
+          <div className="banner">
+            The market has not opened yet. You are in — <b>{round.players}</b> player
+            {round.players === 1 ? "" : "s"} across <b>{round.teams}</b> team{round.teams === 1 ? "" : "s"} so far.
+          </div>
+        )}
+        {round.status === "ended" && (
+          <div className="banner red">Trading is closed. Waiting for the market to be resolved…</div>
+        )}
+        {settled && (
+          <div className="banner">
+            Settled at <b>{num(round.xStar, 2)}</b> — every lot paid {money(round.settleC)}.{" "}
+            <button className="pxbtn pxbtn--sm pxbtn--ghost" style={{ marginLeft: 8 }} onClick={() => setShowReveal(true)}>
+              REPLAY
+            </button>
+          </div>
+        )}
+        {round.mode === "prediction" && round.question && (
+          <div className="panel panel--tight">
+            <div className="question">
+              <small>THE QUESTION · SETTLES 0–100</small>
+              {round.question}
+            </div>
+          </div>
+        )}
+
+        {/* On a phone the three numbers that matter follow you down the page. */}
+        <div className="mobilebar">
+          <div>
+            <i>CASH</i>
+            <b>{moneyShort(me.cashC)}</b>
+          </div>
+          <div>
+            <i>POSITION</i>
+            <b className={me.pos > 0 ? "long" : me.pos < 0 ? "short" : ""}>
+              {me.pos > 0 ? "+" : ""}
+              {me.pos}
+            </b>
+          </div>
+          <div>
+            <i>{settled ? "FINAL" : "P&L"}</i>
+            <b className={me.valueC - me.startC > 0 ? "up" : me.valueC - me.startC < 0 ? "down" : ""}>
+              {money(me.valueC - me.startC, { sign: true })}
+            </b>
+          </div>
+        </div>
+
+        <nav className="tabbar">
+          <button className={`tab ${tab === "floor" ? "active" : ""}`} onClick={() => setTab("floor")}>
+            <span className="ico">📈</span>FLOOR
+          </button>
+          <button className={`tab ${tab === "board" ? "active" : ""}`} onClick={() => setTab("board")}>
+            <span className="ico">🏆</span>LEADERBOARD
+          </button>
+          <button className={`tab ${tab === "rules" ? "active" : ""}`} onClick={() => setTab("rules")}>
+            <span className="ico">📖</span>RULES
+          </button>
+        </nav>
+
+        {err && <div className="err">{err}</div>}
+
+        {tab === "floor" && (
+          <div className="floor">
+            <div>
+              {round.hasCurve && (
+                <div className="panel">
+                  <div className="panel-title">
+                    YOUR VIEW OF f
+                    <span className="right">
+                      {me.points.length} point{me.points.length === 1 ? "" : "s"} owned
+                      {me.sawAll ? " · full curve" : ""}
+                    </span>
+                  </div>
+                  <Scope
+                    points={me.points}
+                    activeX={anchorX}
+                    onPick={setAnchorX}
+                    height={narrow ? 210 : 270}
+                    revealCurve={reveal?.curve ?? null}
+                    xStar={settled || me.sawAll ? reveal?.xStar ?? null : null}
+                  />
+                </div>
+              )}
+
+              <div className="panel">
+                <div className="panel-title">
+                  ORDER BOOK
+                  <span className="right">
+                    {state.market.volume} lots traded · ticks of {round.tick}
+                  </span>
+                </div>
+                <OrderBook
+                  book={state.market}
+                  last={state.market.last}
+                  center={round.center}
+                  tick={round.tick}
+                  mine={me.orders}
+                  size={size}
+                  onSize={setSize}
+                  onOrder={order}
+                  onCancelLevel={cancelLevel}
+                  onCancelAll={cancelAll}
+                  disabled={!live || busy === "order"}
+                  busyPx={busyPx}
+                />
+              </div>
+            </div>
+
+            <div className="floor-side">
+              <YouPanel
+                me={me}
+                team={team}
+                mark={mark}
+                settled={settled}
+                onCancel={cancelOne}
+                onCancelAll={cancelAll}
+              />
+
+              {round.hasCurve && (
+                <ProbePanel
+                  me={me}
+                  anchorX={anchorX}
+                  onAnchor={setAnchorX}
+                  onProbe={probe}
+                  onDescend={descend}
+                  onTicket={ticket}
+                  busy={busy}
+                  disabled={!live}
+                  limits={limits}
+                />
+              )}
+
+              <div className="panel panel--tight">
+                <div className="panel-title">TAPE</div>
+                <div className="tape">
+                  {state.market.tape.length === 0 && <div className="hint">No trades yet.</div>}
+                  {state.market.tape.map((t) => (
+                    <div key={t.s} className={`tape-row ${t.aggr}`}>
+                      <span className="p">{t.px}</span>
+                      <span className="q">
+                        {t.qty} lot{t.qty > 1 ? "s" : ""}
+                      </span>
+                      <span className="t">{new Date(t.ts).toLocaleTimeString([], { hour12: false })}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {tab === "board" && (
+          <div className="panel">
+            <div className="panel-title">
+              LEADERBOARD · BY TEAM
+              <span className="right">{settled ? "final" : `marked at ${num(mark, 1)}`}</span>
+            </div>
+            <Leaderboard rows={state.leaderboard} myTeamId={me.teamId} settled={settled} />
+          </div>
+        )}
+
+        {tab === "rules" && <Rules mode={round.mode} />}
+
+        <div className="footer-note">
+          DELTA · Discovering Econometrics: Learning Through Application ·{" "}
+          <a href="/week2/board" target="_blank" rel="noreferrer">
+            big screen ↗
+          </a>
+        </div>
+      </div>
+
+      <Toasts items={toasts} onExpire={drop} />
+
+      {showReveal && reveal && (
+        <Reveal
+          reveal={reveal}
+          points={me.points}
+          leaderboard={state.leaderboard}
+          myTeamId={me.teamId}
+          onClose={() => setShowReveal(false)}
+        />
+      )}
+    </>
+  );
+}
+
+function Shell({ children }) {
+  return (
+    <div className="wrap wrap--narrow">
+      <header className="site-header">
+        <div className="logo-block">
+          <PixelSprite grid={DELTA} palette={DELTA_PALETTE} scale={3} />
+          <div>
+            <div className="title-main">GRADIENT TRADING</div>
+            <div className="title-sub">WEEK 2</div>
+          </div>
+        </div>
+      </header>
+      <div className="panel">{children}</div>
+    </div>
+  );
+}

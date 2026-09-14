@@ -27,3 +27,9 @@ week1/node_modules
 week1/.data
 public/week1
 week1/.env
+
+# week2
+week2/node_modules
+week2/.data
+public/week2
+week2/.env
