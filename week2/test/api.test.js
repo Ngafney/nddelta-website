@@ -834,6 +834,15 @@ await ok("the global reset wipes the game and leaves the admin logged in", async
   const fresh = await GET("admin/inspect", { token: admin });
   assert.strictEqual(fresh.players.length, 0, "nobody carried over");
   assert.strictEqual(fresh.round.teams, 0);
+
+  // The bit that matters on game day: every phone in the room re-joins on the
+  // device it already used. The one-account-per-device binding lives in the
+  // document the reset deleted, so the same device must come back clean.
+  const again = await POST("join", { name: "Pat", deviceId: "device-pat-11111111" });
+  assert.ok(again.playerId, "the same device must be able to join again");
+  assert.notStrictEqual(again.playerId, pat.playerId, "and as a brand new account");
+  assert.strictEqual((await GET("state", cred(again))).me.teamId, null, "with no team carried over");
+  assert.strictEqual((await GET("state", cred(again))).me.cashC, (await GET("config")).round.startCashC);
 });
 
 console.log(`\n${passed} passed, ${failed} failed\n`);
