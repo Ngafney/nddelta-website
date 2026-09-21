@@ -23,6 +23,18 @@
     {
       "source": "/api/week2/:path*",
       "destination": "/api/week2/router?__path=:path*"
+    },
+    {
+      "source": "/week3/board",
+      "destination": "/week3/index.html"
+    },
+    {
+      "source": "/week3/admin",
+      "destination": "/week3/index.html"
+    },
+    {
+      "source": "/api/week3/:path*",
+      "destination": "/api/week3/router?__path=:path*"
     }
   ],
   "headers": [
@@ -64,6 +76,51 @@
     },
     {
       "source": "/week2/board",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-store, must-revalidate"
+        }
+      ]
+    },
+    {
+      "source": "/week3",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-store, must-revalidate"
+        }
+      ]
+    },
+    {
+      "source": "/week3/",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-store, must-revalidate"
+        }
+      ]
+    },
+    {
+      "source": "/week3/index.html",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-store, must-revalidate"
+        }
+      ]
+    },
+    {
+      "source": "/week3/admin",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-store, must-revalidate"
+        }
+      ]
+    },
+    {
+      "source": "/week3/board",
       "headers": [
         {
           "key": "Cache-Control",
