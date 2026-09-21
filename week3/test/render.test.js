@@ -230,6 +230,13 @@ ok("dealt flips show both the frequentist and the Bayesian estimate", () => {
   assert.strictEqual((out.match(/class="coin t"/g) ?? []).length, 6);
 });
 
+ok("while trading, the flips panel offers one more flip at the live price", () => {
+  const out = render(h(C.SimPanel, { round: { ...round, liveFlipCostC: 50_000 }, me, prior, onOrder: noop, onLate: noop, onExtra: noop }));
+  assert.match(out, /ONE MORE FLIP · \$500\.00/);
+  const settled = render(h(C.SimPanel, { round: { ...round, status: "settled", liveFlipCostC: 50_000, p: 0.5 }, me, prior, onOrder: noop, onLate: noop, onExtra: noop }));
+  assert.ok(!/ONE MORE FLIP/.test(settled), "no extra flips after the bell");
+});
+
 ok("after the bell the panel shows the truth against the interval", () => {
   const out = render(h(C.SimPanel, { round: { ...round, status: "settled", p: 0.7, settleC: 7000, xStar: 70 }, me, prior, onOrder: noop, onLate: noop }));
   assert.match(out, /p = 70\.00/);

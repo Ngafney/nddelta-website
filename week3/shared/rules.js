@@ -97,6 +97,8 @@ export const SETTLEMENT_ORDER = ["prob", "flip"];
 export const MONEY = {
   startCashC: 1_000_000, // $10,000.00
   simCostC: 10_000, // $100.00 per simulated flip
+  /** One more flip once trading is open — dearer, because now you know the book. */
+  liveFlipCostC: 50_000, // $500.00
 };
 
 export const SIMS = {
@@ -145,6 +147,8 @@ export const MARKET_RULES = `**The coin.** At the start of the round a coin is m
 **Step 1 — simulations (the clock at the top).** Before anyone trades, you get a short window to decide how many times to flip the coin yourself, at **$100 a flip**, up to 100. Change your mind as often as you like until the clock runs out. Then the flips happen, you see your heads and tails, and the money is gone for good.
 
 More flips, sharper estimate — but every flip is $100 you can no longer quote with. Buy all 100 and you know the coin cold with no money left to trade on it. Buy none and you are trading blind.
+
+**More flips mid-trade.** Once trading is open you can still buy flips **one at a time for $500 each** — five times the pre-trade price. Sometimes the book tells you it is worth it.
 
 **Step 2 — trading.** Click the bid column to buy at that price, the offer column to sell. Cross the book and you trade immediately at the best resting price. Everyone saw different flips, so everyone has a different fair value. That is the whole point.
 

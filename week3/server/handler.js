@@ -293,6 +293,9 @@ function rateLimit(key, max, windowMs, message = "slow down a moment") {
   if (buckets.size > 8000) buckets.clear();
 }
 
+/** What one extra flip costs once trading is open. */
+const liveFlipCostC = (state) => state?.liveFlipCostC ?? MONEY.liveFlipCostC;
+
 /* ── the clock ────────────────────────────────────────────────────────── */
 
 /**
@@ -419,6 +422,7 @@ function publicRound(state, now, spec = null) {
     settlementBlurb: SETTLEMENTS[state.settlement]?.blurb ?? null,
     startCashC: state.startCashC,
     simCostC: simCostC(state),
+    liveFlipCostC: liveFlipCostC(state),
     maxSims: SIMS.max,
     defaultSize: state.defaultSize ?? LIMITS.defaultOrderSize,
     lateJoin: state.lateJoin,
@@ -679,6 +683,32 @@ export async function handle(method, route, body, query) {
     }
 
     /** One purchase, for someone who joined after the window closed. */
+    /**
+     * One more flip while trading is open, at the dearer live price. Flips are
+     * drawn from their own seed per purchase, so an extra flip never replays
+     * one the player already saw.
+     */
+    case "POST sims/extra": {
+      rateLimit(`sims:${body.playerId}`, 20, 10_000);
+      const { state: pre } = await readMarket();
+      const spec = pre ? await loadSpec(pre.roundId) : null;
+      if (!spec) throw httpError(409, "no round is running", "no-round");
+      return tx((state) => {
+        const p = requirePlayer(state, body);
+        if (state.status !== "live") throw httpError(409, "extra flips are only for sale while trading is open", "closed");
+        if (!p.sims) throw httpError(409, "choose your flips first — zero is allowed", "no-sims");
+        const costC = liveFlipCostC(state);
+        if (costC > spendableC(state, p)) {
+          throw httpError(400, "you can't afford another flip — your cash is tied up in resting orders", "balance");
+        }
+        const f = flipMany(spec.p, 1, `${state.roundId}|extra|${p.id}|${p.sims.n}`);
+        p.cash -= costC;
+        p.spentC += costC;
+        p.sims = { ...p.sims, n: p.sims.n + 1, heads: p.sims.heads + (f === "H" ? 1 : 0), flips: p.sims.flips + f, extra: (p.sims.extra ?? 0) + 1 };
+        return { flip: f, sims: p.sims, costC, me: meView(state, p) };
+      });
+    }
+
     case "POST sims/late": {
       rateLimit(`sims:${body.playerId}`, 10, 10_000);
       const n = Math.round(Number(body.n));
@@ -955,6 +985,7 @@ export async function handle(method, route, body, query) {
 
       const prev = (await readMarket({ fresh: true })).state;
       const market = newMarket({ roundId, mode: "coin", startCashC, simCostC: simCostCents, defaultSize, lateJoin });
+      market.liveFlipCostC = Math.round(Math.min(1_000_000, Math.max(0, numOr(body.liveFlipCost, MONEY.liveFlipCostC / 100))) * 100);
       market.prior = prior;
       market.settlement = settlement;
       market.minutes = minutes;

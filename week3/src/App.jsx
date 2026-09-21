@@ -243,6 +243,20 @@ function Floor() {
   const cancelOne = (orderId) => act("cancel", () => api.post("cancel", withPlayer(player, { orderId })));
   const cancelAll = () => act("cancel", () => api.post("cancel", withPlayer(player, { all: true })));
   const orderSims = (n) => act("sims", () => api.post("sims/order", withPlayer(player, { n })), "sims");
+  const extraFlip = () =>
+    act(
+      "extra",
+      async () => {
+        const r = await api.post("sims/extra", withPlayer(player));
+        push({
+          key: `extra-${Date.now()}`,
+          kind: r.flip === "H" ? "win" : "bad",
+          title: r.flip === "H" ? "🪙 HEADS" : "🪙 TAILS",
+          body: `${r.sims.heads} heads in ${r.sims.n} flips now`,
+        });
+      },
+      "extra"
+    );
   const lateSims = (n) =>
     act(
       "sims",
@@ -451,7 +465,7 @@ function Floor() {
             {tab === "floor" && (
               <div className="floor">
                 <div>
-                  <SimPanel round={round} me={me} prior={prior} onOrder={orderSims} onLate={lateSims} busy={busy} />
+                  <SimPanel round={round} me={me} prior={prior} onOrder={orderSims} onLate={lateSims} onExtra={extraFlip} busy={busy} />
 
                   {round.status !== "lobby" && round.status !== "sims" && (
                     <div className="panel">

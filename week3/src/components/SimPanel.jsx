@@ -15,13 +15,13 @@ import { PxButton, Spinner, money, num } from "./PixelBits.jsx";
 
 const QUICK = [0, 5, 10, 20, 40, 100];
 
-export default function SimPanel({ round, me, prior, onOrder, onLate, busy }) {
+export default function SimPanel({ round, me, prior, onOrder, onLate, onExtra, busy }) {
   const phase = round.status;
   if ((phase === "lobby" || phase === "sims") && !me.sims) {
     return <Chooser round={round} me={me} onOrder={onOrder} busy={busy} />;
   }
   if (me.canBuyLate) return <LateBuy round={round} me={me} onLate={onLate} busy={busy} />;
-  return <Results round={round} me={me} prior={prior} />;
+  return <Results round={round} me={me} prior={prior} onExtra={onExtra} busy={busy} />;
 }
 
 /* ── choosing ─────────────────────────────────────────────────────────── */
@@ -150,7 +150,7 @@ function LateBuy({ round, me, onLate, busy }) {
 
 /* ── what the flips say ───────────────────────────────────────────────── */
 
-function Results({ round, me, prior }) {
+function Results({ round, me, prior, onExtra, busy }) {
   const s = me.sims ?? { n: 0, heads: 0, flips: "" };
   const settled = round.status === "settled";
   const a = prior?.a ?? 1;
@@ -164,7 +164,8 @@ function Results({ round, me, prior }) {
       <div className="panel-title">
         YOUR FLIPS
         <span className="right">
-          {s.n} flip{s.n === 1 ? "" : "s"} · {money(s.n * round.simCostC)} spent
+          {s.n} flip{s.n === 1 ? "" : "s"}
+          {s.extra ? ` (${s.extra} bought mid-trade)` : ""}
         </span>
       </div>
 
@@ -212,6 +213,24 @@ function Results({ round, me, prior }) {
       </div>
 
       <IntervalBar lo={post.lo * 100} hi={post.hi * 100} mean={post.mean * 100} freq={freq} truth={truth} />
+
+      {round.status === "live" && onExtra && (
+        <div className="row mt">
+          <PxButton
+            variant="gold"
+            small
+            disabled={busy === "extra" || me.spendableC < round.liveFlipCostC}
+            onClick={onExtra}
+          >
+            {busy === "extra" ? <Spinner text="FLIPPING" /> : `🪙 ONE MORE FLIP · ${money(round.liveFlipCostC)}`}
+          </PxButton>
+          <span className="hint" style={{ margin: 0 }}>
+            {me.spendableC < round.liveFlipCostC
+              ? "not enough free cash — pull some orders first"
+              : "costs more now than before trading — is the next flip worth it?"}
+          </span>
+        </div>
+      )}
 
       {settled && truth != null && (
         <div className="good">

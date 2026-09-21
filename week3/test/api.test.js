@@ -217,6 +217,36 @@ await ok("a late joiner gets exactly one flip purchase, and cannot trade before 
   await call("POST", "order", { ...late, side: "B", px: 40, qty: 1 });
 });
 
+await ok("during trading a player can buy one more flip at the live price, and only then", async () => {
+  const { a } = await freshRound({ liveFlipCost: 500 });
+  await call("POST", "sims/order", { ...a, n: 4 });
+  await fails(call("POST", "sims/extra", a), /only for sale while trading/);
+  await call("POST", "admin/start", { token });
+  await fails(call("POST", "sims/extra", a), /only for sale while trading/);
+  await call("POST", "admin/skip-sims", { token });
+  const before = await state(a);
+  assert.strictEqual(before.round.liveFlipCostC, 50_000);
+  const r = await call("POST", "sims/extra", a);
+  assert.ok(r.flip === "H" || r.flip === "T");
+  assert.strictEqual(r.sims.n, 5);
+  assert.strictEqual(r.sims.flips, before.me.sims.flips + r.flip, "the old flips are kept, the new one appended");
+  assert.strictEqual(r.sims.extra, 1);
+  const after = await state(a);
+  assert.strictEqual(after.me.cashC, before.me.cashC - 50_000);
+  await call("POST", "sims/extra", a);
+  assert.strictEqual((await state(a)).me.sims.n, 6);
+  assert.deepStrictEqual((await call("GET", "health")).audit, [], "the spend reconciles");
+});
+
+await ok("an extra flip can't be bought with cash tied up in orders", async () => {
+  const { a } = await freshRound({ startCash: 1000, liveFlipCost: 500 });
+  await call("POST", "admin/skip-sims", { token });
+  await call("POST", "order", { ...a, side: "B", px: 60, qty: 10 }); // ties up $600 of $1,000
+  await fails(call("POST", "sims/extra", a), /can't afford/);
+  await call("POST", "cancel", { ...a, all: true });
+  await call("POST", "sims/extra", a);
+});
+
 await ok("keep-players carries teams into the next coin with fresh money and no flips", async () => {
   const { a } = await freshRound();
   await call("POST", "sims/order", { ...a, n: 9 });

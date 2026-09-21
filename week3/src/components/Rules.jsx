@@ -28,6 +28,10 @@ export default function Rules({ rules, round }) {
             <b>{money(round.simCostC)}</b>
           </div>
           <div className="kv">
+            <span>one more flip during trading</span>
+            <b>{money(round.liveFlipCostC)}</b>
+          </div>
+          <div className="kv">
             <span>starting cash</span>
             <b>{money(round.startCashC)}</b>
           </div>

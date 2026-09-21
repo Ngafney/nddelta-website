@@ -101,6 +101,7 @@ function Controls({ token, onLogout }) {
   const [minutes, setMinutes] = useState("10");
   const [startCash, setStartCash] = useState("10000");
   const [simCost, setSimCost] = useState("100");
+  const [liveFlipCost, setLiveFlipCost] = useState("500");
   const [defaultSize, setDefaultSize] = useState("10");
   const [forceP, setForceP] = useState("");
   const [keepPlayers, setKeepPlayers] = useState(true);
@@ -382,6 +383,10 @@ function Controls({ token, onLogout }) {
             <input type="number" min={0} max={1000} step={10} value={simCost} onChange={(e) => setSimCost(e.target.value)} />
           </div>
           <div>
+            <span className="field-label">EXTRA FLIP DURING TRADING ($)</span>
+            <input type="number" min={0} max={10000} step={50} value={liveFlipCost} onChange={(e) => setLiveFlipCost(e.target.value)} />
+          </div>
+          <div>
             <span className="field-label">SHARES PER CLICK</span>
             <input type="number" min={1} max={50} step={1} value={defaultSize} onChange={(e) => setDefaultSize(e.target.value)} />
           </div>
@@ -414,7 +419,7 @@ function Controls({ token, onLogout }) {
             disabled={!!busy}
             onClick={() =>
               act("built a new coin", () =>
-                api.post("admin/round", { token, prior, settlement, simSeconds, minutes, startCash, simCost, defaultSize, forceP, keepPlayers, lateJoin })
+                api.post("admin/round", { token, prior, settlement, simSeconds, minutes, startCash, simCost, liveFlipCost, defaultSize, forceP, keepPlayers, lateJoin })
               )
             }
           >
