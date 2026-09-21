@@ -1001,11 +1001,19 @@ export async function handle(method, route, body, query) {
       });
     }
 
-    /** Close the simulation window now and open trading. */
+    /**
+     * Start trading now: from the lobby or mid-window, deal everyone the flips
+     * they have picked so far (zero if they never picked) and open the book.
+     */
     case "POST admin/skip-sims": {
       await requireAdmin(body);
       await tx((state) => {
-        if (state.status !== "sims") throw httpError(409, "the simulation window is not open");
+        if (state.status === "lobby") {
+          state.status = "sims";
+          state.startedAt = now;
+        } else if (state.status !== "sims") {
+          throw httpError(409, "trading has already started");
+        }
         state.simsEndsAt = now;
         return true;
       });

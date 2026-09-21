@@ -213,6 +213,11 @@ function Controls({ token, onLogout }) {
                   {busy === "opened the flip window" ? <Spinner text="OPENING" /> : `OPEN THE FLIP WINDOW (${round.simSeconds}s)`}
                 </PxButton>
               )}
+              {status === "lobby" && (
+                <PxButton variant="blue" disabled={!!busy} onClick={() => act("dealt the flips and started trading", () => api.post("admin/skip-sims", { token }))}>
+                  {busy === "dealt the flips and started trading" ? <Spinner text="FLIPPING" /> : "START TRADING NOW"}
+                </PxButton>
+              )}
               {status === "sims" && (
                 <>
                   <PxButton variant="ghost" small disabled={!!busy} onClick={() => act("+30 seconds", () => api.post("admin/extend", { token, seconds: 30 }))}>
@@ -222,7 +227,7 @@ function Controls({ token, onLogout }) {
                     −15 S
                   </PxButton>
                   <PxButton variant="blue" disabled={!!busy} onClick={() => act("dealt the flips and opened trading", () => api.post("admin/skip-sims", { token }))}>
-                    {busy === "dealt the flips and opened trading" ? <Spinner text="FLIPPING" /> : "DEAL FLIPS & OPEN TRADING NOW"}
+                    {busy === "dealt the flips and opened trading" ? <Spinner text="FLIPPING" /> : "START TRADING NOW"}
                   </PxButton>
                 </>
               )}
@@ -253,7 +258,8 @@ function Controls({ token, onLogout }) {
               <div className="hint">
                 Players can join, form teams, and pre-pick their flips now. Opening the window starts a {round.simSeconds}s
                 clock; when it runs out the flips are dealt and trading opens by itself for {round.minutes} minutes. The
-                coin settles itself at the bell.
+                coin settles itself at the bell. <b>Start trading now</b> skips the window: everyone gets the flips they
+                have picked so far (zero if they haven't picked) and the book opens immediately.
               </div>
             )}
 

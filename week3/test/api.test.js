@@ -113,6 +113,18 @@ await ok("when the window closes, flips are dealt, charged, and trading opens by
   );
 });
 
+await ok("START TRADING NOW works straight from the lobby, dealing whatever was picked", async () => {
+  const { a, b } = await freshRound();
+  await call("POST", "sims/order", { ...a, n: 12 });
+  await call("POST", "admin/skip-sims", { token });
+  const sa = await state(a);
+  assert.strictEqual(sa.round.status, "live");
+  assert.strictEqual(sa.me.sims.n, 12);
+  assert.strictEqual((await state(b)).me.sims.n, 0);
+  await call("POST", "order", { ...a, side: "B", px: 40, qty: 1 });
+  await fails(call("POST", "admin/skip-sims", { token }), /already started/);
+});
+
 await ok("the window closes on its own clock, even if nobody is polling", async () => {
   const { a } = await freshRound({ simSeconds: 10 });
   await call("POST", "sims/order", { ...a, n: 3 });
