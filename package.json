@@ -10,7 +10,7 @@
   },
   "scripts": {
     "start": "react-scripts start",
-    "build": "npm --prefix week1 install --no-audit --no-fund && npm --prefix week1 run build && npm --prefix week2 install --no-audit --no-fund && npm --prefix week2 run build && npm --prefix week3 install --no-audit --no-fund && npm --prefix week3 run build && react-scripts build",
+    "build": "npm --prefix week1 install --no-audit --no-fund && npm --prefix week1 run build && npm --prefix week2 install --no-audit --no-fund && npm --prefix week2 run build && npm --prefix week3 install --no-audit --no-fund && npm --prefix week3 run build && npm --prefix week4 install --no-audit --no-fund && npm --prefix week4 run build && react-scripts build",
     "test": "react-scripts test",
     "eject": "react-scripts eject"
   },

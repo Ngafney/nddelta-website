@@ -1,0 +1,28 @@
+{
+  "name": "nddelta-week4",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "api": "node dev-server.js",
+    "build": "vite build",
+    "serve": "node serve.js",
+    "test": "node test/physics.test.js && node test/engine.test.js && node test/api.test.js && node test/scope.test.js && node test/render.test.js",
+    "test:api": "node test/api.test.js",
+    "test:render": "node test/render.test.js",
+    "test:e2e": "node test/e2e.test.js",
+    "test:all": "npm test && npm run build && npm run test:e2e",
+    "test:physics": "node test/physics.test.js",
+    "test:engine": "node test/engine.test.js",
+    "test:scope": "node test/scope.test.js"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.7.0",
+    "vite": "^6.4.3"
+  }
+}

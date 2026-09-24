@@ -1,6 +1,10 @@
 {
   "rewrites": [
     {
+      "source": "/api/week4/:path*",
+      "destination": "/api/week4/router?__path=:path*"
+    },
+    {
       "source": "/week1/board",
       "destination": "/week1/index.html"
     },
@@ -35,6 +39,14 @@
     {
       "source": "/api/week3/:path*",
       "destination": "/api/week3/router?__path=:path*"
+    },
+    {
+      "source": "/week4/board",
+      "destination": "/week4/index.html"
+    },
+    {
+      "source": "/week4/admin",
+      "destination": "/week4/index.html"
     }
   ],
   "headers": [
@@ -127,6 +139,56 @@
           "value": "no-store, must-revalidate"
         }
       ]
+    },
+    {
+      "source": "/week4",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-store, must-revalidate"
+        }
+      ]
+    },
+    {
+      "source": "/week4/",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-store, must-revalidate"
+        }
+      ]
+    },
+    {
+      "source": "/week4/index.html",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-store, must-revalidate"
+        }
+      ]
+    },
+    {
+      "source": "/week4/admin",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-store, must-revalidate"
+        }
+      ]
+    },
+    {
+      "source": "/week4/board",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-store, must-revalidate"
+        }
+      ]
     }
-  ]
+  ],
+  "functions": {
+    "api/week4/router.mjs": {
+      "maxDuration": 60
+    }
+  }
 }
