@@ -233,19 +233,29 @@ function Floor() {
     );
   }
 
-  if (!player || !state?.me?.teamId || gateHolding) {
+  // `state &&` rather than `!state?...`: on a slow first poll a returning
+  // player already on a team would otherwise see the gate flash past.
+  if (!player || (state && !state.me?.teamId) || gateHolding) {
     return (
       <Shell round={round}>
         <Gate
           round={round}
           player={player}
           me={state?.me ?? null}
+          team={state?.team ?? null}
+          limits={{ teamSize: round?.teamSize ?? 4 }}
           onPlayer={(p) => {
             savePlayer(p);
             setPlayer(p);
           }}
           onHold={setGateHolding}
-          onDone={pull}
+          onDone={() => {
+            // Lower the hold FIRST. The gate is held mounted on purpose while
+            // the code is on screen, and nothing else ever lowers it: the
+            // effect that would is inside the component the hold keeps alive.
+            setGateHolding(false);
+            pull();
+          }}
         />
       </Shell>
     );

@@ -122,12 +122,23 @@ await ok("the noise level is chosen from a confidence, and the round says what i
       `release ${i} is less convincing than release ${i - 1}`
     );
   }
+  // How high the last release can actually get depends on the sky that was
+  // drawn: if the rock is barely closer at the final release than the first,
+  // the extra data cannot say much. The round must always IMPROVE, must get
+  // most of the way there, and must report honestly when it falls short
+  // rather than claiming a number nobody can reach.
   const last = c.releases[c.releases.length - 1].confidence;
-  assert.ok(last > 0.8, `the final release only reaches ${(last * 100).toFixed(1)}%`);
+  assert.ok(last > 0.70, `the final release only reaches ${(last * 100).toFixed(1)}%`);
+  assert.ok(last > c.releases[0].confidence + 0.05, "the record barely got more convincing at all");
+  const claimed = 0.9 - last;
+  assert.ok(
+    Math.abs(c.endShortfall - claimed) < 0.02,
+    `the round claims a shortfall of ${c.endShortfall} but actually fell ${claimed} short`
+  );
   // The survey improving over the record is the second axis of the noise
   // model. It has to be a real improvement, and not an absurd one.
   assert.ok(c.surveyImprovement > 2, `the survey barely improved (${c.surveyImprovement.toFixed(1)}×)`);
-  assert.ok(c.surveyImprovement < 5000, `the survey improved ${c.surveyImprovement.toFixed(0)}× — not believable`);
+  assert.ok(c.surveyImprovement < 400, `the survey improved ${c.surveyImprovement.toFixed(0)}× — not believable`);
 });
 
 let alice, bob, carol;

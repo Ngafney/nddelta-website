@@ -351,6 +351,27 @@ ok("the release banner fires once per batch and not on first load", () => {
   assert.ok(/released > announced\.current/.test(appSource), "the banner is not edge-triggered");
 });
 
+ok("leaving the team-code screen lowers the hold that keeps it up", () => {
+  // THE BUG THIS EXISTS FOR: the code screen asks the app to hold the gate
+  // mounted so a teammate can read the code out. The only thing that lowered
+  // the hold again was TeamStep's effect cleanup -- which runs on unmount, and
+  // it cannot unmount while the hold is up. Pressing GO refetched state and
+  // changed nothing. Nobody could get onto the floor at all.
+  const at = appSource.indexOf("onDone={");
+  assert.ok(at > 0, "the gate has no done handler");
+  const handler = appSource.slice(at, at + 600);
+  const lower = handler.indexOf("setGateHolding(false)");
+  const refetch = handler.indexOf("pull()");
+  assert.ok(lower > 0, "the gate's done handler never lowers gateHolding, so the code screen is a dead end");
+  assert.ok(refetch > lower, "the hold must be lowered BEFORE the refetch, or the next poll re-holds it");
+
+  const gateSource = fs.readFileSync(path.join(root, "src", "components", "Gate.jsx"), "utf8");
+  assert.ok(gateSource.includes("onHold?.(true)"), "the code screen no longer holds the gate");
+  // The gate must also be given the team size, or the code screen cannot say
+  // how many seats there are and draws no slots.
+  assert.ok(appSource.includes("limits={{ teamSize:"), "the gate is not told how big a team may be");
+});
+
 ok("the stylesheet lays the two books out side by side", () => {
   const css = fs.readFileSync(path.join(root, "src", "styles.css"), "utf8");
   const m = css.match(/\.twobooks\s*\{([^}]*)\}/);

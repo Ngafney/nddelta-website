@@ -434,6 +434,15 @@ function meView(state, p) {
   };
 }
 
+/** What the gate needs to show a team code: the code, and how many seats. */
+const teamCard = (team) => ({
+  id: team.id,
+  name: team.name,
+  code: team.code,
+  size: team.members.length,
+  max: LIMITS.teamSize,
+});
+
 /** Rows the room is allowed to have, and not one more. */
 function releasedRows(state, spec) {
   const upto = state.released ?? 0;
@@ -528,7 +537,7 @@ export async function handle(method, route, body, query) {
         const teamId = rid(4);
         const code = makeTeamCode(state, (n) => crypto.randomInt(n));
         const team = createTeam(state, p.id, body.name, teamId, code);
-        return { team: { id: team.id, name: team.name, code: team.code }, me: meView(state, p) };
+        return { team: teamCard(team), me: meView(state, p) };
       });
     }
 
@@ -536,7 +545,7 @@ export async function handle(method, route, body, query) {
       return tx((state) => {
         const p = requirePlayer(state, body);
         const team = joinTeam(state, p.id, body.code);
-        return { team: { id: team.id, name: team.name, code: team.code }, me: meView(state, p) };
+        return { team: teamCard(team), me: meView(state, p) };
       });
     }
 

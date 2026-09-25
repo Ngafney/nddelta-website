@@ -342,7 +342,7 @@ export function calibrateNoise(
   sens,
   latRad,
   batches,
-  { startConf = 0.65, endConf = 0.9, gmPriorRel = 5e-6, rangeFloor = 0.2, pRange = [0, 9] } = {}
+  { startConf = 0.65, endConf = 0.9, gmPriorRel = 5e-6, rangeFloor = 0.2, pRange = [0, 5.7] } = {}
 ) {
   const rng = sens.range.map((r) => Math.max(r, rangeFloor));
   const lastCut = batches[batches.length - 1].cutDay;
@@ -373,7 +373,12 @@ export function calibrateNoise(
   };
 
   // Then find the exponent that lands the LAST release where it should.
-  // The exponent stays inside a band that can be defended out loud. At the top
+  // The decay stays inside a band that can be defended out loud: e^5.7 is
+  // about a 300-fold improvement over three years, which is roughly a faint
+  // survey detection becoming a confirmed impactor under dedicated large-
+  // telescope astrometry. Past that nobody would believe the data, so the
+  // solver is allowed to FALL SHORT of the requested confidence and say so
+  // rather than quietly inventing a telescope that does not exist. At the top
   // of it the implied ANGULAR precision runs from a few arcseconds on a faint
   // distant dot to a few hundredths on a bright, close, heavily-tracked one —
   // a wide range, but a real one. Past that the data stops being believable,
