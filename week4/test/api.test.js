@@ -74,9 +74,13 @@ await ok("health and rules come up, and the rules give away nothing", async () =
   // The market NAMES are public — "impact north of the equator" is the whole
   // point. What must not appear is anything about THIS round's answer or the
   // machinery behind it.
-  for (const word of ["impactlat", "relativ", "einstein", "perihelion", "truelat", "y0", "seed"]) {
+  for (const word of ["impactlat", "truelat", "y0", "seed"]) {
     assert.ok(!blob.includes(word), `the rules mention "${word}"`);
   }
+  // The model, by contrast, is stated ON PURPOSE. A round where the room has
+  // to guess which physics to fit is a round about guessing.
+  assert.ok(blob.includes("newtonian"), "the rules must say what dynamics to fit");
+  assert.ok(r.modelNote && /newtonian/i.test(r.modelNote), "there is no model note");
   assert.ok(!/"winner"/.test(JSON.stringify(r)), "the rules carry a winner field");
 });
 
@@ -96,8 +100,10 @@ await ok("the admin logs in and builds a round", async () => {
   truth = built.truth;
   assert.strictEqual(truth.winner, "north", "a positive latitude has to be a northern impact");
   assert.ok(Math.abs(truth.latDeg - 3.5) < 0.05, `aimed at 3.5°, got ${truth.latDeg}`);
-  assert.ok(truth.physics.perihelionSolarRadii < 20, "the asteroid has to actually graze the Sun");
-  assert.ok(truth.physics.passes >= 3, "it needs several solar passes for relativity to bite");
+  // Deliberately NOT a sungrazer any more: that orbit was unfittable. See the
+  // note at the top of shared/rules.js.
+  assert.ok(truth.physics.perihelionAu > 0.3, `perihelion ${truth.physics.perihelionAu} would wreck the fit`);
+  assert.strictEqual(truth.physics.relativistic, false, "rounds are played on Newtonian gravity");
   assert.strictEqual(built.round.status, "lobby");
   assert.strictEqual(built.round.released, 0, "no data is out before the operator starts");
 });
@@ -137,7 +143,10 @@ await ok("the noise level is chosen from a confidence, and the round says what i
   );
   // The survey improving over the record is the second axis of the noise
   // model. It has to be a real improvement, and not an absurd one.
-  assert.ok(c.surveyImprovement > 2, `the survey barely improved (${c.surveyImprovement.toFixed(1)}×)`);
+  // A gentle orbit does not swing as far in or out, so the range term carries
+  // less of the work and the time term carries more. The number that has to
+  // hold is the confidence ladder below, not this.
+  assert.ok(c.surveyImprovement > 1.1, `the survey did not improve at all (${c.surveyImprovement.toFixed(2)}×)`);
   assert.ok(c.surveyImprovement < 400, `the survey improved ${c.surveyImprovement.toFixed(0)}× — not believable`);
 });
 
@@ -330,7 +339,11 @@ await ok("the asteroid lands, everything settles, and the reveal opens", async (
   assert.ok(rev.track.length > 100, "the reveal needs a path to draw");
   assert.strictEqual(rev.track[0].length, 9, "three bodies, three coordinates each");
   assert.strictEqual(rev.track.length, rev.trackDays.length);
-  assert.ok(rev.physics.relativisticDriftKm > 1000, "relativity has to have mattered");
+  // Relativity is reported as a footnote, not as the answer: it is real, and
+  // small enough here that a Newtonian fit reproduces the record.
+  assert.strictEqual(rev.physics.relativistic, false);
+  assert.ok(rev.physics.relativisticDriftKm > 0, "the comparison model is not being run at all");
+  assert.ok(rev.physics.relativisticDriftKm < 20000, "relativity is too large to promise a Newtonian fit");
 });
 
 await ok("settlement paid the winning book and not the losing one", async () => {

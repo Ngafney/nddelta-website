@@ -39,6 +39,7 @@ export default function Rules({ onClose }) {
               ))}
             </div>
             <Markdownish text={rules.rules} />
+            {rules.modelNote && <p className="model-note">{rules.modelNote}</p>}
             <p className="dim">{rules.dataNote}</p>
           </>
         )}

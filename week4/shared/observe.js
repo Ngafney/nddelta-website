@@ -128,13 +128,16 @@ function latObservable(yT, axis) {
  */
 export function buildSensitivity(scenario, epochs) {
   const { y0, mass, tImpact, axis } = scenario;
+  // Differentiate the SAME dynamics the round is played on, or the covariance
+  // describes a solar system nobody is trading.
+  const relativistic = scenario.relativistic ?? false;
   const steps = parameterSteps();
   const sample = [...epochs, tImpact];
 
   const run = (state, gmScale) => {
     const opts = {
       mass: gmScale === 1 ? mass : mass.map((m, i) => (i === SUN ? m * gmScale : m)),
-      relativistic: true,
+      relativistic,
       rtol: 1e-12,
       atol: 1e-14,
     };
@@ -440,7 +443,7 @@ export function calibrateNoise(
  * plus the masses, measured badly like everything else.
  */
 export function makeObservations(scenario, epochs, sigmas, seed) {
-  const opts = { mass: scenario.mass, relativistic: true, rtol: 1e-12, atol: 1e-14 };
+  const opts = { mass: scenario.mass, relativistic: scenario.relativistic ?? false, rtol: 1e-12, atol: 1e-14 };
   const rand = rngFrom(`w4|obs|${seed}`);
   const rows = [];
   let y = Float64Array.from(scenario.y0);

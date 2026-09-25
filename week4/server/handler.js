@@ -29,7 +29,7 @@ import {
 } from "../shared/engine.js";
 import {
   MARKETS, MARKET_META, BOOK, LIMITS, MONEY, SCENARIO, DATA, CONFIDENCE,
-  PHASES, TIMERS, BOTS, RULES_TEXT, DATA_NOTE,
+  PHASES, TIMERS, BOTS, RULES_TEXT, DATA_NOTE, MODEL_NOTE,
 } from "../shared/rules.js";
 import { buildScenario, verifyScenario, closestApproachToSun, propagate, posOf, latitudeOf, AU_KM, YEAR_DAYS } from "../shared/orbits.js";
 import {
@@ -473,6 +473,7 @@ export async function handle(method, route, body, query) {
       return {
         rules: RULES_TEXT,
         dataNote: DATA_NOTE,
+        modelNote: MODEL_NOTE,
         markets: MARKETS.map((m) => MARKET_META[m]),
         book: BOOK,
         limits: {
@@ -572,6 +573,7 @@ export async function handle(method, route, body, query) {
         rows,
         masses: spec.masses.map((m) => ({ kg: m.kg, relError: m.relError })),
         note: DATA_NOTE,
+        modelNote: MODEL_NOTE,
         released: state.released ?? 0,
         cutDay: (state.releases ?? [])[(state.released ?? 1) - 1]?.cutDay ?? null,
         impactDay: state.impactDay,
@@ -926,8 +928,10 @@ async function buildRound(body, now) {
     perihelion: SCENARIO.perihelion,
     minPasses: SCENARIO.minPasses,
     astMassKg: SCENARIO.astMassKg,
+    relativistic: SCENARIO.relativistic,
+    minStartRadius: SCENARIO.minStartRadius,
   });
-  const check = verifyScenario(scenario);
+  const check = verifyScenario(scenario, { relativistic: SCENARIO.relativistic });
   if (!check.ok) throw httpError(500, `the trajectory did not land where it was aimed: ${check.reason ?? check.latDeg}`);
 
   const epochs = observationEpochs(scenario.tImpact, DATA.cadence);
@@ -981,10 +985,14 @@ async function buildRound(body, now) {
       passes: scenario.orbit.passes,
       eccentricity: scenario.orbit.ecc,
       semiMajorAu: scenario.orbit.a,
+      /** What the round was actually integrated with. */
+      relativistic: SCENARIO.relativistic,
+      /**
+       * How far the impact would have moved had the post-Newtonian term been
+       * on. Small here by design, which is the justification for leaving it
+       * off — and worth saying out loud at the reveal.
+       */
       relativisticDriftKm: check.relativisticDriftKm,
-      newtonianMisses: check.newtonianMisses,
-      newtonianLatDeg: check.newtonianLatDeg,
-      newtonianMissKm: check.newtonianMissKm ?? 0,
       contactErrorDays: check.contactError,
     },
     calibration: {

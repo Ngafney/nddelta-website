@@ -75,6 +75,38 @@ export const LIMITS = {
 
 /* ── the scenario ─────────────────────────────────────────────────────── */
 
+/**
+ * THE DYNAMICAL MODEL IS NEWTONIAN, ON PURPOSE.
+ *
+ * The first cut of this round had the asteroid graze the Sun at ten solar
+ * radii, where general relativity moves the impact point by tens of thousands
+ * of kilometres and a Newtonian fit misses the planet outright. That was a
+ * lovely payoff and a completely unplayable round, for a reason that has
+ * nothing to do with relativity:
+ *
+ *   - At day zero the rock sat 0.06 AU from the Sun doing 167 km/s. Between
+ *     the first observation and the fourth it travelled 1.4 AU, so a
+ *     finite-difference velocity — the obvious first guess — came out 105%
+ *     wrong.
+ *   - Five perihelion passes amplify a starting error ferociously: a velocity
+ *     error of one part in 10^8 puts the asteroid 456 km off by day 400, and
+ *     one part in 10^4 puts it four million km off.
+ *
+ * So the orbit determination had to be right to eight significant figures
+ * before the residuals meant anything, and every fit anyone tried — mine
+ * included — sat at millions of sigma and predicted a miss. The round was
+ * testing whether you can write JPL's software in twenty minutes, not whether
+ * you can price an uncertain outcome.
+ *
+ * The orbit below is gentle: perihelion outside half an AU, eccentricity near
+ * 0.45, and the asteroid starts near aphelion moving at about Earth's own
+ * speed. A plain least-squares fit converges to 1σ in about two seconds, and
+ * the round goes back to being about the statistics.
+ *
+ * The relativistic term is still implemented and still checked against
+ * Mercury's 43 arcseconds per century in test/physics.test.js. It is simply
+ * not used for play, and the reveal says by how much it would have mattered.
+ */
 export const SCENARIO = {
   /** Length of the observing record, in years. */
   years: 3,
@@ -82,9 +114,13 @@ export const SCENARIO = {
   defaultImpactLatDeg: 3,
   /** The operator may aim anywhere in this band. */
   latRange: [0.5, 12],
-  /** Perihelion band for the asteroid's orbit, in AU. Sungrazing, on purpose. */
-  perihelion: [0.042, 0.075],
-  minPasses: 3,
+  /** Newtonian gravity only. See the note above before changing this. */
+  relativistic: false,
+  /** Perihelion band, in AU. Well clear of the Sun so the arc stays fittable. */
+  perihelion: [0.35, 0.8],
+  /** The asteroid must START at least this far out, where it is slow. */
+  minStartRadius: 0.9,
+  minPasses: 1,
   astMassKg: 1.6e12,
 };
 
@@ -164,6 +200,8 @@ Because exactly one pays, NORTH and SOUTH should add up to about 100. If they do
 
 **What you get.** The survey's full record: the positions of the Sun, the Earth and the asteroid every few days for three years, each with the error bar on that measurement, plus the three masses. Download it with one click and do whatever you like to it.
 
+**The model is Newtonian.** Plain inverse-square gravity between the three bodies, nothing else — no relativity, no radiation pressure, no fourth body. That is not a hint, it is a promise: fit Newtonian gravity and the data will fit, to its error bars. The question is not which physics; it is how much the noise leaves you unsure.
+
 The record is noisy. Observing is hard, and it was hardest when the rock was far away. With the opening data a good team can get a real edge — but not certainty.
 
 **More data arrives.** The operator releases further stretches of the record as the round goes on. Every release is announced loudly. The newer measurements are sharper, because the asteroid is closer and brighter, so each release should move your estimate.
@@ -177,5 +215,7 @@ The record is noisy. Observing is hard, and it was hardest when the rock was far
 **Teams.** Up to four players. You keep your own money and your own positions; the leaderboard ranks each team's **average** portfolio.
 
 **The end.** The books shut, the asteroid arrives, and you watch where it lands. Then everything settles and the board is final.`;
+
+export const MODEL_NOTE = `Newtonian three-body gravity. Positions are barycentric, AU and days, so GM of the Sun is k² with k = 0.01720209895. Fit the asteroid's six initial numbers; the Earth and the Sun are pinned down by their own rows.`;
 
 export const DATA_NOTE = `Positions are in AU in the solar-system barycentric frame, on the ecliptic of J2000. Day 0 is the first observation. \`sigma_au\` is the one-sigma error on every position component in that row — it is not the same on every row.`;

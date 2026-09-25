@@ -106,6 +106,7 @@ export default function DataPanel({ player, round, onToast }) {
       </div>
 
       <p className="dim data-note">{data.note}</p>
+      {data.modelNote && <p className="model-note">{data.modelNote}</p>}
 
       <div className="tablewrap">
         <table className="datatable">

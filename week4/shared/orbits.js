@@ -541,8 +541,13 @@ function earthStart(phase, ecc = 0.0167) {
 export function buildScenario(seed, targetLatDeg, cfg = {}) {
   const {
     years = 3,
-    perihelion = [0.042, 0.075],
-    minPasses = 3,
+    /**
+     * Well clear of the Sun. A sungrazing perihelion makes the round
+     * spectacular and the orbit determination impossible -- see the long note
+     * in rules.js before pulling this back in.
+     */
+    perihelion = [0.35, 0.8],
+    minPasses = 1,
     /** How far round the Sun the asteroid must start. -1 is dead opposite. */
     farSide = -0.35,
     /**
@@ -553,6 +558,16 @@ export function buildScenario(seed, targetLatDeg, cfg = {}) {
      */
     scoreLeads = [180, 30],
     astMassKg = 1.6e12,
+    /**
+     * Whether the round's truth includes the post-Newtonian term.
+     *
+     * The physics is implemented and checked against Mercury, but a round is
+     * played on whichever model the operator chose, and the students have to
+     * be able to FIT it. See the note in rules.js.
+     */
+    relativistic = false,
+    /** The asteroid must start out here, slow, not whipping past the Sun. */
+    minStartRadius = 0.9,
   } = cfg;
 
   const rand = rngFrom(`w4|scenario|${seed}`);
@@ -561,8 +576,8 @@ export function buildScenario(seed, targetLatDeg, cfg = {}) {
 
   const astMass = astMassKg / 1.98847e30;
   const mass = [M_SUN, M_EARTH, astMass];
-  const opts = { mass, relativistic: true, rtol: 1e-12, atol: 1e-14 };
-  const twoBody = { mass: [M_SUN, 0, 0], relativistic: true, rtol: 1e-12, atol: 1e-14 };
+  const opts = { mass, relativistic, rtol: 1e-12, atol: 1e-14 };
+  const twoBody = { mass: [M_SUN, 0, 0], relativistic, rtol: 1e-12, atol: 1e-14 };
 
   // Everything about the round that varies game to game.
   const earthPhase = rand() * 2 * Math.PI;
@@ -671,7 +686,7 @@ export function buildScenario(seed, targetLatDeg, cfg = {}) {
       // side: arrival happens near aphelion, so the point diametrically
       // opposite it is the point closest in. Demanding the asteroid also start
       // far out asks for two incompatible things, and nothing qualifies.
-      if (!Number.isFinite(d0) || d0 < 0.035 || d0 > 3.5) {
+      if (!Number.isFinite(d0) || d0 < minStartRadius || d0 > 3.5) {
         why.distance++;
         continue;
       }
@@ -727,6 +742,7 @@ export function buildScenario(seed, targetLatDeg, cfg = {}) {
     axis,
     nodeAngle,
     targetLatDeg,
+    relativistic,
     orbit: {
       a: pick.a,
       ecc: pick.ecc,
@@ -742,17 +758,21 @@ export function buildScenario(seed, targetLatDeg, cfg = {}) {
 
 /** Confirm a built scenario really lands where it claims. */
 export function verifyScenario(sc, opts = {}) {
-  const o = { mass: sc.mass, relativistic: true, rtol: 1e-12, atol: 1e-14, ...opts };
+  const o = { mass: sc.mass, relativistic: sc.relativistic ?? true, rtol: 1e-12, atol: 1e-14, ...opts };
   const y0 = Float64Array.from(sc.y0);
   const hit = findContact(y0, 0, sc.tImpact + 1, o);
   if (!hit.hit) return { ok: false, reason: `closest approach ${hit.missKm.toFixed(0)} km — no contact` };
   const lat = (latitudeOf(hit.y, sc.axis) * 180) / Math.PI;
   const yT = propagate(y0, 0, sc.tImpact, o);
 
-  // Same launch, Newtonian gravity only: where would it have gone?
-  const newt = findContact(y0, 0, sc.tImpact + 30, { ...o, relativistic: false });
+  // Same launch, the OTHER gravity model: where would it have gone? For a
+  // Newtonian round that means switching relativity ON, which is how the
+  // reveal can honestly say by how much it would have mattered. Comparing a
+  // model against itself just reports zero.
+  const other = { ...o, relativistic: !o.relativistic };
+  const newt = findContact(y0, 0, sc.tImpact + 30, other);
   const newtLat = newt.hit ? (latitudeOf(newt.y, sc.axis) * 180) / Math.PI : null;
-  const yTn = propagate(y0, 0, sc.tImpact, { ...o, relativistic: false });
+  const yTn = propagate(y0, 0, sc.tImpact, other);
   const driftKm = norm(sub(posOf(yT, AST), posOf(yTn, AST))) * AU_KM;
 
   return {
@@ -764,13 +784,14 @@ export function verifyScenario(sc, opts = {}) {
     newtonianLatDeg: newtLat,
     newtonianMisses: !newt.hit,
     newtonianMissKm: newt.hit ? 0 : newt.missKm,
+    /** How far the impact moves if you swap the gravity model. */
     relativisticDriftKm: driftKm,
   };
 }
 
 /** Minimum Sun distance reached, for the reveal copy. */
 export function closestApproachToSun(sc, samples = 3000) {
-  const o = { mass: sc.mass, relativistic: true, rtol: 1e-11, atol: 1e-13 };
+  const o = { mass: sc.mass, relativistic: sc.relativistic ?? true, rtol: 1e-11, atol: 1e-13 };
   const dist = (y) => norm(sub(posOf(y, AST), posOf(y, SUN)));
   let y = Float64Array.from(sc.y0);
   let t = 0;

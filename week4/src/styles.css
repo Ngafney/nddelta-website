@@ -1376,3 +1376,12 @@ select { appearance: none; cursor: pointer; }
   overflow-x: auto;
   white-space: pre;
 }
+.model-note {
+  font-size: 8px;
+  line-height: 1.8;
+  color: var(--gold);
+  background: #1a1405;
+  border: 2px solid var(--gold-deep);
+  padding: 7px 9px;
+  margin: 8px 0;
+}

@@ -207,30 +207,38 @@ ok("a scenario lands the asteroid exactly where the operator asked", () => {
   }
 });
 
-ok("the asteroid really does graze the Sun", () => {
-  const sc = buildScenario("phys-sun", 2.5, {});
+ok("the asteroid stays well clear of the Sun, so the arc stays fittable", () => {
+  // This assertion is inverted from where it started. The round used to send
+  // the rock past the Sun at ten solar radii because relativity then moved the
+  // impact by tens of thousands of kilometres -- wonderful, and completely
+  // unfittable: a velocity error of one part in 10^8 put it 456 km off by day
+  // 400, so nobody could ever determine the orbit from the published record.
+  const sc = buildScenario("phys-gentle", 2.5, {});
   const close = closestApproachToSun(sc);
-  assert.ok(close.au < 0.08, `closest approach ${close.au.toFixed(4)} AU is too far out for relativity to bite`);
-  assert.ok(close.au > 0.02, `closest approach ${close.au.toFixed(4)} AU would not survive the pass`);
-  assert.ok(sc.orbit.passes >= 3, `only ${sc.orbit.passes} perihelion passes`);
+  assert.ok(close.au > 0.3, `perihelion ${close.au.toFixed(3)} AU is close enough to wreck the fit`);
+
+  // And it must START somewhere slow, not at perihelion doing 167 km/s, or a
+  // finite-difference first guess is worse than useless.
+  const r0 = norm(sub(posOf(sc.y0, 2), posOf(sc.y0, 0)));
+  const v0 = norm(sub(velOf(sc.y0, 2), velOf(sc.y0, 0))) * AU_KM / 86400;
+  assert.ok(r0 > 0.6, `starts ${r0.toFixed(2)} AU out — too close in`);
+  assert.ok(v0 < 60, `starts at ${v0.toFixed(0)} km/s — too fast to difference`);
 });
 
-ok("Newtonian gravity alone puts the impact somewhere else entirely", () => {
-  const drifts = [];
-  for (const lat of [2, -2, 4]) {
-    const sc = buildScenario(`phys-gr-${lat}`, lat, {});
-    const v = verifyScenario(sc);
-    drifts.push(v.relativisticDriftKm);
-    // Either it misses the Earth outright, or it hits a long way from the mark.
-    const moved = v.newtonianMisses || Math.abs(v.newtonianLatDeg - v.latDeg) > 1;
-    assert.ok(
-      moved,
-      `Newtonian impact was only ${Math.abs(v.newtonianLatDeg - v.latDeg).toFixed(3)}° away — ` +
-        `relativity has to be the difference between two different answers`
-    );
-  }
-  const worst = Math.min(...drifts);
-  assert.ok(worst > 2000, `relativity only moved the asteroid ${worst.toFixed(0)} km by impact day`);
+ok("rounds are played Newtonian, and relativity is a small correction here", () => {
+  const sc = buildScenario("phys-model", 3, {});
+  assert.strictEqual(sc.relativistic, false, "the round must be built on the model it is played on");
+  const v = verifyScenario(sc);
+  assert.ok(v.ok, `aimed at 3° and landed ${v.latDeg?.toFixed(3)}`);
+
+  // Not zero — it is real physics — but small enough that fitting Newtonian
+  // gravity reproduces the record to its error bars, which is the promise the
+  // rules make to the room.
+  assert.ok(v.relativisticDriftKm > 0, "the relativistic term is not being computed at all");
+  assert.ok(
+    v.relativisticDriftKm < 20000,
+    `relativity would move the impact ${Math.round(v.relativisticDriftKm)} km — too much to promise a Newtonian fit`
+  );
 });
 
 ok("the same seed builds the same solar system every time", () => {

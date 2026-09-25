@@ -15,22 +15,34 @@ npm run test:all   # …plus a build and an end-to-end run over HTTP
 
 Admin: `/week4/admin` (password `123` until changed). Projector: `/week4/board`.
 
-## The physics is real
+## The physics is real — and deliberately Newtonian
 
 `shared/orbits.js` integrates the Sun, the Earth and the asteroid with an
-adaptive Dormand–Prince 5(4), plus the first post-Newtonian correction from the
-Sun. The relativity is not decoration:
+adaptive Dormand–Prince 5(4). The post-Newtonian term is implemented and
+checked against Mercury's perihelion advancing 43″ per century, but **rounds
+are played on Newtonian gravity**, and that was a deliberate reversal.
 
-- The asteroid's perihelion sits around **15 solar radii**, and it makes three
-  to seven passes.
-- General relativity moves the impact point by **tens of thousands of
-  kilometres** by arrival day.
-- Run the same launch state with Newtonian gravity alone and it **misses the
-  Earth entirely**.
+The first cut had the asteroid graze the Sun at ten solar radii, where
+relativity moves the impact by tens of thousands of km and a Newtonian fit
+misses the planet outright. Lovely payoff, unplayable round — for a reason
+that had nothing to do with relativity:
 
-`test/physics.test.js` checks the relativistic term against the one number
-everybody knows — Mercury's perihelion advancing 43″ per century — before
-anything else is allowed to depend on it.
+- At day zero the rock sat 0.06 AU from the Sun doing **167 km/s**. Between the
+  first observation and the fourth it travelled 1.4 AU, so a finite-difference
+  velocity came out **105% wrong**.
+- Five perihelion passes amplify ferociously: a velocity error of one part in
+  10⁸ puts it **456 km** off by day 400; one part in 10⁴ puts it **4.4 million
+  km** off.
+
+Orbit determination therefore had to be right to eight significant figures
+before residuals meant anything. Every fit anyone tried — mine included — sat
+at millions of sigma and predicted a miss. The round was testing whether you
+can write JPL's software in twenty minutes.
+
+The orbit now is gentle: perihelion outside half an AU, e ≈ 0.45, and the
+asteroid starts near aphelion at roughly Earth's own speed. A staged
+least-squares fit converges to **1σ in about two seconds**, and the round is
+about the statistics again.
 
 The operator picks a latitude; a damped Newton shoot on the launch velocity
 lands the asteroid on that parallel to four decimal places, at an impact time

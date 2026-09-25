@@ -144,25 +144,20 @@ function Physics({ p }) {
       <div className="panel-title">WHAT IT ACTUALLY DID</div>
       <ul>
         <li>
-          Passed <b>{p.perihelionSolarRadii.toFixed(1)} solar radii</b> from the Sun,{" "}
-          <b>{p.passes}</b> times.
+          Closest approach to the Sun: <b>{p.perihelionAu?.toFixed(2)} AU</b>, crossed{" "}
+          <b>{p.passes}</b> {p.passes === 1 ? "time" : "times"}.
         </li>
         <li>
-          General relativity moved it <b>{Math.round(p.relativisticDriftKm).toLocaleString()} km</b> by impact day.
+          The orbit was <b>Newtonian</b> — plain inverse-square gravity, which is exactly the model
+          the record could be fitted with.
         </li>
-        <li>
-          {p.newtonianMisses ? (
-            <>
-              With Newtonian gravity alone it would have <b>missed the Earth entirely</b>, by{" "}
-              {Math.round(p.newtonianMissKm).toLocaleString()} km.
-            </>
-          ) : (
-            <>
-              With Newtonian gravity alone it would have landed at{" "}
-              <b>{p.newtonianLatDeg?.toFixed(2)}°</b> instead.
-            </>
-          )}
-        </li>
+        {p.relativisticDriftKm != null && (
+          <li>
+            For the record: adding general relativity would have moved the impact about{" "}
+            <b>{Math.round(p.relativisticDriftKm).toLocaleString()} km</b>. Worth knowing it is not zero;
+            not worth fitting here.
+          </li>
+        )}
       </ul>
     </div>
   );
