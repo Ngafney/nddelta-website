@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { api, loadPlayer, savePlayer, clearPlayer, withPlayer } from "./api.js";
-import { clock } from "./components/PixelBits.jsx";
+import { clock, Spinner } from "./components/PixelBits.jsx";
 import Gate from "./components/Gate.jsx";
 import OrderBook from "./components/OrderBook.jsx";
 import YouPanel from "./components/YouPanel.jsx";
@@ -26,9 +26,47 @@ export default function App() {
   return (
     <>
       <StaleBuild />
-      {page}
+      <Boundary>{page}</Boundary>
     </>
   );
+}
+
+/**
+ * A render crash in React unmounts the whole tree, and what is left is an
+ * empty black page with nothing to click and nothing to read. During a live
+ * round that is indistinguishable from the network dying. Say what happened
+ * and offer the one thing that usually fixes it.
+ */
+class Boundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { err: null };
+  }
+  static getDerivedStateFromError(err) {
+    return { err };
+  }
+  componentDidCatch(err) {
+    // Left in on purpose: this is the only breadcrumb when it happens to
+    // somebody else's phone in the middle of a lecture.
+    console.error("[week4] render crashed", err);
+  }
+  render() {
+    if (!this.state.err) return this.props.children;
+    return (
+      <div className="shell">
+        <div className="dead-note">
+          SOMETHING BROKE
+          <br />
+          <span style={{ color: "var(--dim)", fontSize: 9 }}>{String(this.state.err?.message ?? this.state.err)}</span>
+          <br />
+          <br />
+          <button className="pxbtn pxbtn--green" onClick={() => window.location.reload()}>
+            RELOAD
+          </button>
+        </div>
+      </div>
+    );
+  }
 }
 
 const SHOWN_KEY = "w4shownReveals";
@@ -263,6 +301,19 @@ function Floor() {
 
   if (round.status === "settled" && entered !== round.roundId && reveal) {
     return <Reveal data={reveal} onNext={() => setEntered(round.roundId)} />;
+  }
+
+  // The poll has not come back yet. Without this the render falls through to
+  // the floor and reads `state.me` off null, which is a blank page and no
+  // explanation -- exactly what a player sees in the second after they join.
+  if (!state) {
+    return (
+      <Shell round={round}>
+        <div className="dead-note">
+          <Spinner text="JOINING" />
+        </div>
+      </Shell>
+    );
   }
 
   const me = state.me;

@@ -351,6 +351,51 @@ ok("the release banner fires once per batch and not on first load", () => {
   assert.ok(/released > announced\.current/.test(appSource), "the banner is not edge-triggered");
 });
 
+ok("the floor is never reached with a null state", () => {
+  // THE BUG THIS EXISTS FOR: for the second between joining and the first
+  // poll returning, `player` is set and `state` is still null. The gate
+  // condition reads `(state && !state.me?.teamId)` so a returning player does
+  // not see the gate flash -- but that clause is FALSY when state is null, so
+  // the render fell through to the floor and read `state.me` off null. React
+  // unmounted the tree and the player was left staring at a black page.
+  //
+  // This cannot be caught by mounting the app here: with no effects there is
+  // no config either, so the render stops at the "no round" branch long
+  // before it could crash. What CAN be checked is the ordering that makes it
+  // impossible, so that is what is checked.
+  const guard = appSource.indexOf("if (!state) {");
+  const deref = appSource.indexOf("const me = state.me;");
+  assert.ok(deref > 0, "the floor no longer reads state.me — retarget this test");
+  assert.ok(guard > 0, "there is no null-state guard before the floor renders");
+  assert.ok(guard < deref, "the null-state guard must come BEFORE the floor dereferences state");
+
+  // And the gate clause it partners with really is the falsy-on-null shape,
+  // which is the reason the guard is load-bearing rather than decorative.
+  assert.ok(
+    /\(state && !state\.me\?\.teamId\)/.test(appSource),
+    "the gate condition changed shape — re-check whether the guard is still needed"
+  );
+});
+
+ok("the app still mounts for a player the browser already knows", () => {
+  localStorage.setItem("w4player", JSON.stringify({ playerId: "p1", token: "t", name: "Probe" }));
+  try {
+    const html = render(h(C.App));
+    assert.ok(html.length > 30, "the app rendered nothing at all");
+    assert.ok(!/SOMETHING BROKE/.test(html), "the error boundary fired on an ordinary state");
+  } finally {
+    localStorage.removeItem("w4player");
+  }
+});
+
+ok("a crash shows something a person can act on, never a blank page", () => {
+  const src = appSource;
+  assert.ok(/class Boundary/.test(src), "there is no error boundary");
+  assert.ok(/getDerivedStateFromError/.test(src), "the boundary cannot actually catch anything");
+  assert.ok(/<Boundary>/.test(src), "the boundary is defined but never wraps the app");
+  assert.ok(/window\.location\.reload/.test(src), "the crash screen offers no way out");
+});
+
 ok("leaving the team-code screen lowers the hold that keeps it up", () => {
   // THE BUG THIS EXISTS FOR: the code screen asks the app to hold the gate
   // mounted so a teammate can read the code out. The only thing that lowered
