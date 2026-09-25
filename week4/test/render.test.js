@@ -527,5 +527,101 @@ if (fs.existsSync(livePath)) {
   });
 }
 
+/* ── the props actually line up ───────────────────────────────────────── */
+
+/**
+ * Three separate bugs in this app were the same bug: App rendering a component
+ * with prop names the component does not take. Gate wanted `onTeam` and got
+ * `onDone`. Leaderboard wanted `rows` and got `me` and `team`. Toasts wanted
+ * `items` and got `toasts`, which is undefined, which is `undefined.map`.
+ *
+ * None of them could be caught by mounting a component with mock props,
+ * because the mock is written from the component's own signature and therefore
+ * always agrees with it. What has to be checked is the CALL SITE.
+ */
+/**
+ * The opening tag of `<Name ...>`, brace-aware.
+ *
+ * A regex cannot do this: JSX attributes hold arrow functions, and the `>` in
+ * `(p) => {` ends the match three attributes early. Track brace depth and stop
+ * at the first `>` that is actually outside a value.
+ */
+function openingTag(src, name) {
+  const out = [];
+  const re = new RegExp("<" + name + "(?=[\\s/>])", "g");
+  let m;
+  while ((m = re.exec(src))) {
+    let i = m.index + m[0].length;
+    let depth = 0;
+    for (; i < src.length; i++) {
+      const c = src[i];
+      if (c === "{") depth++;
+      else if (c === "}") depth--;
+      else if (c === ">" && depth === 0) break;
+    }
+    out.push(src.slice(m.index, i));
+  }
+  return out;
+}
+
+ok("every component App renders is given the props it destructures", () => {
+  // Three separate bugs in this app were the same bug: App rendering a
+  // component with prop names the component does not take. Gate wanted
+  // `onTeam` and got `onDone`. Leaderboard wanted `rows` and got `me` and
+  // `team`. Toasts wanted `items` and got `toasts`, which is undefined, which
+  // is `undefined.map` and a dead floor.
+  //
+  // None of them could be caught by mounting a component with mock props: the
+  // mock is written from the component's own signature and therefore always
+  // agrees with it. The CALL SITE is what has to be checked.
+  const files = {
+    Gate: "Gate.jsx",
+    OrderBook: "OrderBook.jsx",
+    YouPanel: "YouPanel.jsx",
+    Leaderboard: "Leaderboard.jsx",
+    Toasts: "Toasts.jsx",
+    Reveal: "Reveal.jsx",
+    Rules: "Rules.jsx",
+    Orrery: "Orrery.jsx",
+    DataPanel: "DataPanel.jsx",
+  };
+
+  const problems = [];
+  let checked = 0;
+  for (const [name, file] of Object.entries(files)) {
+    const src = fs.readFileSync(path.join(root, "src", "components", file), "utf8");
+    const sig = src.match(new RegExp("export default function " + name + "\\(\\{([^}]*)\\}"));
+    if (!sig) continue;
+
+    // A name with `=` has a default and is therefore optional.
+    const required = sig[1]
+      .split(",")
+      .map((p) => p.trim())
+      .filter(Boolean)
+      .filter((p) => !p.includes("="))
+      .map((p) => p.split(":")[0].trim());
+
+    for (const tag of openingTag(appSource, name)) {
+      checked++;
+      const given = new Set([...tag.matchAll(/(\w+)=/g)].map((m) => m[1]));
+      for (const need of required) {
+        if (!given.has(need)) problems.push(`<${name}> is not given \`${need}\``);
+      }
+    }
+  }
+
+  assert.ok(checked >= 6, `only found ${checked} call sites — the scanner is not matching`);
+  assert.deepStrictEqual(problems, [], "\n    " + problems.join("\n    ") + "\n");
+});
+
+ok("Toasts owns expiry, and App does not duplicate its timers", () => {
+  // Two owners for one timer is how the older toasts stopped expiring in an
+  // earlier week. There is exactly one, and it is the component.
+  const src = fs.readFileSync(path.join(root, "src", "components", "Toasts.jsx"), "utf8");
+  assert.ok(/onExpire/.test(src), "Toasts no longer reports expiry");
+  assert.ok(/onExpire=/.test(appSource), "App never tells Toasts what to do when one expires");
+  assert.ok(!/timers\.current\.set/.test(appSource), "App is running its own toast timers again");
+});
+
 console.log(`\n${passed} passed, ${failed} failed\n`);
 process.exit(failed ? 1 : 0);

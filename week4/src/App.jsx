@@ -106,26 +106,17 @@ function Floor() {
   const shown = useRef(loadShown());
   const sinceRef = useRef(0);
   const clockSkew = useRef(0);
-  const timers = useRef(new Map());
   /** The release index this device has already shouted about. */
   const announced = useRef(0);
 
+  // Adding only. Toasts owns expiry -- it keeps one timer per toast, started
+  // once, so a burst of fills does not keep resetting the older ones.
   const push = useCallback((t) => {
     setToasts((cur) => [...cur.filter((x) => x.key !== t.key), t].slice(-4));
-    const old = timers.current.get(t.key);
-    if (old) clearTimeout(old);
-    timers.current.set(
-      t.key,
-      setTimeout(() => {
-        setToasts((cur) => cur.filter((x) => x.key !== t.key));
-        timers.current.delete(t.key);
-      }, t.ttl ?? 5200)
-    );
   }, []);
 
-  useEffect(() => {
-    const map = timers.current;
-    return () => map.forEach(clearTimeout);
+  const expire = useCallback((key) => {
+    setToasts((cur) => cur.filter((x) => x.key !== key));
   }, []);
 
   const pull = useCallback(async () => {
@@ -346,7 +337,7 @@ function Floor() {
 
   return (
     <Shell round={round} msLeft={msLeft}>
-      <Toasts toasts={toasts} />
+      <Toasts items={toasts} onExpire={expire} />
       {showRules && <Rules onClose={() => setShowRules(false)} />}
 
       <div className="floor-tabs">
