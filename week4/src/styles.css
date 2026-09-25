@@ -1245,7 +1245,7 @@ select { appearance: none; cursor: pointer; }
 .botrow.on.north { border-color: #1f4f7a; }
 .botrow.on.south { border-color: #7a3f1f; }
 .botname { display: flex; align-items: center; gap: 6px; color: var(--fg); }
-.botrow input[type="number"] { width: 62px; margin: 0 5px; }
+.botrow input[type="number"] { width: 78px; margin: 0 5px; }
 .botrow i { font-style: normal; }
 .botstat { text-align: right; }
 .truthgrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
@@ -1305,3 +1305,61 @@ select { appearance: none; cursor: pointer; }
 .prose p { font-size: 9px; line-height: 1.9; color: var(--dim); }
 .prose b { color: var(--fg); }
 .prose code { color: var(--gold); font-size: 8px; }
+
+/* ── the shell ────────────────────────────────────────────────────────── */
+/* Written for week 4's App, which does not reuse week 3's .site-header. */
+
+.shell { max-width: 1280px; margin: 0 auto; padding: 10px 12px 40px; }
+.shell > main { display: block; }
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 8px 10px;
+  margin-bottom: 10px;
+  border: 2px solid var(--line-dim);
+  background: #080f1c;
+}
+.brand { display: flex; align-items: baseline; gap: 8px; font-size: 11px; }
+.brand-mark { color: var(--gold); font-size: 15px; line-height: 1; }
+.brand b { color: var(--gold); }
+.brand small { color: var(--dim); font-size: 8px; letter-spacing: 1px; }
+.topstate { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; font-size: 9px; }
+.topstate .clock { color: var(--gold); font-size: 13px; }
+.topstate .dim { color: var(--dim); font-size: 8px; }
+
+.phase {
+  padding: 3px 7px;
+  border: 1px solid currentColor;
+  font-size: 8px;
+  letter-spacing: 1px;
+}
+
+.err-strip {
+  margin-top: 10px;
+  padding: 7px 9px;
+  font-size: 8px;
+  line-height: 1.7;
+  background: #2a0a10;
+  border: 2px solid var(--red-deep);
+  color: #ff8d8d;
+}
+
+/* The gate's two choices were running their label into their description. */
+.gate-choice .lbl { display: block; margin: 6px 0 4px; }
+.gate-choice .desc { display: block; }
+.gate-choice .ico { display: block; font-size: 20px; }
+
+/* The control room header was stacking its phase chip onto the log-out. */
+.admin-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.admin-top h2 { margin: 0; font-size: 13px; }
+.admin-top > div { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+
+@media (max-width: 640px) {
+  .shell { padding: 8px 8px 30px; }
+  .topbar { gap: 6px; }
+  .brand { font-size: 10px; }
+}

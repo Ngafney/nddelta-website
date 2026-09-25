@@ -865,6 +865,9 @@ export async function handle(method, route, body, query) {
               winner: spec.winner,
               latDeg: spec.impactLatDeg,
               physics: spec.physics,
+              // Without this the release table loses its confidence column the
+              // moment the panel repolls, which is about two seconds later.
+              calibration: spec.calibration,
               releases: r.state.releases,
             }
           : null,

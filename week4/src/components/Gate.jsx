@@ -11,7 +11,10 @@ import React, { useEffect, useState } from "react";
 import { api, deviceId, fingerprint, withPlayer } from "../api.js";
 import { PixelSprite, PxButton, Spinner, DELTA, DELTA_PALETTE } from "./PixelBits.jsx";
 
-export default function Gate({ player, round, limits, team, onHold, onPlayer, onTeam }) {
+export default function Gate({ player, round, me, limits, team, onHold, onPlayer, onDone }) {
+  // `onDone` is what the app passes; the team steps below call it once a team
+  // exists so the floor can pull immediately instead of waiting for a poll.
+  const onTeam = onDone;
   const [step, setStep] = useState(player ? "choose" : "name");
   const [err, setErr] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -22,7 +25,7 @@ export default function Gate({ player, round, limits, team, onHold, onPlayer, on
         <PixelSprite grid={DELTA} palette={DELTA_PALETTE} scale={6} className="delta-big" />
         <h1>MONTE CARLO</h1>
         <div className="sub">
-          WEEK 3 · PROBABILITY
+          WEEK 4 · MONTE CARLO
           <br />
           ONE ASTEROID · TWO MARKETS · ONE ANSWER
         </div>
@@ -55,7 +58,7 @@ export default function Gate({ player, round, limits, team, onHold, onPlayer, on
               </div>
             </div>
             <div className="hint" style={{ textAlign: "center" }}>
-              Playing as <b style={{ color: "var(--gold)" }}>{player?.name}</b>. Up to four to a team — you trade your
+              Playing as <b style={{ color: "var(--gold)" }}>{player?.name ?? me?.name ?? "you"}</b>. Up to {round?.teamSize ?? 4} to a team — you trade your
               own money, and the leaderboard scores your team on its average.
             </div>
           </>
@@ -191,7 +194,7 @@ function TeamStep({ mode, player, limits, team, onHold, busy, setBusy, err, setE
         </div>
         <div className="codebox">{made.code}</div>
         <div className="hint" style={{ textAlign: "center" }}>
-          <b style={{ color: "var(--gold)" }}>Read this out to your team.</b> Up to {made.max} of you, including you.
+          <b style={{ color: "var(--gold)" }}>Read this out to your team.</b> Up to {made.max ?? 4} of you, including you.
           This screen waits for you — take as long as you need.
         </div>
 
