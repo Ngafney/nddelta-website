@@ -441,5 +441,91 @@ ok("no entry point is cacheable, so a reload always gets the current build", () 
   }
 });
 
+/* ── against a payload the live server actually produced ──────────────── */
+
+/**
+ * Mock data is written from memory and therefore agrees with whatever I
+ * believed when I wrote it. `test/fixtures/live.json` was captured off the
+ * running site, so these mount every screen against what the server really
+ * sends. This is the check that catches a component reading a field the API
+ * does not have.
+ */
+const livePath = path.join(root, "test", "fixtures", "live.json");
+if (fs.existsSync(livePath)) {
+  const live = JSON.parse(fs.readFileSync(livePath, "utf8"));
+
+  ok("the floor mounts against a real state payload", () => {
+    const st = live.state;
+    const r = st.round;
+    for (const m of ["north", "south"]) {
+      const html = render(
+        h(C.OrderBook, {
+          book: st.markets[m],
+          last: st.markets[m].last,
+          me: { pos: st.me.pos[m], buyC: st.me.freeC, valueC: st.me.valueC, startC: st.me.startC },
+          center: r.center,
+          tick: r.tick,
+          lo: r.orderMin,
+          hi: r.orderMax,
+          mine: st.me.orders.filter((o) => o.market === m),
+          size: r.defaultSize,
+          onSize() {},
+          onOrder() {},
+          onCancelLevel() {},
+          onCancelAll() {},
+          disabled: false,
+        })
+      );
+      assert.ok(html.length > 500, `the ${m} book rendered almost nothing`);
+    }
+    assert.ok(render(h(C.YouPanel, { me: st.me, team: st.team, markets: st.markets, round: r })).length > 200);
+  });
+
+  ok("the leaderboard tab is actually given its rows", () => {
+    // It takes `rows`; handing it only `me` and `team` makes it say "no teams
+    // on the board yet" forever, which is exactly what it did.
+    assert.ok(
+      /<Leaderboard[^>]*rows=/.test(appSource),
+      "App renders <Leaderboard> without a rows prop, so the tab can never show anything"
+    );
+    const html = render(
+      h(C.Leaderboard, { rows: live.leaderboard.leaderboard, myTeamId: live.state.team?.id, settled: false })
+    );
+    assert.ok(!/No teams on the board yet/.test(html), "real rows still rendered the empty state");
+  });
+
+  ok("the reveal mounts against the real reveal payload", () => {
+    const html = render(h(C.Reveal, { data: live.reveal, onNext() {} }));
+    assert.ok(html.includes("reveal-canvas"));
+  });
+
+  ok("the rules modal mounts against the real rules payload", () => {
+    assert.ok(Array.isArray(live.rules.markets), "the rules payload has no markets array");
+    assert.ok(typeof live.rules.rules === "string");
+  });
+
+  ok("every field the floor reads exists in the real payload", () => {
+    const st = live.state;
+    for (const k of ["round", "markets", "me", "team", "fills"]) assert.ok(st[k] !== undefined, `state.${k} missing`);
+    for (const k of ["pos", "orders", "freeC", "powers", "valueC", "startC", "cashC", "reservedC"]) {
+      assert.ok(st.me[k] !== undefined, `me.${k} missing`);
+    }
+    assert.ok(Array.isArray(st.me.orders), "me.orders is not an array");
+    for (const m of ["north", "south"]) {
+      assert.ok(st.me.pos[m] !== undefined, `me.pos.${m} missing`);
+      assert.ok(st.me.powers[m] !== undefined, `me.powers.${m} missing`);
+      for (const k of ["bids", "asks", "tape", "mark", "last"]) {
+        assert.ok(st.markets[m][k] !== undefined, `markets.${m}.${k} missing`);
+      }
+    }
+    if (st.team) for (const k of ["name", "code", "size", "max", "members"]) {
+      assert.ok(st.team[k] !== undefined, `team.${k} missing`);
+    }
+    for (const k of ["released", "releaseCount", "defaultSize", "center", "tick", "orderMin", "orderMax", "teamSize"]) {
+      assert.ok(st.round[k] !== undefined, `round.${k} missing`);
+    }
+  });
+}
+
 console.log(`\n${passed} passed, ${failed} failed\n`);
 process.exit(failed ? 1 : 0);

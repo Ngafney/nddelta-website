@@ -1363,3 +1363,16 @@ select { appearance: none; cursor: pointer; }
   .topbar { gap: 6px; }
   .brand { font-size: 10px; }
 }
+.crash-where {
+  text-align: left;
+  font-size: 7px;
+  line-height: 1.6;
+  color: var(--dim);
+  background: #0c1526;
+  border: 1px solid var(--line-dim);
+  padding: 6px;
+  margin: 8px auto 0;
+  max-width: 460px;
+  overflow-x: auto;
+  white-space: pre;
+}

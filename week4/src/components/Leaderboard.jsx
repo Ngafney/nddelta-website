@@ -31,9 +31,9 @@ export default function Leaderboard({ rows, myTeamId, settled, compact = false, 
                 </span>
               </span>
             </div>
-            {mine && r.members.length > 1 && (
+            {mine && (r.members?.length ?? 0) > 1 && (
               <div className="lbmembers">
-                {r.members.map((m) => (
+                {(r.members ?? []).map((m) => (
                   <div key={m.id} className="lbmember">
                     <span>{m.name}</span>
                     <span className="v">

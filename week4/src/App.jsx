@@ -40,15 +40,17 @@ export default function App() {
 class Boundary extends React.Component {
   constructor(props) {
     super(props);
-    this.state = { err: null };
+    this.state = { err: null, where: null };
   }
   static getDerivedStateFromError(err) {
     return { err };
   }
-  componentDidCatch(err) {
-    // Left in on purpose: this is the only breadcrumb when it happens to
-    // somebody else's phone in the middle of a lecture.
-    console.error("[week4] render crashed", err);
+  componentDidCatch(err, info) {
+    // Left in on purpose: this is the only breadcrumb when it happens on
+    // somebody else's phone in the middle of a lecture. The component stack
+    // is the half that actually locates it.
+    console.error("[week4] render crashed", err, info?.componentStack);
+    this.setState({ where: info?.componentStack ?? null });
   }
   render() {
     if (!this.state.err) return this.props.children;
@@ -58,7 +60,9 @@ class Boundary extends React.Component {
           SOMETHING BROKE
           <br />
           <span style={{ color: "var(--dim)", fontSize: 9 }}>{String(this.state.err?.message ?? this.state.err)}</span>
-          <br />
+          {this.state.where && (
+            <pre className="crash-where">{this.state.where.split("\n").slice(0, 6).join("\n")}</pre>
+          )}
           <br />
           <button className="pxbtn pxbtn--green" onClick={() => window.location.reload()}>
             RELOAD
@@ -98,6 +102,7 @@ function Floor() {
   const [gateHolding, setGateHolding] = useState(false);
   const [entered, setEntered] = useState(null);
   const [reveal, setReveal] = useState(null);
+  const [board, setBoard] = useState([]);
   const shown = useRef(loadShown());
   const sinceRef = useRef(0);
   const clockSkew = useRef(0);
@@ -197,6 +202,25 @@ function Floor() {
       });
     }
   }, [released, round, push]);
+
+  /* The board is its own endpoint, and only worth fetching while it is on
+     screen. Without this the leaderboard tab had no rows at all. */
+  useEffect(() => {
+    if (tab !== "board" || !player) return undefined;
+    let stop = false;
+    const tick = async () => {
+      try {
+        const r = await api.get("leaderboard");
+        if (!stop) setBoard(r.leaderboard ?? []);
+      } catch {}
+    };
+    tick();
+    const h = setInterval(tick, 3000);
+    return () => {
+      stop = true;
+      clearInterval(h);
+    };
+  }, [tab, player]);
 
   /* The reveal plays once per round on a given device. */
   useEffect(() => {
@@ -386,7 +410,9 @@ function Floor() {
 
       {tab === "data" && <DataPanel player={player} round={round} onToast={push} />}
       {tab === "sky" && <Orrery player={player} round={round} />}
-      {tab === "board" && <Leaderboard me={me} team={state.team} />}
+      {tab === "board" && (
+        <Leaderboard rows={board} myTeamId={state.team?.id} settled={round.status === "settled"} />
+      )}
 
       {err && <div className="err-strip">{err}</div>}
     </Shell>
