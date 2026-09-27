@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { api } from "../api.js";
 import { PxButton, Spinner, money, clock } from "./PixelBits.jsx";
+import { EVENTS } from "../../shared/events.js";
 
 const BOT_SLOTS = [
   { key: "north-buy", label: "BUY NORTH", market: "north", side: "B" },
@@ -55,10 +56,9 @@ function Console({ token, onOut }) {
   // Held as TEXT on purpose. Number("") is 0, so coercing on every keystroke
   // turns a cleared box into a real, silently wrong setting. Empty goes to the
   // server as empty, and the server reads empty as "use the default".
-  const [impactLat, setImpactLat] = useState("");
+  const [eventKey, setEventKey] = useState("");
   const [startConf, setStartConf] = useState("65");
-  const [endConf, setEndConf] = useState("90");
-  const [stepDays, setStepDays] = useState(30);
+  const [sigmaKm, setSigmaKm] = useState("");
   const [researchMin, setResearchMin] = useState("15");
   const [tradingMin, setTradingMin] = useState("20");
   const [startCash, setStartCash] = useState("10000");
@@ -135,33 +135,32 @@ function Console({ token, onOut }) {
       <section className="panel">
         <div className="panel-title">BUILD A ROUND</div>
         <p className="hint">
-          Solving a trajectory that lands on a chosen parallel takes a few seconds — it is a real
-          integration, not a lookup. Leave the impact blank to be as surprised as the room.
+          Every one of these really hit. The room is shown a solution that is deliberately NOT the
+          true impact point — it is the truth displaced by a draw from the covariance they are
+          handed, which is what a published solution is. Leave the asteroid on RANDOM to be as
+          surprised as they are.
         </p>
         <div className="admin-grid">
-          <Field label="IMPACT LATITUDE (BLANK = RANDOM)" hint="+ north, − south · 0.5° to 12°">
-            <input type="number" step="0.1" min={-12} max={12} value={impactLat} onChange={(e) => setImpactLat(e.target.value)} />
+          <Field label="WHICH ASTEROID" hint="all four really hit">
+            <div className="pickrow wrap">
+              <button className={eventKey === "" ? "on" : ""} onClick={() => setEventKey("")}>
+                RANDOM
+              </button>
+              {EVENTS.map((e) => (
+                <button key={e.key} className={eventKey === e.key ? "on" : ""} onClick={() => setEventKey(e.key)}>
+                  {e.name}
+                </button>
+              ))}
+            </div>
           </Field>
-          <Field label="CONFIDENCE ON THE OPENING DATA" hint="what a good team should reach">
+          <Field label="CONFIDENCE ON THE OPENING SOLUTION" hint="what a good team should reach">
             <div className="slider-row">
               <input type="range" min={52} max={95} value={Number(startConf) || 65} onChange={(e) => setStartConf(e.target.value)} />
               <b>{Number(startConf) || 65}%</b>
             </div>
           </Field>
-          <Field label="CONFIDENCE BY THE LAST RELEASE" hint="the noise is solved to hit this">
-            <div className="slider-row">
-              <input type="range" min={52} max={95} value={Number(endConf) || 90} onChange={(e) => setEndConf(e.target.value)} />
-              <b>{Number(endConf) || 90}%</b>
-            </div>
-          </Field>
-          <Field label="RELEASE STEP">
-            <div className="pickrow">
-              {[30, 60].map((d) => (
-                <button key={d} className={stepDays === d ? "on" : ""} onClick={() => setStepDays(d)}>
-                  {d === 30 ? "1 MONTH" : "2 MONTHS"}
-                </button>
-              ))}
-            </div>
+          <Field label="OPENING σ ALONG THE CORRIDOR, km" hint="blank = 600, the default corridor width">
+            <input type="number" min={40} max={4000} step={50} value={sigmaKm} onChange={(e) => setSigmaKm(e.target.value)} />
           </Field>
           <Field label="STARTING CASH ($)">
             <input type="number" min={100} max={10000000} step={1000} value={startCash} onChange={(e) => setStartCash(e.target.value)} />
@@ -181,24 +180,22 @@ function Console({ token, onOut }) {
             act("build", async () => {
               const out = await api.post("admin/round", {
                 token,
-                impactLat,
+                event: eventKey || undefined,
                 startConfidence: (Number(startConf) || 65) / 100,
-                endConfidence: (Number(endConf) || 90) / 100,
-                stepDays,
+                sigmaKm,
                 startCash,
                 defaultSize,
                 tradingMinutes: tradingMin,
                 keepPlayers,
               });
               setNote(
-                `Built. It lands ${Math.abs(out.truth.latDeg).toFixed(2)}° ${
-                  out.truth.winner === "north" ? "NORTH" : "SOUTH"
-                }.`
+                `${out.truth.event} — it came down at ${fmtLat(out.truth.trueLat)}, ` +
+                  `so ${out.truth.winner.toUpperCase()} of the ${fmtLat(out.truth.lineDeg)} line pays.`
               );
             })
           }
         >
-          {busy === "build" ? <Spinner text="SOLVING THE TRAJECTORY" /> : "BUILD"}
+          {busy === "build" ? <Spinner text="BUILDING" /> : "BUILD"}
         </PxButton>
       </section>
 
@@ -253,18 +250,16 @@ function Console({ token, onOut }) {
           </div>
           <div className="releases">
             {truth.releases?.map((r, i) => {
-              const cal = truth.calibration?.releases?.[i];
               const out = i < round.released;
               return (
                 <div key={i} className={`relrow ${out ? "out" : ""}`}>
                   <span className="relidx">{i + 1}</span>
-                  <span>{r.leadDays}d before impact</span>
-                  <span className="dim">{r.count} rows</span>
+                  <span>σ {Math.round(r.sigmaKm)} km along</span>
+                  <span className="dim">N {(r.pNorth * 100).toFixed(0)}%</span>
                   <span className="relconf">
-                    {cal ? `${(cal.confidence * 100).toFixed(0)}%` : "—"}
-                    {cal && <em> conf</em>}
+                    {(r.confidence * 100).toFixed(0)}%<em> conf</em>
                   </span>
-                  <span className="dim">{cal ? `σ ${cal.sigmaLoKm.toFixed(0)}–${cal.sigmaHiKm.toFixed(0)} km` : ""}</span>
+                  <span className="dim" />
                   <span className="relstate">{out ? "RELEASED" : "held"}</span>
                 </div>
               );
@@ -359,41 +354,36 @@ function Console({ token, onOut }) {
           <div className="panel-title">THE ANSWER (YOURS ONLY)</div>
           <div className="truthgrid">
             <div>
-              <i>LANDS</i>
-              <b className={truth.winner}>{truth.winner.toUpperCase()}</b>
+              <i>ASTEROID</i>
+              <b>{truth.event?.name ?? "—"}</b>
             </div>
             <div>
-              <i>LATITUDE</i>
-              <b>{truth.latDeg.toFixed(3)}°</b>
+              <i>IT LANDED</i>
+              <b>{fmtLat(truth.event?.lat ?? 0)}</b>
             </div>
             <div>
-              <i>SOLAR PASS</i>
-              <b>{truth.physics.perihelionSolarRadii.toFixed(1)} R☉</b>
+              <i>THE LINE</i>
+              <b>{fmtLat(truth.lineDeg ?? 0)}</b>
             </div>
             <div>
-              <i>GR DRIFT</i>
-              <b>{Math.round(truth.physics.relativisticDriftKm).toLocaleString()} km</b>
+              <i>SO IT PAYS</i>
+              <b className={truth.winner}>{truth.winner?.toUpperCase()}</b>
             </div>
             <div>
-              <i>NEWTONIAN</i>
+              <i>WARNING</i>
+              <b>{truth.event?.leadHours}h</b>
+            </div>
+            <div>
+              <i>CORRIDOR</i>
               <b>
-                {truth.physics.newtonianMisses
-                  ? `misses by ${Math.round(truth.physics.newtonianMissKm).toLocaleString()} km`
-                  : `${truth.physics.newtonianLatDeg?.toFixed(2)}°`}
+                {truth.corridor?.azimuthDeg}°{" "}
+                {truth.corridor?.geometry === "modelled" ? "(modelled)" : "(published)"}
               </b>
             </div>
-            <div>
-              <i>SURVEY GAIN</i>
-              <b>{truth.calibration?.surveyImprovement?.toFixed(0)}×</b>
-            </div>
           </div>
-          {truth.calibration?.endShortfall > 0.02 && (
-            <div className="warn-strip">
-              This geometry could only reach{" "}
-              {((truth.calibration.releases.at(-1)?.confidence ?? 0) * 100).toFixed(0)}% by the last release, not the{" "}
-              {(truth.calibration.endConf * 100).toFixed(0)}% asked for. Rebuild for a different sky if that matters.
-            </div>
-          )}
+          <div className="hint" style={{ marginTop: 8 }}>
+            {truth.event?.where} · {truth.event?.story}
+          </div>
         </section>
       )}
 
@@ -451,6 +441,9 @@ function Console({ token, onOut }) {
     </div>
   );
 }
+
+/** "18.0°N" — a latitude the way a person says it. */
+const fmtLat = (v) => `${Math.abs(v).toFixed(1)}°${v >= 0 ? "N" : "S"}`;
 
 function Field({ label, hint, children }) {
   return (

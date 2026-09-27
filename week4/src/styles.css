@@ -1453,3 +1453,5 @@ select { appearance: none; cursor: pointer; }
 .otherlist span { font-size: 8px; color: var(--dim); }
 .otherlist b { color: var(--fg); }
 .qline { font-size: 8px; color: var(--gold); }
+.pickrow.wrap { flex-wrap: wrap; }
+.pickrow.wrap button { flex: 0 1 auto; padding: 7px 8px; }
