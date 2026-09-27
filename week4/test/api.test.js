@@ -24,7 +24,8 @@ try {
 } catch {}
 
 const { handle } = await import("../server/handler.js");
-const { MONEY, MARKETS, LIMITS, DATA, SCENARIO } = await import("../shared/rules.js");
+const { MONEY, MARKETS, LIMITS, SCENARIO, CONFIDENCE } = await import("../shared/rules.js");
+const { EVENTS, EVENT_KEYS } = await import("../shared/events.js");
 
 let passed = 0;
 let failed = 0;
@@ -59,7 +60,6 @@ async function rejects(fn, re) {
 console.log("\napi");
 
 let admin;
-let truth;
 
 await ok("health and rules come up, and the rules give away nothing", async () => {
   const h = await GET("health");
@@ -69,85 +69,80 @@ await ok("health and rules come up, and the rules give away nothing", async () =
   assert.strictEqual(r.markets.length, 2);
   assert.strictEqual(r.book.orderMin, 1);
   assert.strictEqual(r.book.orderMax, 99);
-  // Nothing about the answer, the noise, or the trajectory belongs here.
   const blob = JSON.stringify(r).toLowerCase();
-  // The market NAMES are public — "impact north of the equator" is the whole
-  // point. What must not appear is anything about THIS round's answer or the
-  // machinery behind it.
-  for (const word of ["impactlat", "truelat", "y0", "seed"]) {
+  for (const word of ["winner", "truelat", "impactlat", "seed"]) {
     assert.ok(!blob.includes(word), `the rules mention "${word}"`);
   }
-  // The model, by contrast, is stated ON PURPOSE. A round where the room has
-  // to guess which physics to fit is a round about guessing.
-  assert.ok(blob.includes("newtonian"), "the rules must say what dynamics to fit");
-  assert.ok(r.modelNote && /newtonian/i.test(r.modelNote), "there is no model note");
-  assert.ok(!/"winner"/.test(JSON.stringify(r)), "the rules carry a winner field");
+  // The rules have to tell the room what to actually do, and warn them off the
+  // one shortcut that produces a confident wrong answer.
+  assert.ok(/covariance/i.test(r.rules), "the rules never mention the covariance");
+  assert.ok(/simulate/i.test(r.rules), "the rules never say to simulate");
 });
 
-await ok("the admin logs in and builds a round", async () => {
+let truth;
+
+await ok("a round is built on a real impact", async () => {
   const a = await POST("admin/auth", { password: "hunter2" });
   admin = a.token;
   await rejects(() => POST("admin/auth", { password: "nope" }), /wrong password/);
 
-  const built = await POST("admin/round", {
-    token: admin,
-    seed: "api-test",
-    impactLat: 3.5,
-    startConfidence: 0.65,
-    endConfidence: 0.9,
-    stepDays: 30,
-  });
+  const built = await POST("admin/round", { token: admin, seed: "api-test", event: "2008TC3" });
   truth = built.truth;
-  assert.strictEqual(truth.winner, "north", "a positive latitude has to be a northern impact");
-  assert.ok(Math.abs(truth.latDeg - 3.5) < 0.05, `aimed at 3.5°, got ${truth.latDeg}`);
-  // Deliberately NOT a sungrazer any more: that orbit was unfittable. See the
-  // note at the top of shared/rules.js.
-  assert.ok(truth.physics.perihelionAu > 0.3, `perihelion ${truth.physics.perihelionAu} would wreck the fit`);
-  assert.strictEqual(truth.physics.relativistic, false, "rounds are played on Newtonian gravity");
+  assert.strictEqual(truth.event, "2008 TC3");
+  // The real impact point, not something generated.
+  assert.ok(Math.abs(truth.trueLat - 20.9) < 1e-9, `true latitude ${truth.trueLat}`);
+  assert.ok(Math.abs(truth.trueLon - 31.4) < 1e-9);
+  // The settlement is a historical fact, not a simulation.
+  assert.strictEqual(truth.winner, truth.trueLat > truth.lineDeg ? "north" : "south");
   assert.strictEqual(built.round.status, "lobby");
-  assert.strictEqual(built.round.released, 0, "no data is out before the operator starts");
+  assert.strictEqual(built.round.released, 0);
+  assert.strictEqual(built.round.eventName, "2008 TC3");
 });
 
-await ok("a southern aim wins the southern book", async () => {
-  const built = await POST("admin/round", { token: admin, seed: "api-south", impactLat: -2.5 });
-  assert.strictEqual(built.truth.winner, "south");
-  assert.ok(built.truth.latDeg < 0);
-  // put the real round back
-  const again = await POST("admin/round", { token: admin, seed: "api-test", impactLat: 3.5, stepDays: 30 });
-  truth = again.truth;
-});
-
-await ok("the noise level is chosen from a confidence, and the round says what it got", async () => {
-  const c = truth.calibration;
-  assert.ok(c.releases.length >= 5, `expected several releases, got ${c.releases.length}`);
-  assert.ok(Math.abs(c.releases[0].confidence - 0.65) < 0.02, `first release sits at ${c.releases[0].confidence}`);
-  // Confidence must never go DOWN as more of the record arrives.
-  for (let i = 1; i < c.releases.length; i++) {
-    assert.ok(
-      c.releases[i].confidence >= c.releases[i - 1].confidence - 1e-9,
-      `release ${i} is less convincing than release ${i - 1}`
-    );
+await ok("every real event can carry a round", async () => {
+  for (const key of EVENT_KEYS) {
+    const b = await POST("admin/round", { token: admin, seed: `ev-${key}`, event: key });
+    const ev = EVENTS.find((e) => e.key === key);
+    assert.ok(Math.abs(b.truth.trueLat - ev.lat) < 1e-9, `${key} did not use the real impact point`);
+    assert.ok(MARKETS.includes(b.truth.winner));
+    assert.ok(Math.abs(b.truth.lineDeg - ev.lat) < 9, `${key}: line ${b.truth.lineDeg} is nowhere near the impact`);
   }
-  // How high the last release can actually get depends on the sky that was
-  // drawn: if the rock is barely closer at the final release than the first,
-  // the extra data cannot say much. The round must always IMPROVE, must get
-  // most of the way there, and must report honestly when it falls short
-  // rather than claiming a number nobody can reach.
-  const last = c.releases[c.releases.length - 1].confidence;
-  assert.ok(last > 0.70, `the final release only reaches ${(last * 100).toFixed(1)}%`);
-  assert.ok(last > c.releases[0].confidence + 0.05, "the record barely got more convincing at all");
-  const claimed = 0.9 - last;
+  // put the flagship round back
+  truth = (await POST("admin/round", { token: admin, seed: "api-test", event: "2008TC3" })).truth;
+});
+
+await ok("the published solution is NOT the true impact point", async () => {
+  // If it were, the favoured side would always win and nobody would have to
+  // think. Every release is the truth displaced by a draw from its own
+  // covariance, and the displacement shrinks as the solutions tighten.
+  const rel = truth.releases;
+  assert.ok(rel.length >= 4, `only ${rel.length} releases`);
+  assert.ok(rel[0].offsetKm > 5, "the first solution sits exactly on the truth");
   assert.ok(
-    Math.abs(c.endShortfall - claimed) < 0.02,
-    `the round claims a shortfall of ${c.endShortfall} but actually fell ${claimed} short`
+    rel[rel.length - 1].offsetKm < rel[0].offsetKm,
+    `the solution did not converge: ${rel[0].offsetKm} km → ${rel[rel.length - 1].offsetKm} km`
   );
-  // The survey improving over the record is the second axis of the noise
-  // model. It has to be a real improvement, and not an absurd one.
-  // A gentle orbit does not swing as far in or out, so the range term carries
-  // less of the work and the time term carries more. The number that has to
-  // hold is the confidence ladder below, not this.
-  assert.ok(c.surveyImprovement > 1.1, `the survey did not improve at all (${c.surveyImprovement.toFixed(2)}×)`);
-  assert.ok(c.surveyImprovement < 400, `the survey improved ${c.surveyImprovement.toFixed(0)}× — not believable`);
+  // And the uncertainty shrinks with it.
+  for (let i = 1; i < rel.length; i++) {
+    assert.ok(rel[i].sigmaKm < rel[i - 1].sigmaKm, `sigma grew at release ${i + 1}`);
+  }
+});
+
+await ok("the question is hard at first and easier by the end", async () => {
+  const rel = truth.releases;
+  // Near the target, not on it: the line is rounded to a latitude a person can
+  // say out loud, which moves the achieved confidence by a point or two.
+  assert.ok(
+    Math.abs(rel[0].confidence - CONFIDENCE.defaultStart) < 0.11,
+    `the opening release sits at ${(rel[0].confidence * 100).toFixed(1)}%`
+  );
+  assert.ok(
+    rel[rel.length - 1].confidence > rel[0].confidence,
+    "the last solution is no more convincing than the first"
+  );
+  for (const r of rel) {
+    assert.ok(r.pNorth >= 0 && r.pNorth <= 1, `p = ${r.pNorth}`);
+  }
 });
 
 let alice, bob, carol;
@@ -157,7 +152,7 @@ await ok("players join, form teams, and one device is one account", async () => 
   bob = await POST("join", { name: "Bob", deviceId: "device-bob-00001" });
   carol = await POST("join", { name: "Carol", deviceId: "device-carol-001" });
   const again = await POST("join", { name: "Alice", deviceId: "device-alice-0001" });
-  assert.strictEqual(again.playerId, alice.playerId, "the same device must be the same account");
+  assert.strictEqual(again.playerId, alice.playerId);
   assert.strictEqual(again.rejoined, true);
 
   await POST("team/create", { ...cred(alice), name: "Ephemeris" });
@@ -169,71 +164,63 @@ await ok("players join, form teams, and one device is one account", async () => 
   for (const m of MARKETS) assert.strictEqual(st.me.pos[m], 0);
 });
 
-await ok("no data before the operator releases any", async () => {
+await ok("no solution before the operator releases one", async () => {
   await rejects(() => GET("data", cred(alice)), /released yet|not ready/i);
   const st = await GET("state", cred(alice));
   assert.strictEqual(st.round.released, 0);
-  assert.strictEqual(st.round.observationCount, 0);
 });
 
-await ok("research opens, the first release lands, and the books stay shut", async () => {
+await ok("research opens, the first solution lands, and the books stay shut", async () => {
   await POST("admin/start", { token: admin, minutes: 30 });
   const st = await GET("state", cred(alice));
   assert.strictEqual(st.round.status, "research");
   assert.strictEqual(st.round.released, 1);
-  assert.ok(st.round.observationCount > 100, "the opening record should be substantial");
-  // Trading is not allowed yet.
   await rejects(() => POST("order", { ...cred(alice), market: "north", side: "B", px: 50, qty: 1 }), /books are shut/);
 });
 
-await ok("the release stops exactly where it should, and hides the rest", async () => {
+await ok("the solution has everything needed to price it, and nothing else", async () => {
   const d = await GET("data", cred(alice));
-  const impact = d.impactDay;
-  const cut = d.cutDay;
-  assert.ok(Math.abs(impact - cut - DATA.firstCutDays) < 1e-6, `first cut should be ${DATA.firstCutDays} days out`);
-  for (const row of d.rows) {
-    assert.ok(row.day <= cut + 1e-9, `row at day ${row.day} is past the cut at ${cut}`);
+  for (const k of ["nominalLat", "nominalLon", "azimuthDeg", "covarianceKm2", "lineDeg", "prompt"]) {
+    assert.ok(d[k] !== undefined, `the solution has no ${k}`);
   }
-  assert.ok(d.rows.every((r) => r.sigmaAu > 0), "every row needs an error bar");
-  assert.strictEqual(d.masses.length, 3);
+  const C = d.covarianceKm2;
+  assert.strictEqual(C.length, 2);
+  assert.ok(C[0][0] > 0 && C[1][1] > 0, "a variance is not positive");
+  assert.ok(Math.abs(C[0][1]) > 1, "the covariance is diagonal — the correlation lesson is gone");
+  assert.ok(Math.abs(C[0][1] - C[1][0]) < 1e-9, "not symmetric");
+  // It must NOT contain the answer.
+  const blob = JSON.stringify(d);
+  assert.ok(!/winner/.test(blob), "the solution names the winner");
+  assert.ok(!blob.includes(String(truth.trueLat)), "the true impact latitude is in the payload");
 });
 
-await ok("the download is a real CSV with the masses in the header", async () => {
+await ok("the AI prompt is self-contained and warns off the shortcut", async () => {
+  const d = await GET("data", cred(alice));
+  const p = d.prompt;
+  assert.ok(p.length > 600, "the prompt is too short to be self-contained");
+  assert.ok(p.includes(d.nominalLat.toFixed(3)), "the prompt does not carry the nominal point");
+  assert.ok(p.includes(d.covarianceKm2[0][0].toFixed(1)), "the prompt does not carry the covariance");
+  assert.ok(/NOT diagonal/i.test(p), "the prompt never says the covariance is correlated");
+  assert.ok(/SIMULATE/i.test(p), "the prompt never says to simulate");
+  assert.ok(/ASSUMPTIONS/i.test(p), "the prompt offers nothing to argue with");
+  assert.ok(!p.includes(String(truth.trueLat)), "the prompt leaks the true impact point");
+});
+
+await ok("the download is a real CSV of the solution", async () => {
   const csv = await GET("data.csv", cred(alice));
   assert.ok(csv.__contentType.startsWith("text/csv"));
   assert.ok(csv.__filename.endsWith(".csv"));
-  const lines = csv.__raw.split("\n");
-  const header = lines.find((l) => l.startsWith("day,"));
-  assert.ok(header, "no column header");
-  assert.deepStrictEqual(header.split(",").slice(0, 4), ["day", "sun_x", "sun_y", "sun_z"]);
-  assert.ok(lines.some((l) => l.includes("mass_sun_kg")), "the masses have to travel with the data");
-  assert.ok(lines.some((l) => l.includes("mass_asteroid_kg")));
-  const body = lines.filter((l) => !l.startsWith("#") && l.includes(",") && !l.startsWith("day,"));
-  assert.ok(body.length > 100, `only ${body.length} data rows`);
-  assert.strictEqual(body[0].split(",").length, 11);
+  const text = csv.__raw;
+  for (const k of ["nominal_lat_deg", "corridor_azimuth_deg", "cov_along_cross_km2", "line_latitude_deg", "earth_radius_km"]) {
+    assert.ok(text.includes(k), `the CSV has no ${k}`);
+  }
+  assert.ok(!text.includes(String(truth.trueLat)), "the CSV leaks the true impact point");
 });
 
-await ok("nothing a player can reach names the answer", async () => {
-  const blobs = [
-    JSON.stringify(await GET("state", cred(alice))),
-    JSON.stringify(await GET("config")),
-    JSON.stringify(await GET("board")),
-    JSON.stringify(await GET("leaderboard")),
-    JSON.stringify(await GET("data", cred(alice))),
-    (await GET("data.csv", cred(alice))).__raw,
-  ].join("|");
-  assert.ok(!/"winner":"(north|south)"/.test(blobs), "the winning side leaked");
-  assert.ok(!blobs.includes("impactLatDeg"), "the true latitude leaked");
-  assert.ok(!blobs.includes("relativisticDrift"), "the physics summary leaked");
-  assert.ok(!blobs.includes(String(truth.latDeg)), "the exact latitude appears somewhere public");
-  await rejects(() => GET("reveal"), /not yet/);
-});
-
-await ok("an unreleased row cannot be fetched by asking nicely", async () => {
-  const before = (await GET("data", cred(alice))).rows.length;
-  // There is no parameter for "give me more", and inventing one changes nothing.
-  const sneaky = await GET("data", { ...cred(alice), released: 99, upto: 9999, cutDay: 9999 });
-  assert.strictEqual(sneaky.rows.length, before, "a query parameter must not widen the release");
+await ok("asking for a later release does not produce one", async () => {
+  const before = (await GET("data", cred(alice))).release;
+  const sneaky = await GET("data", { ...cred(alice), release: 99, released: 99 });
+  assert.strictEqual(sneaky.release, before, "a query parameter widened the release");
 });
 
 await ok("trading opens on both books and the two are independent", async () => {
@@ -307,43 +294,40 @@ await ok("the desk never appears on the leaderboard", async () => {
   for (const t of board.leaderboard) assert.notStrictEqual(t.name, "SURVEY DESK");
 });
 
-await ok("each release adds rows and the operator runs out eventually", async () => {
-  let last = (await GET("data", cred(alice))).rows.length;
+await ok("each release tightens the solution and the operator runs out", async () => {
+  let prev = await GET("data", cred(alice));
   const total = (await GET("config")).round.releaseCount;
   for (let i = 1; i < total; i++) {
     const out = await POST("admin/release", { token: admin });
     assert.strictEqual(out.released, i + 1);
-    const n = (await GET("data", cred(alice))).rows.length;
-    assert.ok(n > last, `release ${i + 1} added nothing`);
-    last = n;
+    const now = await GET("data", cred(alice));
+    assert.strictEqual(now.release, i + 1);
+    assert.ok(
+      now.sigmaAlongKm < prev.sigmaAlongKm,
+      `release ${i + 1} did not tighten: ${prev.sigmaAlongKm} → ${now.sigmaAlongKm}`
+    );
+    prev = now;
   }
   await rejects(() => POST("admin/release", { token: admin }), /already out/);
 });
 
-await ok("the last release still stops short of the impact", async () => {
-  const d = await GET("data", cred(alice));
-  const gap = d.impactDay - d.cutDay;
-  assert.ok(gap >= DATA.defaultStepDays - 1e-6, `the final month must stay hidden, gap was ${gap} days`);
-  assert.ok(d.rows.every((r) => r.day <= d.cutDay + 1e-9));
-});
-
-await ok("the asteroid lands, everything settles, and the reveal opens", async () => {
+await ok("it lands where it really landed, and the reveal tells the story", async () => {
   await POST("admin/end", { token: admin });
   const cfg = await GET("config");
   assert.strictEqual(cfg.round.status, "settled");
-  assert.strictEqual(cfg.round.winner, truth.winner, "the public winner has to match what was built");
+  assert.strictEqual(cfg.round.winner, truth.winner);
 
   const rev = await GET("reveal");
-  assert.strictEqual(rev.winner, "north");
-  assert.ok(Math.abs(rev.latDeg - truth.latDeg) < 1e-9);
-  assert.ok(rev.track.length > 100, "the reveal needs a path to draw");
-  assert.strictEqual(rev.track[0].length, 9, "three bodies, three coordinates each");
-  assert.strictEqual(rev.track.length, rev.trackDays.length);
-  // Relativity is reported as a footnote, not as the answer: it is real, and
-  // small enough here that a Newtonian fit reproduces the record.
-  assert.strictEqual(rev.physics.relativistic, false);
-  assert.ok(rev.physics.relativisticDriftKm > 0, "the comparison model is not being run at all");
-  assert.ok(rev.physics.relativisticDriftKm < 20000, "relativity is too large to promise a Newtonian fit");
+  assert.strictEqual(rev.winner, truth.winner);
+  assert.strictEqual(rev.truth.name, "2008 TC3");
+  assert.ok(Math.abs(rev.truth.lat - 20.9) < 1e-9, "the reveal does not show the real impact point");
+  assert.ok(rev.truth.story.length > 80, "no story to tell");
+  assert.ok(rev.truth.leadHours > 0, "no warning time");
+  assert.ok(rev.releases.length >= 4, "the reveal cannot draw the solutions walking in");
+  assert.ok(Array.isArray(rev.others) && rev.others.length >= 5, "the other impacts are missing");
+  // The side is a fact about the world, not about the simulation.
+  const expect = rev.truth.lat > rev.lineDeg ? "north" : "south";
+  assert.strictEqual(rev.winner, expect);
 });
 
 await ok("settlement paid the winning book and not the losing one", async () => {
@@ -361,7 +345,10 @@ await ok("settlement paid the winning book and not the losing one", async () => 
 await ok("history records the round", async () => {
   const h = await GET("history");
   assert.ok(h.history.length >= 1);
-  assert.strictEqual(h.history[0].winner, "north");
+  // Whichever side the real impact fell on — that is a fact about 2008 TC3,
+  // not something this test gets to choose.
+  assert.strictEqual(h.history[0].winner, truth.winner);
+  assert.strictEqual(h.history[0].event, "2008 TC3");
 });
 
 await ok("a global reset wipes players, teams and the sky", async () => {

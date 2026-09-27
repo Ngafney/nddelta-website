@@ -10,7 +10,6 @@ import Reveal from "./components/Reveal.jsx";
 import Rules from "./components/Rules.jsx";
 import AdminPanel from "./components/AdminPanel.jsx";
 import BigBoard from "./components/BigBoard.jsx";
-import Orrery from "./components/Orrery.jsx";
 import DataPanel from "./components/DataPanel.jsx";
 import StaleBuild from "./components/StaleBuild.jsx";
 
@@ -344,7 +343,7 @@ function Floor() {
         {[
           ["trade", "MARKETS"],
           ["data", `DATA${released ? ` · ${released}` : ""}`],
-          ["sky", "ORRERY"],
+          ["sky", "MAP"],
           ["board", "LEADERBOARD"],
         ].map(([k, label]) => (
           <button key={k} className={tab === k ? "on" : ""} onClick={() => setTab(k)}>
@@ -399,8 +398,8 @@ function Floor() {
         </>
       )}
 
-      {tab === "data" && <DataPanel player={player} round={round} onToast={push} />}
-      {tab === "sky" && <Orrery player={player} round={round} />}
+      {tab === "data" && <DataPanel player={player} round={round} />}
+      {tab === "sky" && <DataPanel player={player} round={round} />}
       {tab === "board" && (
         <Leaderboard rows={board} myTeamId={state.team?.id} settled={round.status === "settled"} />
       )}
@@ -452,6 +451,12 @@ function Shell({ children, round, msLeft }) {
           <div className="topstate">
             <span className={`phase ${round.status}`}>{round.phase}</span>
             {msLeft != null && <span className="clock">{clock(msLeft)}</span>}
+            {round.lineDeg != null && (
+              <span className="qline">
+                {round.eventName} · N/S of {Math.abs(round.lineDeg).toFixed(1)}°
+                {round.lineDeg >= 0 ? "N" : "S"}
+              </span>
+            )}
             <span className="dim">
               {round.players} players · {round.teams} teams
             </span>

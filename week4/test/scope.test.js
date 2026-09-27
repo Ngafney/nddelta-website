@@ -66,7 +66,7 @@ const files = [];
     else if (/\.(jsx?|mjs)$/.test(e.name)) files.push(p);
   }
 })(path.join(root, "src"));
-files.push(path.join(root, "shared", "engine.js"), path.join(root, "shared", "orbits.js"), path.join(root, "shared", "observe.js"), path.join(root, "shared", "rules.js"), path.join(root, "shared", "rng.js"));
+files.push(path.join(root, "shared", "engine.js"), path.join(root, "shared", "corridor.js"), path.join(root, "shared", "events.js"), path.join(root, "shared", "rules.js"), path.join(root, "shared", "rng.js"));
 
 console.log("scope");
 

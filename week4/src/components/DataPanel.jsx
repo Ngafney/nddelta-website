@@ -1,141 +1,136 @@
 import React, { useEffect, useState } from "react";
 import { api, withPlayer } from "../api.js";
 import { PxButton, Spinner } from "./PixelBits.jsx";
+import CorridorMap from "./CorridorMap.jsx";
 
 /**
- * The survey record: what the room has, what it is worth, and a button that
- * puts it on disk.
+ * The published impact solution: the numbers, the picture, and the block you
+ * hand to an AI.
  *
- * The download is a plain link straight at the API rather than a fetch-then-
- * blob dance, so the browser does what browsers do with a Content-Disposition
- * header and the file lands in Downloads with one click and no JavaScript in
- * the way.
+ * The prompt is built on the SERVER from the same object that fills the table
+ * above it, so the two can never disagree. A team that copies it, argues with
+ * a model about the five assumptions, and runs what comes back has done the
+ * round — which is the point.
  */
-export default function DataPanel({ player, round, onToast }) {
-  const [data, setData] = useState(null);
+export default function DataPanel({ player, round }) {
+  const [d, setD] = useState(null);
   const [err, setErr] = useState(null);
-  const [loading, setLoading] = useState(true);
-
+  const [copied, setCopied] = useState(false);
   const released = round?.released ?? 0;
 
   useEffect(() => {
     let gone = false;
-    setLoading(true);
     api
       .get("data", withPlayer(player))
-      .then((d) => {
-        if (gone) return;
-        setData(d);
-        setErr(null);
-      })
-      .catch((e) => {
-        if (gone) return;
-        setErr(e.message);
-        setData(null);
-      })
-      .finally(() => !gone && setLoading(false));
+      .then((x) => !gone && (setD(x), setErr(null)))
+      .catch((e) => !gone && (setErr(e.message), setD(null)));
     return () => {
       gone = true;
     };
-    // Refetch whenever another batch lands.
   }, [player, released]);
-
-  const href = `/api/week4/data.csv?${new URLSearchParams(withPlayer(player))}`;
-
-  if (loading && !data) {
-    return (
-      <div className="panel">
-        <Spinner text="READING THE RECORD" />
-      </div>
-    );
-  }
 
   if (err) {
     return (
       <div className="panel">
         <div className="dead-note">
-          {err}
+          NOTHING RELEASED YET
           <br />
-          <span style={{ color: "var(--dim)", fontSize: 9 }}>
-            THE OPERATOR HAS NOT RELEASED ANYTHING YET
-          </span>
+          <span style={{ color: "var(--dim)", fontSize: 9 }}>{err}</span>
         </div>
       </div>
     );
   }
+  if (!d) {
+    return (
+      <div className="panel">
+        <Spinner text="READING THE SOLUTION" />
+      </div>
+    );
+  }
 
-  const rows = data?.rows ?? [];
-  const gap = data ? data.impactDay - data.cutDay : null;
-  const sig = rows.length ? [rows[0].sigmaAu, rows[rows.length - 1].sigmaAu] : null;
-  const KM = 149597870.7;
+  const href = `/api/week4/data.csv?${new URLSearchParams(withPlayer(player))}`;
+  const C = d.covarianceKm2;
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(d.prompt);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2500);
+    } catch {
+      // Clipboard can be refused; the textarea below is always selectable.
+      setCopied(false);
+    }
+  };
 
   return (
     <div className="panel datapanel">
       <div className="data-head">
         <div>
-          <h3>THE SURVEY RECORD</h3>
+          <h3>IMPACT SOLUTION {d.release} OF {d.of}</h3>
           <p className="dim">
-            Release <b>{released}</b> of {round.releaseCount} · <b>{rows.length}</b> observations ·
-            everything up to <b>{gap != null ? Math.round(gap) : "?"} days</b> before impact
+            {d.eventName} · nominal point <b>{fmt(d.nominalLat)}</b>, <b>{fmtLon(d.nominalLon)}</b> ·
+            corridor bearing <b>{d.azimuthDeg.toFixed(0)}°</b>
+            {d.geometry === "modelled" && <em className="tag"> corridor modelled</em>}
           </p>
         </div>
         <a className="pxbtn pxbtn--green pxbtn--big" href={href} download>
-          ⭳ DOWNLOAD CSV
+          ⭳ CSV
         </a>
       </div>
 
+      <CorridorMap solution={d} />
+
       <div className="data-grid">
-        <Fact label="FRAME" value="barycentric, ecliptic J2000" />
-        <Fact label="UNITS" value="AU · days" />
-        <Fact
-          label="ERROR BARS"
-          value={sig ? `${(sig[0] * KM).toFixed(0)} → ${(sig[1] * KM).toFixed(0)} km` : "—"}
-          hint="every row carries its own"
-        />
-        <Fact label="IMPACT" value={`day ${Math.round(data.impactDay)}`} />
+        <Fact label="THE LINE" value={fmt(d.lineDeg)} hint="north of it, or south" />
+        <Fact label="σ ALONG" value={`${Math.round(d.sigmaAlongKm)} km`} hint="down the corridor" />
+        <Fact label="σ ACROSS" value={`${Math.round(d.sigmaCrossKm)} km`} hint="either side of it" />
+        <Fact label="GROUND SPEED" value={`${d.groundSpeedKms.toFixed(1)} km/s`} />
       </div>
 
-      <div className="masses">
-        {["SUN", "EARTH", "ASTEROID"].map((n, i) => (
-          <div key={n}>
-            <i>{n}</i>
-            <b>{data.masses[i].kg.toExponential(4)} kg</b>
-            <em>± {(data.masses[i].relError * 100).toPrecision(2)}%</em>
-          </div>
-        ))}
-      </div>
-
-      <p className="dim data-note">{data.note}</p>
-      {data.modelNote && <p className="model-note">{data.modelNote}</p>}
-
-      <div className="tablewrap">
-        <table className="datatable">
-          <thead>
-            <tr>
-              <th>day</th>
-              <th colSpan={3}>sun (AU)</th>
-              <th colSpan={3}>earth (AU)</th>
-              <th colSpan={3}>asteroid (AU)</th>
-              <th>σ (km)</th>
-            </tr>
-          </thead>
+      <div className="covbox">
+        <div className="panel-title">COVARIANCE, km² — [along, cross]</div>
+        <table className="covmat">
           <tbody>
-            {rows.slice(0, 12).map((r) => (
-              <tr key={r.day}>
-                <td>{r.day.toFixed(1)}</td>
-                {[...r.sun, ...r.earth, ...r.ast].map((v, i) => (
-                  <td key={i}>{v.toFixed(5)}</td>
+            {C.map((row, i) => (
+              <tr key={i}>
+                {row.map((v, j) => (
+                  <td key={j} className={i !== j ? "offdiag" : ""}>
+                    {v.toFixed(1)}
+                  </td>
                 ))}
-                <td>{(r.sigmaAu * KM).toFixed(0)}</td>
               </tr>
             ))}
           </tbody>
         </table>
-        {rows.length > 12 && <div className="dim tablemore">…and {rows.length - 12} more rows in the download</div>}
+        <p className="dim">
+          The off-diagonal terms are not zero. Draw the two components together — a Cholesky factor,
+          or <code>numpy.random.multivariate_normal</code> — or your answer will be wrong in a way
+          that looks fine.
+        </p>
       </div>
+
+      <div className="askai">
+        <div className="panel-title">HAND THIS TO AN AI</div>
+        <p className="dim">
+          Everything needed is below, including the assumptions worth arguing about. Paste it into
+          whatever model you like, push back on anything that looks wrong, and run what it gives you.
+        </p>
+        <div className="askai-actions">
+          <PxButton variant={copied ? "green" : "gold"} onClick={copy}>
+            {copied ? "COPIED ✓" : "COPY THE PROMPT"}
+          </PxButton>
+        </div>
+        <textarea className="promptbox" readOnly value={d.prompt} onFocus={(e) => e.target.select()} rows={18} />
+      </div>
+
+      <p className="dim data-note">{d.note}</p>
+      {d.modelNote && <p className="model-note">{d.modelNote}</p>}
     </div>
   );
 }
+
+const fmt = (v) => `${Math.abs(v).toFixed(2)}°${v >= 0 ? "N" : "S"}`;
+const fmtLon = (v) => `${Math.abs(v).toFixed(2)}°${v >= 0 ? "E" : "W"}`;
 
 function Fact({ label, value, hint }) {
   return (

@@ -1,20 +1,34 @@
 /**
  * Week 4 — Monte Carlo. The rules, written once.
  *
- * An asteroid is going to hit the Earth in three years. A survey has been
- * watching it, badly, and the record is public: positions of the Sun, the
- * Earth and the rock, every few days, each with an honest error bar, plus the
- * three masses measured about as well as anyone can measure a mass.
+ * A real asteroid, really detected before it hit, really tracked for a few
+ * hours, and it really did land somewhere. You are put back at the moment the
+ * warning went out: there is a corridor across the ground, an uncertainty
+ * ellipse on it, and a line of latitude. North of the line or south of it?
  *
- * It will land just north or just south of the equator. Two order books are
- * open — NORTH and SOUTH — and exactly one of them pays $100 a share.
+ * WHAT THE ROUND ASKS OF A TEAM
+ * -----------------------------
+ * Exactly one thing: turn an uncertainty into a price. Draw from the published
+ * covariance, walk each draw down the corridor, count which side it lands on,
+ * and that fraction is what NORTH is worth.
  *
- * The room gets the record up to six months before impact. That is not enough
- * to be sure. More of it arrives as the operator releases it, and the closer
- * the rock gets the better the survey's measurements of it become, so the
- * answer sharpens as the clock runs down. Whoever works out where it is going
- * first gets to buy the answer cheaply from everyone who has not.
+ * WHAT IT DELIBERATELY DOES NOT ASK
+ * ---------------------------------
+ * Orbit determination. The first version handed out three years of noisy
+ * astrometry and asked the room to fit a sungrazing asteroid — a hard inverse
+ * problem that ate the whole session and that nobody solved, me included. The
+ * Monte Carlo was never the hard part; the fitting was. So the fitting is gone.
+ *
+ * WHY IT IS NOT JUST Φ(z)
+ * -----------------------
+ * Latitude is a curved function of distance along a great circle. A Gaussian
+ * spread along the corridor comes out skewed in latitude, and near the track's
+ * highest point it is not even single-peaked. A team that reaches for a normal
+ * approximation gets a confidently wrong price; a team that samples gets the
+ * right one. Real geometry, not a trick.
  */
+
+import { EVENT_KEYS } from "./events.js";
 
 /** The two books. The order here is the order they appear on screen. */
 export const MARKETS = ["north", "south"];
@@ -23,141 +37,78 @@ export const MARKET_META = {
   north: {
     key: "north",
     name: "NORTH",
-    long: "Impact NORTH of the equator",
-    tint: "north",
-    blurb: "Pays $100 a share if the asteroid lands in the northern hemisphere.",
+    long: "Lands NORTH of the line",
+    blurb: "Pays $100 a share if the impact point is north of the line.",
   },
   south: {
     key: "south",
     name: "SOUTH",
-    long: "Impact SOUTH of the equator",
-    tint: "south",
-    blurb: "Pays $100 a share if the asteroid lands in the southern hemisphere.",
+    long: "Lands SOUTH of the line",
+    blurb: "Pays $100 a share if the impact point is south of the line.",
   },
 };
 
-/**
- * One grid for both books. Nothing here is secret: a prediction market's price
- * IS a probability in percent, and everybody knows a probability lives between
- * nothing and certainty.
- */
-export const BOOK = {
-  settleMin: 0,
-  settleMax: 100,
-  tick: 1,
-  orderMin: 1,
-  orderMax: 99,
-  center: 50,
-};
+/** One grid for both books. Nothing here is secret. */
+export const BOOK = { settleMin: 0, settleMax: 100, tick: 1, orderMin: 1, orderMax: 99, center: 50 };
 
 /** Money is integer CENTS on the server. Never floats. */
-export const MONEY = {
-  startCashC: 1_000_000, // $10,000.00
-};
+export const MONEY = { startCashC: 1_000_000 }; // $10,000.00
 
 export const LIMITS = {
   teamSize: 4,
   teamNameMax: 20,
   codeLength: 4,
   maxSharesPerOrder: 50,
-  /** How many shares one click buys or sells, unless the admin says otherwise. */
   defaultOrderSize: 10,
-  /** Counted across BOTH books together. */
   maxOrdersPerPlayer: 40,
   maxOpenOrders: 4000,
   tapeLength: 80,
   fillsKept: 40,
   nameMin: 2,
   nameMax: 18,
-  /** Seconds the team code stays up before you can walk onto the floor. */
   codeHoldSeconds: 6,
 };
 
 /* ── the scenario ─────────────────────────────────────────────────────── */
 
-/**
- * THE DYNAMICAL MODEL IS NEWTONIAN, ON PURPOSE.
- *
- * The first cut of this round had the asteroid graze the Sun at ten solar
- * radii, where general relativity moves the impact point by tens of thousands
- * of kilometres and a Newtonian fit misses the planet outright. That was a
- * lovely payoff and a completely unplayable round, for a reason that has
- * nothing to do with relativity:
- *
- *   - At day zero the rock sat 0.06 AU from the Sun doing 167 km/s. Between
- *     the first observation and the fourth it travelled 1.4 AU, so a
- *     finite-difference velocity — the obvious first guess — came out 105%
- *     wrong.
- *   - Five perihelion passes amplify a starting error ferociously: a velocity
- *     error of one part in 10^8 puts the asteroid 456 km off by day 400, and
- *     one part in 10^4 puts it four million km off.
- *
- * So the orbit determination had to be right to eight significant figures
- * before the residuals meant anything, and every fit anyone tried — mine
- * included — sat at millions of sigma and predicted a miss. The round was
- * testing whether you can write JPL's software in twenty minutes, not whether
- * you can price an uncertain outcome.
- *
- * The orbit below is gentle: perihelion outside half an AU, eccentricity near
- * 0.45, and the asteroid starts near aphelion moving at about Earth's own
- * speed. A plain least-squares fit converges to 1σ in about two seconds, and
- * the round goes back to being about the statistics.
- *
- * The relativistic term is still implemented and still checked against
- * Mercury's 43 arcseconds per century in test/physics.test.js. It is simply
- * not used for play, and the reveal says by how much it would have mattered.
- */
 export const SCENARIO = {
-  /** Length of the observing record, in years. */
-  years: 3,
-  /** How far north or south of the equator, in degrees, unless the admin says. */
-  defaultImpactLatDeg: 3,
-  /** The operator may aim anywhere in this band. */
-  latRange: [0.5, 12],
-  /** Newtonian gravity only. See the note above before changing this. */
-  relativistic: false,
-  /** Perihelion band, in AU. Well clear of the Sun so the arc stays fittable. */
-  perihelion: [0.35, 0.8],
-  /** The asteroid must START at least this far out, where it is slow. */
-  minStartRadius: 0.9,
-  minPasses: 1,
-  astMassKg: 1.6e12,
-};
-
-export const DATA = {
-  /** Days before impact that the first release stops at. */
-  firstCutDays: 180,
-  /** How much each later release adds. The operator picks from these. */
-  stepChoices: [30, 60],
-  defaultStepDays: 30,
-  /** Observation cadence, in days, by how far out the rock still is. */
-  cadence: { far: 5, mid: 2, near: 0.5 },
-  /** Relative error on the published masses. */
-  massRelError: 5e-6,
+  events: EVENT_KEYS,
+  /**
+   * Along-track sigma at the FIRST release, in km. Modelled.
+   *
+   * A few hundred kilometres is what an impact corridor looks like when an
+   * object has been tracked for a handful of hours — long enough to know the
+   * direction of approach well, not long enough to pin the arrival time. The
+   * SHAPE (long, thin, tilted) matters more than the scale, and the line is
+   * then placed to make the question as hard as the operator asked for.
+   */
+  sigma0Km: 600,
+  /** How many times narrower the ellipse is across the corridor than along it. */
+  ratio: 6,
+  /** A tilt, so the two components are correlated and cannot be sampled apart. */
+  tiltDeg: 12,
+  /**
+   * What each successive release multiplies sigma by — more observations, a
+   * longer arc, a tighter solution.
+   */
+  shrink: [1, 0.78, 0.62, 0.5, 0.4, 0.3],
+  /** Monte Carlo draws the SERVER uses to price and to settle. */
+  draws: 20000,
 };
 
 export const CONFIDENCE = {
-  /** What a good team should be able to reach on the opening data. */
   defaultStart: 0.65,
-  /** …and by the final release. */
   defaultEnd: 0.9,
   range: [0.52, 0.95],
 };
 
 /* ── phases ───────────────────────────────────────────────────────────── */
 
-/**
- * A round runs: lobby → research → live → ended → settled.
- *
- * RESEARCH is the quiet window. The opening data is out, the books are shut,
- * and teams do the actual work. Trading only opens when the operator says so,
- * or when the research clock runs out.
- */
 export const PHASES = {
   lobby: { key: "lobby", name: "LOBBY", blurb: "Waiting for the operator." },
   research: { key: "research", name: "RESEARCH", blurb: "Data is out. Books are shut. Work." },
   live: { key: "live", name: "TRADING", blurb: "Both books are open." },
-  ended: { key: "ended", name: "IMPACT", blurb: "Books shut. The asteroid is arriving." },
+  ended: { key: "ended", name: "IMPACT", blurb: "Books shut. It is arriving." },
   settled: { key: "settled", name: "SETTLED", blurb: "It landed. Count the money." },
 };
 
@@ -170,11 +121,6 @@ export const TIMERS = {
 
 /* ── the noise traders ────────────────────────────────────────────────── */
 
-/**
- * Four slots, one per (market × direction). Each fires a market order of a
- * chosen size every so many seconds. The room is told these exist — an
- * uninformed flow everyone can see is a feature, not a trap.
- */
 export const BOTS = {
   slots: [
     { key: "north-buy", market: "north", side: "B", label: "BUY NORTH" },
@@ -185,37 +131,86 @@ export const BOTS = {
   maxShares: 500,
   minSeconds: 2,
   maxSeconds: 600,
-  /** How far through the book one bot order is allowed to sweep. */
   maxSweep: 25,
   name: "SURVEY DESK",
 };
 
 /* ── player-facing copy ───────────────────────────────────────────────── */
 
-export const RULES_TEXT = `**The situation.** An asteroid will strike the Earth in three years. It will land close to the equator — just north of it, or just south. Nobody knows which.
+export const RULES_TEXT = `**This really happened.** Every round is a real asteroid that was really spotted on the way in and really hit. You are put back at the moment the warning went out, with what was known then.
 
-**Two markets, one answer.** There are two order books: **NORTH** and **SOUTH**. Exactly one of them pays **$100 a share** at impact; the other pays nothing. Prices run 1 to 99, so a price reads as a probability in percent.
+**The question.** There is a line of latitude. Does the impact point land **north** of it or **south** of it? Two order books, NORTH and SOUTH, and exactly one pays **$100 a share**. Prices run 1 to 99, so a price reads as a probability in percent.
 
-Because exactly one pays, NORTH and SOUTH should add up to about 100. If they do not, someone is wrong and there is money on the table.
+Because exactly one pays, NORTH and SOUTH should add to about 100. If they do not, someone is wrong and there is money on the table.
 
-**What you get.** The survey's full record: the positions of the Sun, the Earth and the asteroid every few days for three years, each with the error bar on that measurement, plus the three masses. Download it with one click and do whatever you like to it.
+**What you get.** Not raw telescope data — you are not being asked to determine an orbit. You get what a real impact warning actually contains:
 
-**The model is Newtonian.** Plain inverse-square gravity between the three bodies, nothing else — no relativity, no radiation pressure, no fourth body. That is not a hint, it is a promise: fit Newtonian gravity and the data will fit, to its error bars. The question is not which physics; it is how much the noise leaves you unsure.
+- the **nominal impact point**, where the current solution says it lands,
+- the **corridor**, the direction the fireball travels across the ground,
+- and the **covariance** of the impact point, in kilometres along and across that corridor.
 
-The record is noisy. Observing is hard, and it was hardest when the rock was far away. With the opening data a good team can get a real edge — but not certainty.
+**What to do with it.** Draw a few thousand samples from that covariance. Walk each one down the corridor from the nominal point. Read off its latitude. The fraction landing north of the line is what NORTH is worth. That is the whole calculation and it is about fifteen lines of code.
 
-**More data arrives.** The operator releases further stretches of the record as the round goes on. Every release is announced loudly. The newer measurements are sharper, because the asteroid is closer and brighter, so each release should move your estimate.
+**One warning worth taking seriously.** Latitude is *not* a straight-line function of distance along the corridor — a great circle climbs, flattens and falls. So a Gaussian spread along the ground comes out lopsided in latitude, and a normal approximation will hand you a confident wrong answer. Simulate. That is why the week is called what it is.
 
-**Research, then trading.** First a quiet window with the data and no market. Then the books open.
+**More data arrives.** The operator releases updated solutions as the round runs — a tighter ellipse each time, the way a real warning sharpens as the arc grows. Every release is announced loudly and should move your price.
 
 **Your money.** **$10,000**. A resting bid ties up price × shares. A resting offer ties up (100 − price) × shares. Holding NORTH and SOUTH together is far cheaper than holding either alone — one of them is going to pay, and the margin knows it.
 
-**There are bots.** An uninformed desk trades both books on a fixed schedule, buying and selling regardless of what the data says. It is not trying to beat you and it is not reading the sky. It is liquidity, and it is noise.
+**There are bots.** An uninformed desk trades both books on a fixed schedule regardless of what the data says. It is liquidity, and it is noise.
 
-**Teams.** Up to four players. You keep your own money and your own positions; the leaderboard ranks each team's **average** portfolio.
+**Teams.** Up to four. You keep your own money and positions; the leaderboard ranks each team's **average**.
 
-**The end.** The books shut, the asteroid arrives, and you watch where it lands. Then everything settles and the board is final.`;
+**The end.** The books shut and you find out where it actually landed — because it actually landed somewhere, and people went and picked up the pieces.`;
 
-export const MODEL_NOTE = `Newtonian three-body gravity. Positions are barycentric, AU and days, so GM of the Sun is k² with k = 0.01720209895. Fit the asteroid's six initial numbers; the Earth and the Sun are pinned down by their own rows.`;
+export const DATA_NOTE = `Distances are kilometres. "Along" is the corridor direction; "cross" is 90° clockwise from it. The covariance is km² in that frame and it is NOT diagonal — the two components are correlated, so draw them together.`;
 
-export const DATA_NOTE = `Positions are in AU in the solar-system barycentric frame, on the ecliptic of J2000. Day 0 is the first observation. \`sigma_au\` is the one-sigma error on every position component in that row — it is not the same on every row.`;
+export const MODEL_NOTE = `The event is real: the object, the date, where it hit, how much warning there was. The uncertainty is modelled — nobody publishes a covariance for a four-metre rock found hours before arrival — and it is scaled so the question is as hard as the operator chose.`;
+
+/**
+ * The block a team pastes into an AI.
+ *
+ * The round is meant to be solvable by describing it to a model and arguing
+ * about the assumptions, so they are listed explicitly and framed as things to
+ * check rather than accept. The final paragraph is the one that earns its
+ * place: without it a model reaches for Φ(z) and is wrong.
+ */
+export function aiPrompt(d) {
+  const C = d.covarianceKm2;
+  const f = (v) => v.toFixed(1).padStart(12);
+  return `I need to price a prediction market on where an asteroid lands.
+
+WHAT I HAVE — a real impact warning for ${d.eventName}:
+
+  nominal impact point   latitude ${d.nominalLat.toFixed(3)}°, longitude ${d.nominalLon.toFixed(3)}°
+  corridor azimuth       ${d.azimuthDeg.toFixed(1)}°  (direction of travel across the
+                         ground, clockwise from north)
+  impact-point covariance, km², in the corridor frame [along, cross]:
+
+      [[${f(C[0][0])}, ${f(C[0][1])} ],
+       [${f(C[1][0])}, ${f(C[1][1])} ]]
+
+THE QUESTION
+
+  Does it land north or south of latitude ${d.lineDeg.toFixed(1)}°?
+  I want P(north), a number between 0 and 1.
+
+ASSUMPTIONS I AM MAKING — please tell me if any are wrong before you write code:
+
+  1. The true impact point is the nominal point displaced by (along, cross)
+     kilometres, drawn from a 2-D normal with the covariance above, zero mean.
+  2. "Along" is the corridor direction; "cross" is 90° clockwise from it.
+  3. A displacement follows a great circle on a sphere of radius 6371 km.
+  4. Geodetic and geocentric latitude are close enough here to ignore.
+  5. The covariance is NOT diagonal, so the two components must be drawn
+     together — a Cholesky factor, or numpy's multivariate_normal.
+
+WHAT I WANT
+
+  Python that draws at least 100,000 samples and reports P(north).
+
+  Please SIMULATE rather than using a normal approximation on latitude.
+  Latitude is a nonlinear function of distance along a great circle — the track
+  climbs, flattens and falls — so a Gaussian along the ground does not stay
+  Gaussian in latitude, and Φ((line − µ)/σ) will be confidently wrong.`;
+}

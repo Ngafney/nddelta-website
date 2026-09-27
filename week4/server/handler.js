@@ -28,14 +28,14 @@ import {
   auditState, snapTick, maxSharesAt, isMarket, EngineError,
 } from "../shared/engine.js";
 import {
-  MARKETS, MARKET_META, BOOK, LIMITS, MONEY, SCENARIO, DATA, CONFIDENCE,
-  PHASES, TIMERS, BOTS, RULES_TEXT, DATA_NOTE, MODEL_NOTE,
+  MARKETS, MARKET_META, BOOK, LIMITS, MONEY, SCENARIO, CONFIDENCE,
+  PHASES, TIMERS, BOTS, RULES_TEXT, DATA_NOTE, MODEL_NOTE, aiPrompt,
 } from "../shared/rules.js";
-import { buildScenario, verifyScenario, closestApproachToSun, propagate, posOf, latitudeOf, AU_KM, YEAR_DAYS } from "../shared/orbits.js";
+import { EVENTS, EVENT_KEYS, eventByKey, OTHER_IMPACTS } from "../shared/events.js";
 import {
-  observationEpochs, buildSensitivity, releasePlan, calibrateNoise,
-  makeObservations, measuredMasses, toCSV,
-} from "../shared/observe.js";
+  corridorOf, covariance, chol2, walk, latAt, northProbability, confidenceOf,
+  placeLine, R_EARTH_KM,
+} from "../shared/corridor.js";
 
 /* ── secrets ──────────────────────────────────────────────────────────── */
 
@@ -308,6 +308,7 @@ async function advanceIfDue(state, version, now) {
   if (state.status === "ended") {
     const spec = await loadSpec(state.roundId);
     if (spec) {
+      // Not a simulation: where the rock actually landed, relative to the line.
       settle(state, spec.winner, now);
       await recordHistory(state, spec, now);
       changed = true;
@@ -331,7 +332,8 @@ async function recordHistory(state, spec, now) {
     roundId: state.roundId,
     at: now,
     winner: spec.winner,
-    latDeg: spec.impactLatDeg,
+    event: spec.truth?.name ?? null,
+    lineDeg: spec.lineDeg,
     podium: rows,
   };
   const prev = (await kv.getJSON(HISTORY)) ?? [];
@@ -381,14 +383,12 @@ function publicRound(state, now) {
     releaseCount: releases.length,
     releaseLog: shown.map((r, i) => ({
       index: i + 1,
-      leadDays: r.leadDays,
-      rows: r.count,
+      sigmaKm: Math.round(r.sigmaKm),
       at: state.releaseLog?.[i]?.at ?? null,
     })),
-    nextLeadDays: releases[state.released ?? 0]?.leadDays ?? null,
-    observationCount: shown.reduce((n, r) => n + r.count, 0),
-    recordYears: state.recordYears ?? SCENARIO.years,
-    impactDay: state.impactDay ?? null,
+    nextSigmaKm: releases[state.released ?? 0] ? Math.round(releases[state.released].sigmaKm) : null,
+    eventName: state.eventName ?? null,
+    lineDeg: state.lineDeg ?? null,
     // Bots are public. Everyone is told they exist and what they are doing.
     bots: (state.bots ?? [])
       .filter((b) => b.on)
@@ -443,13 +443,30 @@ const teamCard = (team) => ({
   max: LIMITS.teamSize,
 });
 
-/** Rows the room is allowed to have, and not one more. */
-function releasedRows(state, spec) {
+/**
+ * The solution the room is allowed to have: the latest released one, and not
+ * one step further. Everything the students need to price the round, and
+ * nothing that would tell them the answer.
+ */
+function publishedSolution(state, spec) {
   const upto = state.released ?? 0;
-  if (upto <= 0) return [];
-  const cut = (state.releases ?? [])[upto - 1]?.cutDay;
-  if (cut == null) return [];
-  return spec.observations.filter((r) => r.day <= cut);
+  if (upto <= 0) return null;
+  const r = spec.releases[upto - 1];
+  if (!r) return null;
+  return {
+    release: upto,
+    of: spec.releases.length,
+    eventName: spec.truth.name,
+    nominalLat: r.nominalLat,
+    nominalLon: r.nominalLon,
+    azimuthDeg: spec.corridor.azimuthDeg,
+    groundSpeedKms: spec.corridor.groundSpeedKms,
+    covarianceKm2: r.covarianceKm2,
+    sigmaAlongKm: Math.sqrt(r.covarianceKm2[0][0]),
+    sigmaCrossKm: Math.sqrt(r.covarianceKm2[1][1]),
+    lineDeg: spec.lineDeg,
+    geometry: spec.corridor.geometry,
+  };
 }
 
 /* ── the router ───────────────────────────────────────────────────────── */
@@ -566,17 +583,16 @@ export async function handle(method, route, body, query) {
       const state = r.state;
       requirePlayer(state, query);
       const spec = await loadSpec(state.roundId);
-      if (!spec) throw httpError(409, "the record is not ready yet", "no-data");
-      if (!(state.released > 0)) throw httpError(409, "no data has been released yet", "no-data");
-      const rows = releasedRows(state, spec);
+      if (!spec) throw httpError(409, "the solution is not ready yet", "no-data");
+      if (!(state.released > 0)) throw httpError(409, "no solution has been released yet", "no-data");
+      const sol = publishedSolution(state, spec);
       return {
-        rows,
-        masses: spec.masses.map((m) => ({ kg: m.kg, relError: m.relError })),
+        ...sol,
         note: DATA_NOTE,
         modelNote: MODEL_NOTE,
-        released: state.released ?? 0,
-        cutDay: (state.releases ?? [])[(state.released ?? 1) - 1]?.cutDay ?? null,
-        impactDay: state.impactDay,
+        // The block a team pastes into an AI. Built here so there is exactly
+        // one copy of it and it can never drift from the numbers above.
+        prompt: aiPrompt(sol),
       };
     }
 
@@ -586,18 +602,36 @@ export async function handle(method, route, body, query) {
       const state = r.state;
       requirePlayer(state, query);
       const spec = await loadSpec(state.roundId);
-      if (!spec) throw httpError(409, "the record is not ready yet", "no-data");
-      const rows = releasedRows(state, spec);
-      if (!rows.length) throw httpError(409, "no data has been released yet", "no-data");
-      // Count the download so the operator can see who is actually working.
+      if (!spec) throw httpError(409, "the solution is not ready yet", "no-data");
+      if (!(state.released > 0)) throw httpError(409, "no solution has been released yet", "no-data");
+      const sol = publishedSolution(state, spec);
       tx((st) => {
         const p = st.players?.[query.playerId];
         if (p) p.downloads = (p.downloads ?? 0) + 1;
       }).catch(() => {});
+      const C = sol.covarianceKm2;
+      const lines = [
+        "# impact solution " + sol.release + " of " + sol.of,
+        "# distances in km; along = corridor direction, cross = 90 deg clockwise",
+        "# the covariance is NOT diagonal - draw the two components together",
+        "key,value",
+        "nominal_lat_deg," + sol.nominalLat.toFixed(6),
+        "nominal_lon_deg," + sol.nominalLon.toFixed(6),
+        "corridor_azimuth_deg," + sol.azimuthDeg.toFixed(3),
+        "ground_speed_km_s," + sol.groundSpeedKms.toFixed(3),
+        "cov_along_along_km2," + C[0][0].toFixed(3),
+        "cov_along_cross_km2," + C[0][1].toFixed(3),
+        "cov_cross_along_km2," + C[1][0].toFixed(3),
+        "cov_cross_cross_km2," + C[1][1].toFixed(3),
+        "sigma_along_km," + sol.sigmaAlongKm.toFixed(3),
+        "sigma_cross_km," + sol.sigmaCrossKm.toFixed(3),
+        "line_latitude_deg," + sol.lineDeg.toFixed(3),
+        "earth_radius_km,6371.0088",
+      ];
       return {
-        __raw: toCSV(rows, spec.masses, { note: `release ${state.released} of ${state.releases.length}` }),
+        __raw: lines.join("\n") + "\n",
         __contentType: "text/csv; charset=utf-8",
-        __filename: `asteroid-${state.roundId}-release-${state.released}.csv`,
+        __filename: `impact-solution-${state.roundId}-${sol.release}.csv`,
       };
     }
 
@@ -652,11 +686,20 @@ export async function handle(method, route, body, query) {
       return {
         roundId: state.roundId,
         winner: state.winner,
-        latDeg: spec.impactLatDeg,
-        impactDay: spec.tImpact,
-        track: spec.track,
-        trackDays: spec.trackDays,
-        physics: spec.physics,
+        lineDeg: spec.lineDeg,
+        truth: spec.truth,
+        corridor: spec.corridor,
+        // Every solution the room saw, so the reveal can show the ellipse
+        // walking in toward the place it actually landed.
+        releases: spec.releases.map((x) => ({
+          index: x.index,
+          sigmaKm: x.sigmaKm,
+          nominalLat: x.nominalLat,
+          nominalLon: x.nominalLon,
+          pNorth: x.pNorth,
+        })),
+        shown: state.released ?? 0,
+        others: spec.others,
         leaderboard: leaderboard(state, 100).filter((t) => t.id !== BOT_TEAM),
       };
     }
@@ -874,12 +917,15 @@ export async function handle(method, route, body, query) {
         truth: spec
           ? {
               winner: spec.winner,
-              latDeg: spec.impactLatDeg,
-              physics: spec.physics,
-              // Without this the release table loses its confidence column the
-              // moment the panel repolls, which is about two seconds later.
-              calibration: spec.calibration,
-              releases: r.state.releases,
+              lineDeg: spec.lineDeg,
+              event: spec.truth,
+              corridor: spec.corridor,
+              releases: spec.releases.map((x) => ({
+                index: x.index,
+                sigmaKm: x.sigmaKm,
+                pNorth: x.pNorth,
+                confidence: x.confidence,
+              })),
             }
           : null,
         audit: auditState(r.state),
@@ -893,118 +939,120 @@ export async function handle(method, route, body, query) {
 
 /* ── building a round ─────────────────────────────────────────────────── */
 
+/** Deterministic little PRNG, so a seed reproduces a round exactly. */
+function rng(seedStr) {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < seedStr.length; i++) {
+    h ^= seedStr.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  let a = h >>> 0;
+  return () => {
+    a |= 0;
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function normalPair(rand) {
+  let u = 0;
+  while (u === 0) u = rand();
+  const v = rand();
+  const r = Math.sqrt(-2 * Math.log(u));
+  return [r * Math.cos(2 * Math.PI * v), r * Math.sin(2 * Math.PI * v)];
+}
+
 /**
- * The expensive one. Solving for a launch that lands on a chosen parallel is
- * twenty-odd three-year integrations, and the sensitivity study is twenty
- * more. Call it once, keep the answer.
+ * Lay out a round on a real event.
+ *
+ * THE ONE CONSTRUCTION THAT MATTERS
+ * ---------------------------------
+ * The nominal point a team is shown is NOT where the thing actually landed. It
+ * is the truth displaced by a draw from the very covariance they are handed —
+ * which is what a published solution IS. Get that wrong and the round becomes
+ * a formality: publish the true point as "nominal" and the favoured side is
+ * always the winning side, so the correct play is to buy it at any price and
+ * nobody has to think.
+ *
+ * The same standard normal pair is reused for every release and pushed through
+ * each release's shrinking Cholesky factor, so successive solutions walk in
+ * toward the truth the way real ones do, rather than jumping about.
  */
 async function buildRound(body, now) {
   const seed = String(body.seed ?? "").trim() || rid(4);
   const roundId = rid(5);
+  const rand = rng(`${seed}|${roundId}`);
 
-  // Where the operator wants it. Blank means "surprise me", which also means
-  // the operator can be as ignorant as the room if they want to be.
-  let latDeg = numOr(body.impactLat, null);
-  if (latDeg == null) {
-    const r = crypto.randomInt(2) ? 1 : -1;
-    const span = SCENARIO.latRange;
-    latDeg = r * (span[0] + (crypto.randomInt(1000) / 1000) * (span[1] - span[0]));
-    latDeg = Math.round(latDeg * 100) / 100;
-  }
-  const mag = Math.abs(latDeg);
-  if (mag < SCENARIO.latRange[0] || mag > SCENARIO.latRange[1]) {
-    throw httpError(400, `aim between ${SCENARIO.latRange[0]}° and ${SCENARIO.latRange[1]}° from the equator`);
-  }
+  const key = EVENT_KEYS.includes(body.event) ? body.event : EVENT_KEYS[Math.floor(rand() * EVENT_KEYS.length)];
+  const event = eventByKey(key);
+  const corridor = corridorOf(event);
 
   const startConf = clamp(numOr(body.startConfidence, CONFIDENCE.defaultStart), ...CONFIDENCE.range);
-  const endConf = clamp(numOr(body.endConfidence, CONFIDENCE.defaultEnd), ...CONFIDENCE.range);
-  if (endConf < startConf) throw httpError(400, "the later data cannot be less convincing than the earlier data");
-  const stepDays = DATA.stepChoices.includes(Number(body.stepDays)) ? Number(body.stepDays) : DATA.defaultStepDays;
   const startCashC = Math.round(clamp(numOr(body.startCash, MONEY.startCashC / 100), 100, 10_000_000) * 100);
   const defaultSize = Math.round(clamp(numOr(body.defaultSize, LIMITS.defaultOrderSize), 1, LIMITS.maxSharesPerOrder));
+  const sigma0 = clamp(numOr(body.sigmaKm, SCENARIO.sigma0Km), 40, 4000);
 
-  const scenario = buildScenario(`${seed}|${roundId}`, latDeg, {
-    years: SCENARIO.years,
-    perihelion: SCENARIO.perihelion,
-    minPasses: SCENARIO.minPasses,
-    astMassKg: SCENARIO.astMassKg,
-    relativistic: SCENARIO.relativistic,
-    minStartRadius: SCENARIO.minStartRadius,
-  });
-  const check = verifyScenario(scenario, { relativistic: SCENARIO.relativistic });
-  if (!check.ok) throw httpError(500, `the trajectory did not land where it was aimed: ${check.reason ?? check.latDeg}`);
+  // One error draw for the whole round; each release sees it through a
+  // tighter factor, so the published solution converges on the truth.
+  const z = normalPair(rand);
 
-  const epochs = observationEpochs(scenario.tImpact, DATA.cadence);
-  const sens = buildSensitivity(scenario, epochs);
-  const batches = releasePlan(scenario.tImpact, epochs, { firstCutDays: DATA.firstCutDays, stepDays });
-  const cal = calibrateNoise(sens, (latDeg * Math.PI) / 180, batches, {
-    startConf,
-    endConf,
-    gmPriorRel: DATA.massRelError,
+  const releases = SCENARIO.shrink.map((f, i) => {
+    const sigmaKm = sigma0 * f;
+    const C = covariance(sigmaKm, SCENARIO.ratio, SCENARIO.tiltDeg);
+    const L = chol2(C);
+    const along = L[0][0] * z[0];
+    const crossKm = L[1][0] * z[0] + L[1][1] * z[1];
+    const nominal = walk(event.lat, event.lon, corridor.azimuthDeg, along, crossKm);
+    return { index: i + 1, sigmaKm, covarianceKm2: C, nominalLat: nominal.lat, nominalLon: nominal.lon };
   });
 
-  const observations = makeObservations(scenario, epochs, cal.sigmas, `${seed}|${roundId}`);
-  const masses = measuredMasses(scenario, `${seed}|${roundId}`, DATA.massRelError);
-  const sun = closestApproachToSun(scenario);
+  // Place the line so the FIRST release is as hard as the operator asked. The
+  // line is a real latitude a person can say out loud, so it gets rounded.
+  const first = releases[0];
+  const asNominal = { lat: first.nominalLat, lon: first.nominalLon };
+  const explicit = numOr(body.lineDeg, null);
+  const placed = explicit == null
+    ? placeLine(asNominal, corridor, first.sigmaKm, startConf, { draws: 3000 })
+    : { lineDeg: explicit, confidence: null };
+  const lineDeg = placed.lineDeg;
 
-  // A sampled true path, for the reveal only.
-  const trackDays = [];
-  const track = [];
-  {
-    const opts = { mass: scenario.mass, relativistic: true, rtol: 1e-11, atol: 1e-13 };
-    let y = Float64Array.from(scenario.y0);
-    let t = 0;
-    const N = 520;
-    for (let i = 0; i <= N; i++) {
-      const tn = (scenario.tImpact * i) / N;
-      y = propagate(y, t, tn, opts);
-      t = tn;
-      trackDays.push(Math.round(tn * 100) / 100);
-      track.push([
-        ...posOf(y, 0).map(r6),
-        ...posOf(y, 1).map(r6),
-        ...posOf(y, 2).map(r6),
-      ]);
-    }
+  // What a good team should be able to see at each release, priced the same
+  // way the room is being asked to price it.
+  for (const r of releases) {
+    const view = { lat: r.nominalLat, lon: r.nominalLon };
+    const p = northProbability(view, corridor, r.covarianceKm2, lineDeg, SCENARIO.draws, rand);
+    r.pNorth = p;
+    r.confidence = Math.max(p, 1 - p);
   }
 
-  const winner = latDeg >= 0 ? "north" : "south";
+  // The settlement is not a simulation. It is where the rock actually landed.
+  const winner = event.lat > lineDeg ? "north" : "south";
+
   const spec = {
     roundId,
     seed,
+    eventKey: key,
+    lineDeg,
     winner,
-    impactLatDeg: check.latDeg,
-    tImpact: scenario.tImpact,
-    observations,
-    masses,
-    track,
-    trackDays,
-    physics: {
-      perihelionAu: sun.au,
-      perihelionSolarRadii: sun.solarRadii,
-      passes: scenario.orbit.passes,
-      eccentricity: scenario.orbit.ecc,
-      semiMajorAu: scenario.orbit.a,
-      /** What the round was actually integrated with. */
-      relativistic: SCENARIO.relativistic,
-      /**
-       * How far the impact would have moved had the post-Newtonian term been
-       * on. Small here by design, which is the justification for leaving it
-       * off — and worth saying out loud at the reveal.
-       */
-      relativisticDriftKm: check.relativisticDriftKm,
-      contactErrorDays: check.contactError,
+    truth: {
+      name: event.name,
+      nick: event.nick ?? null,
+      when: event.when,
+      lat: event.lat,
+      lon: event.lon,
+      where: event.where,
+      story: event.story,
+      leadHours: event.leadHours,
+      diameterM: event.diameterM,
+      impactKt: event.impactKt,
+      speedKms: event.speedKms,
+      geometry: event.geometry,
     },
-    calibration: {
-      startConf,
-      endConf,
-      exponent: cal.exponent,
-      rangeExponent: cal.rangeExponent,
-      surveyImprovement: cal.surveyImprovement,
-      cappedExponent: cal.cappedExponent,
-      endShortfall: cal.endShortfall,
-      releases: cal.releases,
-    },
+    corridor,
+    releases,
+    others: OTHER_IMPACTS,
   };
   await kv.setJSON(SPEC(roundId), spec);
   specCache.set(roundId, spec);
@@ -1014,28 +1062,17 @@ async function buildRound(body, now) {
     startCashC,
     defaultSize,
     lateJoin: body.lateJoin !== false,
-    question: `Does it land NORTH or SOUTH of the equator?`,
+    question: `Does it land NORTH or SOUTH of ${fmtLine(lineDeg)}?`,
   });
-  state.releases = cal.releases.map((r) => ({
-    cutDay: r.cutDay,
-    leadDays: r.leadDays,
-    count: r.count,
-  }));
+  state.releases = releases.map((r) => ({ index: r.index, sigmaKm: r.sigmaKm }));
   state.released = 0;
   state.releaseLog = [];
-  state.impactDay = scenario.tImpact;
-  state.recordYears = SCENARIO.years;
+  state.lineDeg = lineDeg;
+  state.eventName = event.name;
   state.tradingMinutes = clamp(numOr(body.tradingMinutes, TIMERS.defaultTradingMinutes), TIMERS.minMinutes, TIMERS.maxMinutes);
-  state.bots = BOTS.slots.map((s) => ({
-    key: s.key,
-    market: s.market,
-    side: s.side,
-    on: false,
-    shares: 0,
-    everySec: 30,
-    nextAt: null,
-    sent: 0,
-    fills: 0,
+  state.bots = BOTS.slots.map((sl) => ({
+    key: sl.key, market: sl.market, side: sl.side,
+    on: false, shares: 0, everySec: 30, nextAt: null, sent: 0, fills: 0,
   }));
 
   if (body.keepPlayers) {
@@ -1060,18 +1097,43 @@ async function buildRound(body, now) {
   await replaceMarket(state);
   return {
     round: publicRound(state, now),
-    // The operator is told the answer and the quality of the round they built.
     truth: {
+      event: event.name,
+      where: event.where,
+      trueLat: event.lat,
+      trueLon: event.lon,
+      lineDeg,
       winner,
-      latDeg: check.latDeg,
-      physics: spec.physics,
-      calibration: spec.calibration,
+      geometry: event.geometry,
+      releases: releases.map((r) => ({
+        index: r.index,
+        sigmaKm: r.sigmaKm,
+        pNorth: r.pNorth,
+        confidence: r.confidence,
+        offsetKm: Math.round(
+          haversineKm(r.nominalLat, r.nominalLon, event.lat, event.lon)
+        ),
+      })),
     },
   };
 }
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
-const r6 = (v) => Math.round(v * 1e6) / 1e6;
+
+/** "20.0°N" — a line of latitude the way a person says it. */
+export function fmtLine(deg) {
+  const a = Math.abs(deg).toFixed(1);
+  return `${a}°${deg >= 0 ? "N" : "S"}`;
+}
+
+function haversineKm(lat1, lon1, lat2, lon2) {
+  const D = Math.PI / 180;
+  const dLat = (lat2 - lat1) * D;
+  const dLon = (lon2 - lon1) * D;
+  const h =
+    Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * D) * Math.cos(lat2 * D) * Math.sin(dLon / 2) ** 2;
+  return 2 * R_EARTH_KM * Math.asin(Math.min(1, Math.sqrt(h)));
+}
 
 /* ── the node adapter ─────────────────────────────────────────────────── */
 

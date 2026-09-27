@@ -103,29 +103,35 @@ await ok("the app, its assets and the SPA fallback are served", async () => {
 
 await ok("a whole round plays through over HTTP, from build to reveal", async () => {
   const { token } = await api("POST", "admin/auth", { password: "letmein" });
-  const built = await api("POST", "admin/round", { token, seed: "e2e", impactLat: 4.25, stepDays: 60 });
-  assert.strictEqual(built.truth.winner, "north");
+  const built = await api("POST", "admin/round", { token, seed: "e2e", event: "2008TC3" });
+
+  // The settlement is a fact about 2008 TC3, not a choice this test makes.
+  assert.strictEqual(built.truth.event, "2008 TC3");
+  assert.ok(Math.abs(built.truth.trueLat - 20.9) < 1e-9, "not the real impact point");
+  const expect = built.truth.trueLat > built.truth.lineDeg ? "north" : "south";
+  assert.strictEqual(built.truth.winner, expect);
 
   const a = await api("POST", "join", { name: "Ada", deviceId: "e2e-device-ada" });
   const b = await api("POST", "join", { name: "Bo", deviceId: "e2e-device-bo0" });
   const t = await api("POST", "team/create", { playerId: a.playerId, token: a.token, name: "E2E" });
   await api("POST", "team/join", { playerId: b.playerId, token: b.token, code: t.team.code });
 
-  // Research first: data out, books shut.
   await api("POST", "admin/start", { token, minutes: 30 });
   const cred = `playerId=${a.playerId}&token=${a.token}`;
   const s1 = await api("GET", `state?${cred}`);
   assert.strictEqual(s1.round.status, "research");
   assert.strictEqual(s1.round.released, 1);
 
-  // The download is a real file, over real HTTP, with real headers.
+  // The solution, and the block a team hands to an AI.
+  const sol = await api("GET", `data?${cred}`);
+  assert.ok(sol.covarianceKm2 && sol.prompt, "the solution is incomplete");
+  assert.ok(/SIMULATE/i.test(sol.prompt), "the prompt does not say to simulate");
+
   const csv = await get(`/api/week4/data.csv?${cred}`);
   assert.strictEqual(csv.status, 200);
   assert.match(csv.type ?? "", /text\/csv/);
-  assert.ok(csv.text.split("\n").filter((l) => l && !l.startsWith("#")).length > 100, "the CSV is too short");
-  assert.ok(csv.text.includes("mass_sun_kg"), "the masses are missing from the download");
+  assert.ok(csv.text.includes("cov_along_cross_km2"), "the CSV has no covariance");
 
-  // Then the books.
   await api("POST", "admin/open", { token, minutes: 30 });
   await api("POST", "order", { playerId: b.playerId, token: b.token, market: "north", side: "A", px: 60, qty: 5 });
   await api("POST", "order", { playerId: a.playerId, token: a.token, market: "north", side: "B", px: 60, qty: 5 });
@@ -137,13 +143,14 @@ await ok("a whole round plays through over HTTP, from build to reveal", async ()
   assert.strictEqual(mid.me.pos.south, 5);
 
   await api("POST", "admin/release", { token });
-  const after = await api("GET", `state?${cred}`);
-  assert.strictEqual(after.round.released, 2);
+  const tighter = await api("GET", `data?${cred}`);
+  assert.ok(tighter.sigmaAlongKm < sol.sigmaAlongKm, "the release did not tighten the solution");
 
   await api("POST", "admin/end", { token });
   const rv = await api("GET", "reveal");
-  assert.strictEqual(rv.winner, "north");
-  assert.ok(rv.track.length > 100);
+  assert.strictEqual(rv.winner, expect);
+  assert.strictEqual(rv.truth.name, "2008 TC3");
+  assert.ok(rv.truth.story.length > 80);
 
   // Ada bought the pair for 95 and it paid 100, whichever way it went.
   const done = await api("GET", `state?${cred}`);

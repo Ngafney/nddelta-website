@@ -1,91 +1,101 @@
 # ND Delta — Week 4: Monte Carlo
 
-An asteroid hits the Earth in three years, just north or just south of the
-equator. Two order books, **NORTH** and **SOUTH**, and exactly one of them pays
-$100 a share. The room gets a noisy observing record and has to work out which.
+A real asteroid, really spotted on the way in, that really hit. You are put
+back at the moment the warning went out. There is a corridor across the ground,
+an uncertainty ellipse on it, and a line of latitude. **North of the line or
+south of it?** Two order books, and exactly one pays $100 a share.
 
 ```
 npm install
 npm run api        # API on :3400
 npm run dev        # app on :5176  → http://localhost:5176/week4/
 npm run serve      # both in one process on :8083 (event day)
-npm test           # physics, engine, api, scope, render
+npm test           # corridor, engine, api, scope, render
 npm run test:all   # …plus a build and an end-to-end run over HTTP
 ```
 
 Admin: `/week4/admin` (password `123` until changed). Projector: `/week4/board`.
 
-## The physics is real — and deliberately Newtonian
+## What a team actually does
 
-`shared/orbits.js` integrates the Sun, the Earth and the asteroid with an
-adaptive Dormand–Prince 5(4). The post-Newtonian term is implemented and
-checked against Mercury's perihelion advancing 43″ per century, but **rounds
-are played on Newtonian gravity**, and that was a deliberate reversal.
+Draw a few thousand samples from the published covariance, walk each one down
+the corridor from the nominal point, read off its latitude, and count. The
+fraction landing north of the line is what NORTH is worth. Fifteen lines of
+code, and the data panel hands you a prompt that contains every number, the
+five assumptions worth arguing about, and the one warning that matters.
 
-The first cut had the asteroid graze the Sun at ten solar radii, where
-relativity moves the impact by tens of thousands of km and a Newtonian fit
-misses the planet outright. Lovely payoff, unplayable round — for a reason
-that had nothing to do with relativity:
+**Latitude is not linear in distance along the corridor.** A great circle
+climbs, flattens, and falls, so a Gaussian along the ground comes out skewed in
+latitude — measurably so; `test/corridor.test.js` checks the skew is real. Push
+it through Φ((line − µ)/σ) and you get a confident wrong answer. That is why
+the week is called what it is.
+
+The covariance is also **not diagonal**. A team that samples the two components
+separately gets a different, wrong number, and there is a test for that too.
+
+## What this replaced, and why
+
+The first version asked the room to determine an orbit: three years of noisy
+astrometry, a sungrazing asteroid, fit it yourself. It was unplayable, for a
+reason that had nothing to do with the statistics:
 
 - At day zero the rock sat 0.06 AU from the Sun doing **167 km/s**. Between the
   first observation and the fourth it travelled 1.4 AU, so a finite-difference
   velocity came out **105% wrong**.
-- Five perihelion passes amplify ferociously: a velocity error of one part in
-  10⁸ puts it **456 km** off by day 400; one part in 10⁴ puts it **4.4 million
-  km** off.
+- A velocity error of one part in 10⁸ moved the impact **456 km**; one part in
+  10⁴ moved it **4.4 million km**.
 
-Orbit determination therefore had to be right to eight significant figures
-before residuals meant anything. Every fit anyone tried — mine included — sat
-at millions of sigma and predicted a miss. The round was testing whether you
-can write JPL's software in twenty minutes.
+The orbit had to be known to eight significant figures before the residuals
+meant anything. Every fit anyone tried sat at millions of sigma and predicted a
+miss — mine included, at 4.6 million σ. The Monte Carlo was never the hard
+part; the inverse problem was. So the inverse problem is gone.
 
-The orbit now is gentle: perihelion outside half an AU, e ≈ 0.45, and the
-asteroid starts near aphelion at roughly Earth's own speed. A staged
-least-squares fit converges to **1σ in about two seconds**, and the round is
-about the statistics again.
+## What is real and what is modelled
 
-The operator picks a latitude; a damped Newton shoot on the launch velocity
-lands the asteroid on that parallel to four decimal places, at an impact time
-fixed to the second.
+**Real, and checkable.** The object, the date and time to the second, where it
+actually hit, its speed, energy and size, and how much warning there was. All
+from [NASA/JPL CNEOS Fireball and Bolide Data](https://cneos.jpl.nasa.gov/fireballs/)
+and the impact list on
+[Wikipedia](https://en.wikipedia.org/wiki/List_of_predicted_asteroid_impacts_on_Earth).
+Settlement is not a simulation: the market pays out on which side of the line
+the rock genuinely came down.
 
-## The noise is calibrated, not guessed
+**Modelled.** The uncertainty. Nobody publishes a covariance for a four-metre
+rock found nineteen hours before arrival, so the *shape* is taken from what
+impact corridors look like — long, thin, tilted — and the *scale*, with the
+placement of the line, is solved so the opening question is as hard as the
+operator asked for.
 
-The operator does not choose kilometres of error. They choose a **confidence**:
-"a good team should be about 65% sure on the opening data, and 90% by the last
-release."
+**Mixed: the corridor direction.** For 2008 TC3 there is a published trajectory
+solution (azimuth 101°, 21° above the horizon, 12.38 km/s ground-relative) and
+that is what is used. The other three are derived from the CNEOS velocity
+components and marked `modelled` — a derivation worth distrusting, because run
+on 2008 TC3, where the answer is known, it returns 87° against a documented
+101° and gets the vertical sign wrong. Every event says which it is.
 
-`shared/observe.js` turns that into a noise level by differentiating the
-observations and the impact latitude with respect to all nineteen parameters of
-the system (eighteen for the initial states, one for GM of the Sun), building
-the Fisher information, and reading off σ of the latitude. The chance of calling
-the side correctly is then Φ(|φ|/σ), which inverts in one bisection.
+## The construction that makes it a game
 
-The noise model has two axes:
-
-```
-σ(t) = k · range(t)² · e^(−λt)
-```
-
-The range term is photon-limited astrometry. The time term is the survey getting
-better at a rock now known to be an impactor. **Both are needed** — the record
-already contains a close pass years before impact, so range alone sharpens the
-opening data exactly as much as the closing data and the confidence ladder never
-moves.
+The nominal point a team is shown is **not** where the thing landed. It is the
+truth displaced by a draw from the very covariance they are handed — which is
+what a published solution *is*. Publish the true point as "nominal" and the
+favoured side is always the winning side, so the correct play is to buy it at
+any price and nobody has to think. One standard normal pair is drawn per round
+and pushed through each release's shrinking Cholesky factor, so successive
+solutions walk in toward the truth the way real ones do.
 
 ## The margin knows the two books are one question
 
 Settlement has exactly two outcomes, so solvency is checked against both
-literally rather than bounded over a range. The consequence is that holding
-NORTH and SOUTH together costs margin but carries no risk — which is correct,
-and is the trade the game is trying to teach.
+literally rather than bounded over a range. Holding NORTH and SOUTH together
+costs margin but carries no risk — correct, and the trade the round teaches.
 
 ## Layout
 
 ```
-shared/orbits.js    integrator, post-Newtonian gravity, the impact solver
-shared/observe.js   Fisher analysis, noise calibration, the published record
-shared/engine.js    two books, one wallet, IOC, settlement, teams
-shared/rules.js     every constant and all player-facing copy
-server/handler.js   the whole API
-src/                the app, the admin panel, the projector board
+shared/events.js     the real impactors, with provenance on every field
+shared/corridor.js   ground-track geometry, the covariance, the calibration
+shared/engine.js     two books, one wallet, IOC, settlement, teams
+shared/rules.js      every constant, the player copy, and the AI prompt
+server/handler.js    the whole API
+src/                 the floor, the corridor map, the admin panel, the board
 ```

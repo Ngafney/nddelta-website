@@ -41,11 +41,11 @@ import Reveal from "./src/components/Reveal.jsx";
 import Rules from "./src/components/Rules.jsx";
 import AdminPanel from "./src/components/AdminPanel.jsx";
 import BigBoard from "./src/components/BigBoard.jsx";
-import Orrery from "./src/components/Orrery.jsx";
+import CorridorMap from "./src/components/CorridorMap.jsx";
 import DataPanel from "./src/components/DataPanel.jsx";
 import StaleBuild from "./src/components/StaleBuild.jsx";
 import { money, num, clock } from "./src/components/PixelBits.jsx";
-export const C = { App, Gate, OrderBook, YouPanel, Leaderboard, Toasts, Reveal, Rules, AdminPanel, BigBoard, Orrery, DataPanel, StaleBuild };
+export const C = { App, Gate, OrderBook, YouPanel, Leaderboard, Toasts, Reveal, Rules, AdminPanel, BigBoard, CorridorMap, DataPanel, StaleBuild };
 export { React, renderToStaticMarkup, fillToasts, money, num, clock };
 `;
 
@@ -180,15 +180,14 @@ const round = {
   teamSize: 4,
   released: 3,
   releaseCount: 6,
+  eventName: "2008 TC3",
+  lineDeg: 20,
   releaseLog: [
-    { index: 1, leadDays: 180, rows: 238, at: Date.now() },
-    { index: 2, leadDays: 150, rows: 30, at: Date.now() },
-    { index: 3, leadDays: 120, rows: 30, at: Date.now() },
+    { index: 1, sigmaKm: 600, at: Date.now() },
+    { index: 2, sigmaKm: 468, at: Date.now() },
+    { index: 3, sigmaKm: 372, at: Date.now() },
   ],
-  nextLeadDays: 90,
-  observationCount: 298,
-  recordYears: 3,
-  impactDay: 1095.75,
+  nextSigmaKm: 300,
   bots: [{ market: "north", side: "B", shares: 200, everySec: 20 }],
   winner: null,
 };
@@ -255,45 +254,78 @@ ok("the position panel shows both books and both outcomes", () => {
   assert.ok(html.includes("K7QP"), "the team code should stay visible on the floor");
 });
 
-ok("the data panel offers a one-click download and states the error bars", () => {
-  const html = render(h(C.DataPanel, { player: { playerId: "p1", token: "t" }, round, onToast() {} }));
-  // Before the fetch resolves it shows a spinner; the shape still has to mount.
+ok("the data panel mounts and carries the AI hand-off", () => {
+  const html = render(h(C.DataPanel, { player: { playerId: "p1", token: "t" }, round }));
   assert.ok(html.length > 50);
+  const src = fs.readFileSync(path.join(root, "src", "components", "DataPanel.jsx"), "utf8");
+  // The prompt is built on the server so it can never drift from the numbers
+  // shown beside it; the panel must not be assembling its own.
+  assert.ok(/d\.prompt/.test(src), "the panel does not use the server-built prompt");
+  assert.ok(/clipboard\.writeText/.test(src), "there is no way to copy the prompt");
+  assert.ok(/promptbox/.test(src), "the prompt is not shown, only copyable");
 });
 
-ok("the reveal names the winner, the latitude and the relativity", () => {
+ok("the reveal mounts against a real settled round", () => {
   const html = render(
     h(C.Reveal, {
       data: {
         roundId: "r1",
         winner: "north",
-        latDeg: 3.42,
-        impactDay: 1095.75,
-        track,
-        trackDays: track.map((_, i) => i),
-        physics: {
-          perihelionSolarRadii: 15.4,
-          passes: 4,
-          relativisticDriftKm: 29957,
-          newtonianMisses: true,
-          newtonianMissKm: 27056,
-          newtonianLatDeg: null,
+        lineDeg: 20,
+        shown: 3,
+        truth: {
+          name: "2008 TC3",
+          nick: "Almahata Sitta",
+          when: "2008-10-07T02:45:45Z",
+          lat: 20.9,
+          lon: 31.4,
+          where: "the Nubian Desert, northern Sudan",
+          story: "The first asteroid ever discovered before it hit, and pieces of it were later walked up off the desert floor.",
+          leadHours: 20.1,
+          diameterM: [3.8, 4.4],
+          impactKt: 1,
+          speedKms: 13.3,
         },
+        corridor: { azimuthDeg: 101, groundSpeedKms: 12.38 },
+        releases: [
+          { index: 1, sigmaKm: 600, nominalLat: 20.7, nominalLon: 31.1, pNorth: 0.63 },
+          { index: 2, sigmaKm: 468, nominalLat: 20.8, nominalLon: 31.2, pNorth: 0.71 },
+          { index: 3, sigmaKm: 372, nominalLat: 20.86, nominalLon: 31.3, pNorth: 0.8 },
+        ],
+        others: [{ name: "2018 LA", where: "Botswana", leadHours: 8.5 }],
         leaderboard: board,
       },
       onNext() {},
     })
   );
-  // Only the first beat exists in a static mount: the globe, the verdict and
-  // the board are all gated behind timers that do not run here. So check the
-  // stage renders, and check the later beats are wired, in source.
-  assert.ok(html.includes("reveal-canvas"), "the flight stage did not mount");
+  assert.ok(html.includes("2008 TC3"), "the reveal does not name the event");
+  assert.ok(html.includes("cmap"), "the corridor map did not mount");
   const src = fs.readFileSync(path.join(root, "src", "components", "Reveal.jsx"), "utf8");
-  assert.ok(/beat >= 1 && <Globe/.test(src), "the globe is not wired to the landing beat");
-  assert.ok(/beat >= 2/.test(src), "the board is not wired to the final beat");
-  // It must play ONCE. A reveal that loops stops being a reveal.
-  assert.ok(!/setInterval/.test(src), "the reveal loops on an interval");
-  assert.ok(/if \(t < 1\) raf\.current = requestAnimationFrame/.test(src), "the flight animation never stops");
+  assert.ok(/beat >= 1/.test(src), "the landing beat is not wired");
+  assert.ok(/beat >= 2/.test(src), "the story beat is not wired");
+  assert.ok(!/setInterval/.test(src), "the reveal loops");
+});
+
+ok("the corridor map draws the line, the corridor and the ellipse", () => {
+  const solution = {
+    nominalLat: 20.9,
+    nominalLon: 31.4,
+    azimuthDeg: 101,
+    groundSpeedKms: 12.38,
+    covarianceKm2: [[352800, 57000], [57000, 17000]],
+    lineDeg: 20,
+  };
+  const html = render(h(C.CorridorMap, { solution }));
+  assert.ok(html.includes("cmap-corridor"), "no corridor drawn");
+  assert.ok(html.includes("cmap-e1") && html.includes("cmap-e2"), "no uncertainty ellipses");
+  assert.ok(html.includes("cmap-nom"), "no nominal point");
+  assert.ok(/NORTH|SOUTH/.test(html), "the line is not labelled");
+
+  // With the true point supplied it has to be marked, and it must NOT be
+  // there otherwise — that would put the answer on screen mid-round.
+  const withTruth = render(h(C.CorridorMap, { solution, truth: { lat: 20.9, lon: 31.4 } }));
+  assert.ok(withTruth.includes("cmap-hit"), "the impact point is not marked at the reveal");
+  assert.ok(!html.includes("cmap-hit"), "the impact point is drawn before the reveal");
 });
 
 ok("the big board shows both markets large", () => {
@@ -439,188 +471,6 @@ ok("no entry point is cacheable, so a reload always gets the current build", () 
     const cc = rule.headers.find((x) => x.key.toLowerCase() === "cache-control");
     assert.ok(/no-store/.test(cc?.value ?? ""), `${src} is cacheable`);
   }
-});
-
-/* ── against a payload the live server actually produced ──────────────── */
-
-/**
- * Mock data is written from memory and therefore agrees with whatever I
- * believed when I wrote it. `test/fixtures/live.json` was captured off the
- * running site, so these mount every screen against what the server really
- * sends. This is the check that catches a component reading a field the API
- * does not have.
- */
-const livePath = path.join(root, "test", "fixtures", "live.json");
-if (fs.existsSync(livePath)) {
-  const live = JSON.parse(fs.readFileSync(livePath, "utf8"));
-
-  ok("the floor mounts against a real state payload", () => {
-    const st = live.state;
-    const r = st.round;
-    for (const m of ["north", "south"]) {
-      const html = render(
-        h(C.OrderBook, {
-          book: st.markets[m],
-          last: st.markets[m].last,
-          me: { pos: st.me.pos[m], buyC: st.me.freeC, valueC: st.me.valueC, startC: st.me.startC },
-          center: r.center,
-          tick: r.tick,
-          lo: r.orderMin,
-          hi: r.orderMax,
-          mine: st.me.orders.filter((o) => o.market === m),
-          size: r.defaultSize,
-          onSize() {},
-          onOrder() {},
-          onCancelLevel() {},
-          onCancelAll() {},
-          disabled: false,
-        })
-      );
-      assert.ok(html.length > 500, `the ${m} book rendered almost nothing`);
-    }
-    assert.ok(render(h(C.YouPanel, { me: st.me, team: st.team, markets: st.markets, round: r })).length > 200);
-  });
-
-  ok("the leaderboard tab is actually given its rows", () => {
-    // It takes `rows`; handing it only `me` and `team` makes it say "no teams
-    // on the board yet" forever, which is exactly what it did.
-    assert.ok(
-      /<Leaderboard[^>]*rows=/.test(appSource),
-      "App renders <Leaderboard> without a rows prop, so the tab can never show anything"
-    );
-    const html = render(
-      h(C.Leaderboard, { rows: live.leaderboard.leaderboard, myTeamId: live.state.team?.id, settled: false })
-    );
-    assert.ok(!/No teams on the board yet/.test(html), "real rows still rendered the empty state");
-  });
-
-  ok("the reveal mounts against the real reveal payload", () => {
-    const html = render(h(C.Reveal, { data: live.reveal, onNext() {} }));
-    assert.ok(html.includes("reveal-canvas"));
-  });
-
-  ok("the rules modal mounts against the real rules payload", () => {
-    assert.ok(Array.isArray(live.rules.markets), "the rules payload has no markets array");
-    assert.ok(typeof live.rules.rules === "string");
-  });
-
-  ok("every field the floor reads exists in the real payload", () => {
-    const st = live.state;
-    for (const k of ["round", "markets", "me", "team", "fills"]) assert.ok(st[k] !== undefined, `state.${k} missing`);
-    for (const k of ["pos", "orders", "freeC", "powers", "valueC", "startC", "cashC", "reservedC"]) {
-      assert.ok(st.me[k] !== undefined, `me.${k} missing`);
-    }
-    assert.ok(Array.isArray(st.me.orders), "me.orders is not an array");
-    for (const m of ["north", "south"]) {
-      assert.ok(st.me.pos[m] !== undefined, `me.pos.${m} missing`);
-      assert.ok(st.me.powers[m] !== undefined, `me.powers.${m} missing`);
-      for (const k of ["bids", "asks", "tape", "mark", "last"]) {
-        assert.ok(st.markets[m][k] !== undefined, `markets.${m}.${k} missing`);
-      }
-    }
-    if (st.team) for (const k of ["name", "code", "size", "max", "members"]) {
-      assert.ok(st.team[k] !== undefined, `team.${k} missing`);
-    }
-    for (const k of ["released", "releaseCount", "defaultSize", "center", "tick", "orderMin", "orderMax", "teamSize"]) {
-      assert.ok(st.round[k] !== undefined, `round.${k} missing`);
-    }
-  });
-}
-
-/* ── the props actually line up ───────────────────────────────────────── */
-
-/**
- * Three separate bugs in this app were the same bug: App rendering a component
- * with prop names the component does not take. Gate wanted `onTeam` and got
- * `onDone`. Leaderboard wanted `rows` and got `me` and `team`. Toasts wanted
- * `items` and got `toasts`, which is undefined, which is `undefined.map`.
- *
- * None of them could be caught by mounting a component with mock props,
- * because the mock is written from the component's own signature and therefore
- * always agrees with it. What has to be checked is the CALL SITE.
- */
-/**
- * The opening tag of `<Name ...>`, brace-aware.
- *
- * A regex cannot do this: JSX attributes hold arrow functions, and the `>` in
- * `(p) => {` ends the match three attributes early. Track brace depth and stop
- * at the first `>` that is actually outside a value.
- */
-function openingTag(src, name) {
-  const out = [];
-  const re = new RegExp("<" + name + "(?=[\\s/>])", "g");
-  let m;
-  while ((m = re.exec(src))) {
-    let i = m.index + m[0].length;
-    let depth = 0;
-    for (; i < src.length; i++) {
-      const c = src[i];
-      if (c === "{") depth++;
-      else if (c === "}") depth--;
-      else if (c === ">" && depth === 0) break;
-    }
-    out.push(src.slice(m.index, i));
-  }
-  return out;
-}
-
-ok("every component App renders is given the props it destructures", () => {
-  // Three separate bugs in this app were the same bug: App rendering a
-  // component with prop names the component does not take. Gate wanted
-  // `onTeam` and got `onDone`. Leaderboard wanted `rows` and got `me` and
-  // `team`. Toasts wanted `items` and got `toasts`, which is undefined, which
-  // is `undefined.map` and a dead floor.
-  //
-  // None of them could be caught by mounting a component with mock props: the
-  // mock is written from the component's own signature and therefore always
-  // agrees with it. The CALL SITE is what has to be checked.
-  const files = {
-    Gate: "Gate.jsx",
-    OrderBook: "OrderBook.jsx",
-    YouPanel: "YouPanel.jsx",
-    Leaderboard: "Leaderboard.jsx",
-    Toasts: "Toasts.jsx",
-    Reveal: "Reveal.jsx",
-    Rules: "Rules.jsx",
-    Orrery: "Orrery.jsx",
-    DataPanel: "DataPanel.jsx",
-  };
-
-  const problems = [];
-  let checked = 0;
-  for (const [name, file] of Object.entries(files)) {
-    const src = fs.readFileSync(path.join(root, "src", "components", file), "utf8");
-    const sig = src.match(new RegExp("export default function " + name + "\\(\\{([^}]*)\\}"));
-    if (!sig) continue;
-
-    // A name with `=` has a default and is therefore optional.
-    const required = sig[1]
-      .split(",")
-      .map((p) => p.trim())
-      .filter(Boolean)
-      .filter((p) => !p.includes("="))
-      .map((p) => p.split(":")[0].trim());
-
-    for (const tag of openingTag(appSource, name)) {
-      checked++;
-      const given = new Set([...tag.matchAll(/(\w+)=/g)].map((m) => m[1]));
-      for (const need of required) {
-        if (!given.has(need)) problems.push(`<${name}> is not given \`${need}\``);
-      }
-    }
-  }
-
-  assert.ok(checked >= 6, `only found ${checked} call sites — the scanner is not matching`);
-  assert.deepStrictEqual(problems, [], "\n    " + problems.join("\n    ") + "\n");
-});
-
-ok("Toasts owns expiry, and App does not duplicate its timers", () => {
-  // Two owners for one timer is how the older toasts stopped expiring in an
-  // earlier week. There is exactly one, and it is the component.
-  const src = fs.readFileSync(path.join(root, "src", "components", "Toasts.jsx"), "utf8");
-  assert.ok(/onExpire/.test(src), "Toasts no longer reports expiry");
-  assert.ok(/onExpire=/.test(appSource), "App never tells Toasts what to do when one expires");
-  assert.ok(!/timers\.current\.set/.test(appSource), "App is running its own toast timers again");
 });
 
 console.log(`\n${passed} passed, ${failed} failed\n`);

@@ -1385,3 +1385,71 @@ select { appearance: none; cursor: pointer; }
   padding: 7px 9px;
   margin: 8px 0;
 }
+
+/* ── the corridor map ─────────────────────────────────────────────────── */
+
+.cmapwrap { margin: 10px 0; }
+.cmap { width: 100%; height: auto; display: block; border: 2px solid var(--line-dim); }
+.cmap-bg { fill: #06101d; }
+.cmap-corridor { stroke: #ffb060; stroke-width: 1.6; stroke-dasharray: 7 4; }
+.cmap-e2 { fill: rgba(90, 170, 255, 0.10); stroke: rgba(90, 170, 255, 0.45); stroke-width: 1; }
+.cmap-e1 { fill: rgba(90, 170, 255, 0.22); stroke: rgba(120, 190, 255, 0.9); stroke-width: 1.4; }
+.cmap-line { stroke: var(--gold); stroke-width: 2; }
+.cmap-nom { fill: #ffe98a; stroke: #7a5f00; stroke-width: 1; }
+.cmap-prev { fill: rgba(255, 233, 138, 0.45); }
+.cmap-hit { fill: #ff4646; }
+.cmap-hit-ring { fill: none; stroke: #ff4646; stroke-width: 2; opacity: 0.65; }
+.cmap-lbl { fill: #9fc6ff; font-size: 10px; font-family: inherit; }
+.cmap-lbl.gold { fill: var(--gold); }
+.cmap-lbl.red { fill: #ff8d8d; }
+.cmap-lbl.dim { fill: var(--dim); font-size: 9px; }
+
+/* ── the covariance, and the AI hand-off ──────────────────────────────── */
+
+.covbox { margin: 10px 0; }
+.covmat { border-collapse: collapse; margin: 6px 0; font-size: 9px; }
+.covmat td {
+  border: 1px solid var(--line-dim);
+  padding: 6px 12px;
+  text-align: right;
+  background: #0c1526;
+  min-width: 96px;
+}
+.covmat td.offdiag { color: var(--gold); background: #171204; }
+.covbox p { font-size: 8px; line-height: 1.8; }
+.covbox code { color: var(--gold); }
+
+.askai {
+  border: 2px solid var(--gold-deep);
+  background: #100c02;
+  padding: 10px;
+  margin: 12px 0;
+}
+.askai p { font-size: 8px; line-height: 1.8; }
+.askai-actions { margin: 8px 0; }
+.promptbox {
+  width: 100%;
+  background: #05090f;
+  color: #cfe3ff;
+  border: 1px solid var(--line-dim);
+  font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  font-size: 10px;
+  line-height: 1.55;
+  padding: 8px;
+  resize: vertical;
+  white-space: pre;
+  overflow-wrap: normal;
+  overflow-x: auto;
+}
+.tag { font-style: normal; color: var(--gold); font-size: 7px; margin-left: 6px; }
+
+/* ── reveal ───────────────────────────────────────────────────────────── */
+
+.reveal-head { text-align: center; }
+.reveal-head h2 { margin: 6px 0 2px; font-size: 15px; color: var(--gold); }
+.reveal-map { width: min(100%, 720px); }
+.others { width: min(100%, 720px); border: 2px solid var(--line-dim); background: #080f1c; padding: 10px; }
+.otherlist { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 6px; }
+.otherlist span { font-size: 8px; color: var(--dim); }
+.otherlist b { color: var(--fg); }
+.qline { font-size: 8px; color: var(--gold); }

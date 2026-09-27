@@ -1,129 +1,127 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { PxButton, money } from "./PixelBits.jsx";
+import CorridorMap from "./CorridorMap.jsx";
 
 /**
- * The answer, in three beats.
+ * Where it actually landed.
  *
- * 1. The true path is drawn, fast, from the start of the record to impact —
- *    including the swing past the Sun everyone could only infer.
- * 2. The globe turns up and the strike lands on it, north or south of a very
- *    obvious equator.
- * 3. The board.
+ * The payoff here is not a simulation finishing — it is that the thing was
+ * real. A rock was spotted, a warning went out, people argued about a corridor,
+ * and then it arrived exactly where it was always going to. So the reveal shows
+ * the ellipse the room was trading against, drops the true point onto it, and
+ * then gets out of the way and tells the story.
  *
- * It plays once and then sits still. Nothing here loops: a reveal that keeps
- * re-animating stops being a reveal and becomes wallpaper.
+ * Three beats, once, and then it sits still.
  */
-const FLIGHT_MS = 4200;
-const LAND_MS = 1500;
+const MAP_MS = 2600;
+const VERDICT_MS = 1400;
 
 export default function Reveal({ data, onNext }) {
-  const [beat, setBeat] = useState(0); // 0 flight, 1 landing, 2 board
-  const canvasRef = useRef(null);
-  const raf = useRef(0);
-  const started = useRef(0);
+  const [beat, setBeat] = useState(0);
 
   useEffect(() => {
-    const a = setTimeout(() => setBeat(1), FLIGHT_MS);
-    const b = setTimeout(() => setBeat(2), FLIGHT_MS + LAND_MS);
+    const a = setTimeout(() => setBeat(1), MAP_MS);
+    const b = setTimeout(() => setBeat(2), MAP_MS + VERDICT_MS);
     return () => {
       clearTimeout(a);
       clearTimeout(b);
     };
   }, []);
 
-  useEffect(() => {
-    const cv = canvasRef.current;
-    if (!cv || !data?.track?.length) return;
-    const dpr = Math.min(2, window.devicePixelRatio || 1);
-    const w = cv.clientWidth;
-    const h = cv.clientHeight;
-    cv.width = w * dpr;
-    cv.height = h * dpr;
-    const g = cv.getContext("2d");
-    g.setTransform(dpr, 0, 0, dpr, 0, 0);
-
-    const track = data.track;
-    let R = 0.2;
-    for (const t of track) {
-      R = Math.max(R, Math.hypot(t[3], t[4]), Math.hypot(t[6], t[7]));
-    }
-    const scale = (Math.min(w, h) / 2 - 24) / R;
-    const X = (x) => w / 2 + x * scale;
-    const Y = (y) => h / 2 - y * scale;
-
-    started.current = performance.now();
-    const draw = (now) => {
-      const t = Math.min(1, (now - started.current) / FLIGHT_MS);
-      const upto = Math.max(1, Math.floor(t * (track.length - 1)));
-
-      g.fillStyle = "#04060d";
-      g.fillRect(0, 0, w, h);
-      g.fillStyle = "rgba(255,255,255,0.3)";
-      for (let s = 0; s < 90; s++) {
-        g.fillRect(((s * 2654435761) % 1000) / 1000 * w, ((s * 40503) % 1000) / 1000 * h, 1, 1);
-      }
-
-      // Earth's orbit, then the asteroid's real path.
-      line(g, track, upto, 3, 4, X, Y, "rgba(90,170,255,0.5)");
-      line(g, track, upto, 6, 7, X, Y, "rgba(255,150,70,0.95)");
-
-      const sx = X(track[upto][0]);
-      const sy = Y(track[upto][1]);
-      const glow = g.createRadialGradient(sx, sy, 0, sx, sy, 26);
-      glow.addColorStop(0, "rgba(255,232,130,0.95)");
-      glow.addColorStop(1, "rgba(255,180,40,0)");
-      g.fillStyle = glow;
-      g.beginPath();
-      g.arc(sx, sy, 26, 0, Math.PI * 2);
-      g.fill();
-
-      dot(g, X(track[upto][3]), Y(track[upto][4]), 4, "#5aa9ff");
-      dot(g, X(track[upto][6]), Y(track[upto][7]), 3.5, "#ffb060");
-
-      if (t < 1) raf.current = requestAnimationFrame(draw);
-    };
-    raf.current = requestAnimationFrame(draw);
-    return () => cancelAnimationFrame(raf.current);
-  }, [data]);
-
+  const t = data.truth;
   const north = data.winner === "north";
-  const lat = data.latDeg;
+  // The last solution the room actually saw.
+  const shown = Math.max(1, data.shown || data.releases.length);
+  const last = data.releases[shown - 1] ?? data.releases[data.releases.length - 1];
+
+  const solution = {
+    nominalLat: last.nominalLat,
+    nominalLon: last.nominalLon,
+    azimuthDeg: data.corridor.azimuthDeg,
+    covarianceKm2: covFrom(last.sigmaKm),
+    lineDeg: data.lineDeg,
+  };
 
   return (
     <div className="reveal">
-      <div className="reveal-stage">
-        <canvas ref={canvasRef} className="reveal-canvas" />
-        {beat >= 1 && <Globe latDeg={lat} />}
+      <div className="reveal-head">
+        <span className="verdict-kicker">THIS ACTUALLY HAPPENED</span>
+        <h2>
+          {t.name}
+          {t.nick ? ` · ${t.nick}` : ""}
+        </h2>
+        <p className="dim">
+          {new Date(t.when).toUTCString().replace("GMT", "UTC")} · {t.where}
+        </p>
+      </div>
+
+      <div className="reveal-map">
+        <CorridorMap
+          solution={solution}
+          truth={beat >= 1 ? { lat: t.lat, lon: t.lon } : null}
+          releases={beat >= 1 ? data.releases.slice(0, shown) : null}
+        />
       </div>
 
       {beat >= 1 && (
         <div className={`reveal-verdict ${data.winner}`}>
-          <span className="verdict-kicker">IT LANDED</span>
           <h1>{north ? "NORTH" : "SOUTH"}</h1>
           <p>
-            {Math.abs(lat).toFixed(2)}° {north ? "north" : "south"} of the equator ·{" "}
-            <b>{north ? "NORTH" : "SOUTH"} pays $100</b>, {north ? "SOUTH" : "NORTH"} pays nothing
+            It came down at <b>{fmt(t.lat)}</b>, {fmtLon(t.lon)} — {Math.abs(t.lat - data.lineDeg).toFixed(2)}°{" "}
+            {north ? "north" : "south"} of the {fmt(data.lineDeg)} line.{" "}
+            <b>{north ? "NORTH" : "SOUTH"} pays $100</b>.
           </p>
         </div>
       )}
 
       {beat >= 2 && (
         <>
-          <Physics p={data.physics} />
+          <div className="physics-note">
+            <div className="panel-title">WHAT IT WAS</div>
+            <ul>
+              <li>
+                Discovered <b>{t.leadHours.toFixed(1)} hours</b> before it arrived, travelling{" "}
+                <b>{t.speedKms} km/s</b>.
+              </li>
+              <li>
+                About <b>{t.diameterM[0]}–{t.diameterM[1]} m</b> across, and it let go roughly{" "}
+                <b>{t.impactKt} kilotons</b> of energy.
+              </li>
+              <li>{t.story}</li>
+            </ul>
+          </div>
+
+          {data.others?.length > 0 && (
+            <div className="others">
+              <div className="panel-title">AND THE OTHERS</div>
+              <p className="dim">
+                Eleven asteroids have been caught on the way in. The rest of them:
+              </p>
+              <div className="otherlist">
+                {data.others.map((o) => (
+                  <span key={o.name}>
+                    <b>{o.name}</b> {o.where} · {o.leadHours}h
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div className="reveal-board">
             <div className="panel-title">FINAL STANDINGS</div>
-            {data.leaderboard.slice(0, 10).map((t) => (
-              <div key={t.id} className={`lbrow p${t.rank}`}>
-                <span className="rk">{t.rank}</span>
-                <span className="nm">{t.name}</span>
-                <span className="vl">{money(t.valueC)}</span>
-                <span className={`dl ${t.valueC - t.startC >= 0 ? "up" : "down"}`}>
-                  {t.valueC - t.startC >= 0 ? "+" : ""}
-                  {money(t.valueC - t.startC)}
+            {data.leaderboard.slice(0, 10).map((x) => (
+              <div key={x.id} className={`lbrow p${x.rank}`}>
+                <span className="rk">{x.rank}</span>
+                <span className="nm">{x.name}</span>
+                <span className="vl">{money(x.valueC)}</span>
+                <span className={`dl ${x.valueC - x.startC >= 0 ? "up" : "down"}`}>
+                  {x.valueC - x.startC >= 0 ? "+" : ""}
+                  {money(x.valueC - x.startC)}
                 </span>
               </div>
             ))}
           </div>
+
           <PxButton variant="green" onClick={onNext}>
             NEXT
           </PxButton>
@@ -133,78 +131,24 @@ export default function Reveal({ data, onNext }) {
   );
 }
 
+const fmt = (v) => `${Math.abs(v).toFixed(2)}°${v >= 0 ? "N" : "S"}`;
+const fmtLon = (v) => `${Math.abs(v).toFixed(2)}°${v >= 0 ? "E" : "W"}`;
+
 /**
- * What the room could not have known, and the one thing worth saying out loud
- * afterwards: a Newtonian model of this system gets the answer wrong.
+ * Rebuild a release's covariance from its sigma.
+ *
+ * The reveal only needs the ellipse to draw at the right size and tilt, and
+ * the ratio and tilt are fixed for a round, so carrying the whole matrix
+ * through the payload would be three numbers of duplication.
  */
-function Physics({ p }) {
-  if (!p) return null;
-  return (
-    <div className="physics-note">
-      <div className="panel-title">WHAT IT ACTUALLY DID</div>
-      <ul>
-        <li>
-          Closest approach to the Sun: <b>{p.perihelionAu?.toFixed(2)} AU</b>, crossed{" "}
-          <b>{p.passes}</b> {p.passes === 1 ? "time" : "times"}.
-        </li>
-        <li>
-          The orbit was <b>Newtonian</b> — plain inverse-square gravity, which is exactly the model
-          the record could be fitted with.
-        </li>
-        {p.relativisticDriftKm != null && (
-          <li>
-            For the record: adding general relativity would have moved the impact about{" "}
-            <b>{Math.round(p.relativisticDriftKm).toLocaleString()} km</b>. Worth knowing it is not zero;
-            not worth fitting here.
-          </li>
-        )}
-      </ul>
-    </div>
-  );
-}
-
-/** A wireframe globe with the strike marked, so the answer is a place. */
-function Globe({ latDeg }) {
-  const r = 78;
-  const y = -Math.sin((latDeg * Math.PI) / 180) * r;
-  const x = Math.cos((latDeg * Math.PI) / 180) * r * 0.32;
-  return (
-    <svg className="globe" viewBox="-100 -100 200 200" role="img" aria-label="impact location">
-      <circle cx="0" cy="0" r={r} className="globe-body" />
-      {[-60, -30, 30, 60].map((L) => {
-        const yy = -Math.sin((L * Math.PI) / 180) * r;
-        const rx = Math.cos((L * Math.PI) / 180) * r;
-        return <ellipse key={L} cx="0" cy={yy} rx={rx} ry={rx * 0.16} className="globe-par" />;
-      })}
-      <ellipse cx="0" cy="0" rx={r} ry={r * 0.16} className="globe-eq" />
-      <text x="0" y={-r - 10} className="globe-lbl" textAnchor="middle">
-        N
-      </text>
-      <text x="0" y={r + 18} className="globe-lbl" textAnchor="middle">
-        S
-      </text>
-      <circle cx={x} cy={y} r="6" className="globe-hit" />
-      <circle cx={x} cy={y} r="13" className="globe-ring" />
-    </svg>
-  );
-}
-
-function line(g, track, upto, ix, iy, X, Y, color) {
-  g.strokeStyle = color;
-  g.lineWidth = 1.6;
-  g.beginPath();
-  for (let k = 0; k <= upto; k++) {
-    const x = X(track[k][ix]);
-    const y = Y(track[k][iy]);
-    if (k === 0) g.moveTo(x, y);
-    else g.lineTo(x, y);
-  }
-  g.stroke();
-}
-
-function dot(g, x, y, r, color) {
-  g.fillStyle = color;
-  g.beginPath();
-  g.arc(x, y, r, 0, Math.PI * 2);
-  g.fill();
+function covFrom(sigmaKm, ratio = 6, tiltDeg = 12) {
+  const a = sigmaKm;
+  const b = sigmaKm / ratio;
+  const t = (tiltDeg * Math.PI) / 180;
+  const c = Math.cos(t);
+  const s = Math.sin(t);
+  return [
+    [a * a * c * c + b * b * s * s, (a * a - b * b) * c * s],
+    [(a * a - b * b) * c * s, a * a * s * s + b * b * c * c],
+  ];
 }
