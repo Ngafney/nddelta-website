@@ -130,10 +130,12 @@ await ok("the published solution is NOT the true impact point", async () => {
 
 await ok("the question is hard at first and easier by the end", async () => {
   const rel = truth.releases;
-  // Near the target, not on it: the line is rounded to a latitude a person can
-  // say out loud, which moves the achieved confidence by a point or two.
+  // Near the target, not on it: the line has to be a latitude a person can say
+  // out loud, so placeLine picks the best available 0.1-degree line rather than
+  // an exact one. Measured across events and error draws that costs at most
+  // three points, so six is a real bound and not a shrug.
   assert.ok(
-    Math.abs(rel[0].confidence - CONFIDENCE.defaultStart) < 0.11,
+    Math.abs(rel[0].confidence - CONFIDENCE.defaultStart) < 0.06,
     `the opening release sits at ${(rel[0].confidence * 100).toFixed(1)}%`
   );
   assert.ok(

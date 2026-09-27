@@ -1008,15 +1008,44 @@ async function buildRound(body, now) {
     return { index: i + 1, sigmaKm, covarianceKm2: C, nominalLat: nominal.lat, nominalLon: nominal.lon };
   });
 
-  // Place the line so the FIRST release is as hard as the operator asked. The
-  // line is a real latitude a person can say out loud, so it gets rounded.
+  // Place the line against BOTH ends of the round.
+  //
+  // Scoring only the first release is not enough. The published solution walks
+  // in toward the truth as it tightens, so if the rock happens to land almost
+  // exactly on the line, the LAST and sharpest solution is the least certain
+  // of all — a tighter ellipse straddling the line is a coin toss. That is
+  // honest statistics and it makes a miserable round: the room works harder
+  // and ends up knowing less.
+  //
+  // So the line has to be hard at the start AND settled by the end. Search the
+  // lines a person could actually say, score the opening confidence against
+  // the operator's target, and refuse any line the final solution cannot call.
   const first = releases[0];
-  const asNominal = { lat: first.nominalLat, lon: first.nominalLon };
+  const last = releases[releases.length - 1];
   const explicit = numOr(body.lineDeg, null);
-  const placed = explicit == null
-    ? placeLine(asNominal, corridor, first.sigmaKm, startConf, { draws: 3000 })
-    : { lineDeg: explicit, confidence: null };
-  const lineDeg = placed.lineDeg;
+  let lineDeg;
+  if (explicit != null) {
+    lineDeg = explicit;
+  } else {
+    const openView = { lat: first.nominalLat, lon: first.nominalLon };
+    const endView = { lat: last.nominalLat, lon: last.nominalLon };
+    const C1 = first.covarianceKm2;
+    const Cn = last.covarianceKm2;
+    const base = Math.round(first.nominalLat * 10);
+    let best = null;
+    for (let step = -80; step <= 80; step++) {
+      const line = (base + step) / 10;
+      const p1 = northProbability(openView, corridor, C1, line, 2500, rand);
+      const open = Math.max(p1, 1 - p1);
+      const pn = northProbability(endView, corridor, Cn, line, 2500, rand);
+      const end = Math.max(pn, 1 - pn);
+      // Hard now, and decided later. A line the last solution still cannot call
+      // is worse than one that is slightly off the requested difficulty.
+      const score = Math.abs(open - startConf) + (end < 0.8 ? 4 * (0.8 - end) : 0);
+      if (!best || score < best.score) best = { line, score, open, end };
+    }
+    lineDeg = best.line;
+  }
 
   // What a good team should be able to see at each release, priced the same
   // way the room is being asked to price it.

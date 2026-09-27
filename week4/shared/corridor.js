@@ -284,12 +284,17 @@ export function placeLine(event, corridor, sigmaKm, target, opts = {}) {
   const C = covariance(sigmaKm, ratio, tiltDeg);
   const stream = fixedStream(seed, draws * 2 + 8);
   // Search outward from the nominal latitude for the line giving the target.
-  let best = { line: event.lat, conf: 1, d: Infinity };
-  for (let off = -8; off <= 8; off += 0.05) {
-    const line = event.lat + off;
+  // Search the lines that can ACTUALLY be used, not a finer grid that is then
+  // rounded. Rounding after the search reports the confidence of a line the
+  // round never uses, and where the latitude gradient is steep those are two
+  // different numbers.
+  let best = { line: Math.round(event.lat * 10) / 10, conf: 1, d: Infinity };
+  const base = Math.round(event.lat * 10);
+  for (let step = -80; step <= 80; step++) {
+    const line = (base + step) / 10;
     const { confidence } = confidenceOf(event, corridor, C, line, draws, stream());
     const d = Math.abs(confidence - target);
     if (d < best.d) best = { line, conf: confidence, d };
   }
-  return { lineDeg: Math.round(best.line * 10) / 10, confidence: best.conf };
+  return { lineDeg: best.line, confidence: best.conf };
 }
