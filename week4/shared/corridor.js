@@ -218,6 +218,53 @@ function twoNormals(rand) {
  * Confidence is "probability of calling the side correctly", so it is whichever
  * of p and 1−p is bigger.
  */
+/**
+ * The answer a team gets if they reach for the normal approximation instead of
+ * simulating - which is the whole reason this week exists, so it is worth being
+ * able to MEASURE rather than assert.
+ *
+ * Linearise latitude about the nominal point: a Gaussian in (along, cross) maps
+ * to a Gaussian in latitude with variance g^T C g, where g is the gradient, and
+ * P(north) = 1 - PHI((line - mu)/sigma). This is the honest best version of the
+ * shortcut - no cruder than a careful student would make it - and it is still
+ * wrong, because latitude is curved in `along` and a gradient cannot see
+ * curvature.
+ */
+export function gaussianNorthProbability(event, corridor, C, lineDeg) {
+  const h = 1; // km - a one-kilometre central difference
+  const gA = (latAt(event, corridor, h) - latAt(event, corridor, -h)) / (2 * h);
+  const gX = (latAt(event, corridor, 0, h) - latAt(event, corridor, 0, -h)) / (2 * h);
+  const varLat = gA * (C[0][0] * gA + C[0][1] * gX) + gX * (C[1][0] * gA + C[1][1] * gX);
+  const sd = Math.sqrt(Math.max(varLat, 1e-12));
+  return 1 - normalCdf((lineDeg - event.lat) / sd);
+}
+
+/** Abramowitz & Stegun 26.2.17 - five figures, which is four more than we need. */
+function normalCdf(z) {
+  const t = 1 / (1 + 0.2316419 * Math.abs(z));
+  const d = 0.3989423 * Math.exp((-z * z) / 2);
+  const p = d * t * (0.3193815 + t * (-0.3565638 + t * (1.781478 + t * (-1.821256 + t * 1.330274))));
+  return z > 0 ? 1 - p : p;
+}
+
+/**
+ * How many points of price the shortcut costs, at this geometry and this line.
+ *
+ * The week's lesson as a number - and it is not automatically a big number. It
+ * grows with the ASYMMETRY of the latitude swing along the corridor, not with
+ * the size of the swing: a corridor that climbs 5 degrees one way and falls 0.9
+ * the other prices nothing like a Gaussian, while one running 10 up and 8 down
+ * prices almost exactly like one. Measured over the four real events, a 600 km
+ * corridor costs the shortcut 1-3 points and a 1500 km corridor costs it 3-9.
+ * That measurement is why the default corridor is as long as it is, and why
+ * round construction refuses to ship a line where this number is small.
+ */
+export function nonlinearityPts(event, corridor, C, lineDeg, draws, rand) {
+  const mc = northProbability(event, corridor, C, lineDeg, draws, rand);
+  const gauss = gaussianNorthProbability(event, corridor, C, lineDeg);
+  return { mc, gauss, pts: (mc - gauss) * 100 };
+}
+
 export function confidenceOf(event, corridor, C, lineDeg, draws, rand) {
   const p = northProbability(event, corridor, C, lineDeg, draws, rand);
   return { p, confidence: Math.max(p, 1 - p) };

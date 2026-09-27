@@ -64,6 +64,7 @@ function Console({ token, onOut }) {
   const [startCash, setStartCash] = useState("10000");
   const [defaultSize, setDefaultSize] = useState("10");
   const [keepPlayers, setKeepPlayers] = useState(false);
+  const [maker, setMaker] = useState({ on: true, halfSpread: 8, shares: 15, refreshSec: 15 });
   const [bots, setBots] = useState(() =>
     Object.fromEntries(BOT_SLOTS.map((s) => [s.key, { on: false, shares: "200", everySec: "20" }]))
   );
@@ -73,6 +74,14 @@ function Console({ token, onOut }) {
       const r = await api.get("admin/inspect", { token });
       setInfo(r);
       setErr(null);
+      if (r.maker) {
+        setMaker({
+          on: !!r.maker.on,
+          halfSpread: r.maker.halfSpread ?? 8,
+          shares: r.maker.shares ?? 15,
+          refreshSec: r.maker.refreshSec ?? 15,
+        });
+      }
       if (r.bots?.length) {
         setBots((cur) => {
           const next = { ...cur };
@@ -159,7 +168,7 @@ function Console({ token, onOut }) {
               <b>{Number(startConf) || 65}%</b>
             </div>
           </Field>
-          <Field label="OPENING σ ALONG THE CORRIDOR, km" hint="blank = 600, the default corridor width">
+          <Field label="OPENING σ ALONG THE CORRIDOR, km" hint="blank = 2400 · shorter is an easier question and a weaker lesson">
             <input type="number" min={40} max={4000} step={50} value={sigmaKm} onChange={(e) => setSigmaKm(e.target.value)} />
           </Field>
           <Field label="STARTING CASH ($)">
@@ -259,7 +268,9 @@ function Console({ token, onOut }) {
                   <span className="relconf">
                     {(r.confidence * 100).toFixed(0)}%<em> conf</em>
                   </span>
-                  <span className="dim" />
+                  <span className={`dim gap ${Math.abs(r.gaussGapPts ?? 0) >= 2 ? "bites" : ""}`}>
+                    {r.gaussGapPts == null ? "" : `Φ off ${Math.abs(r.gaussGapPts).toFixed(1)}`}
+                  </span>
                   <span className="relstate">{out ? "RELEASED" : "held"}</span>
                 </div>
               );
@@ -286,6 +297,50 @@ function Console({ token, onOut }) {
           <div className="panel-title">NOISE DESK</div>
           <p className="hint">
             Uninformed market orders on a fixed schedule. The room is told these exist and what they are doing.
+          </p>
+
+          <div className={`botrow maker ${maker.on ? "on" : ""}`}>
+            <label className="botname">
+              <input
+                type="checkbox"
+                checked={maker.on}
+                onChange={(e) => setMaker((m) => ({ ...m, on: e.target.checked }))}
+              />
+              STANDING QUOTE
+            </label>
+            <span>
+              50 ±
+              <input
+                type="number"
+                min={1}
+                max={45}
+                value={maker.halfSpread}
+                onChange={(e) => setMaker((m) => ({ ...m, halfSpread: e.target.value }))}
+              />
+              <i>ticks</i>
+            </span>
+            <span>
+              <input
+                type="number"
+                min={1}
+                max={500}
+                value={maker.shares}
+                onChange={(e) => setMaker((m) => ({ ...m, shares: e.target.value }))}
+              />
+              <i>shares a side</i>
+            </span>
+            <span className="dim botstat">
+              {maker.on
+                ? `quotes ${Math.max(1, 50 - Number(maker.halfSpread) || 42)} / ${
+                    Math.min(99, 50 + Number(maker.halfSpread) || 58)
+                  } in both books`
+                : "books open empty"}
+            </span>
+          </div>
+          <p className="hint">
+            A two-sided quote parked at 50 in both books, so the room always has something to trade
+            against. It never reads the data, which is what makes it beatable — and the spread is
+            what stops buying both sides being free money.
           </p>
           <div className="bots">
             {BOT_SLOTS.map((slot) => {
@@ -333,6 +388,7 @@ function Console({ token, onOut }) {
               act("bots", () =>
                 api.post("admin/bots", {
                   token,
+                  maker,
                   bots: BOT_SLOTS.map((s) => ({
                     key: s.key,
                     on: bots[s.key].on,
@@ -384,6 +440,24 @@ function Console({ token, onOut }) {
           <div className="hint" style={{ marginTop: 8 }}>
             {truth.event?.where} · {truth.event?.story}
           </div>
+          {truth.releases?.[0]?.gaussGapPts != null && (
+            <div className={`lesson ${Math.abs(truth.releases[0].gaussGapPts) >= 2 ? "on" : "off"}`}>
+              {Math.abs(truth.releases[0].gaussGapPts) >= 2 ? (
+                <>
+                  <b>The lesson is live.</b> A team that reaches for the normal approximation
+                  instead of simulating prices NORTH about{" "}
+                  <b>{Math.abs(truth.releases[0].gaussGapPts).toFixed(1)} points</b> wrong on the
+                  opening data. That is the edge the room is playing for.
+                </>
+              ) : (
+                <>
+                  <b>Weak geometry this round.</b> The normal approximation is only{" "}
+                  {Math.abs(truth.releases[0].gaussGapPts).toFixed(1)} points wrong here, so
+                  simulating barely pays. Rebuild, or widen σ, if the Monte Carlo is the point.
+                </>
+              )}
+            </div>
+          )}
         </section>
       )}
 

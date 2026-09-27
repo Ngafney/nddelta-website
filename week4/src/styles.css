@@ -1455,3 +1455,35 @@ select { appearance: none; cursor: pointer; }
 .qline { font-size: 8px; color: var(--gold); }
 .pickrow.wrap { flex-wrap: wrap; }
 .pickrow.wrap button { flex: 0 1 auto; padding: 7px 8px; }
+
+/* ---- the operator's cue that this round teaches the week's lesson ------- */
+/* The whole point of Monte Carlo week is that simulating beats PHI(z). Whether
+   it does depends on the geometry the round drew, so the control room says so
+   in words before the bell rather than leaving it to be discovered. */
+.relrow .gap { font-size: 11px; opacity: 0.45; }
+.relrow .gap.bites { opacity: 1; color: var(--gold, #e9b949); }
+
+.lesson {
+  margin-top: 10px;
+  padding: 9px 11px;
+  border-left: 3px solid var(--gold, #e9b949);
+  background: rgba(233, 185, 73, 0.08);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.lesson.off {
+  border-left-color: var(--dim, #6b7280);
+  background: rgba(107, 114, 128, 0.1);
+}
+.lesson b { color: var(--gold, #e9b949); }
+.lesson.off b { color: var(--fg, #e5e7eb); }
+
+/* Profit if each side pays. Green and red because a trader reads colour
+   before digits, and the pair being nearly equal IS the hedge. */
+.ifbox.north i, .ifbox.south i { letter-spacing: 0.04em; }
+.ifbox em { display: block; font-size: 10px; opacity: 0.5; font-style: normal; }
+
+/* The standing quote sits above the four taker slots and is a different
+   kind of thing, so it reads as one. */
+.botrow.maker { border-left: 3px solid var(--gold, #e9b949); margin-bottom: 8px; }
+.botrow.maker.on .botname { color: var(--gold, #e9b949); }

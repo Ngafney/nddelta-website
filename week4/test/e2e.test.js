@@ -133,14 +133,40 @@ await ok("a whole round plays through over HTTP, from build to reveal", async ()
   assert.ok(csv.text.includes("cov_along_cross_km2"), "the CSV has no covariance");
 
   await api("POST", "admin/open", { token, minutes: 30 });
-  await api("POST", "order", { playerId: b.playerId, token: b.token, market: "north", side: "A", px: 60, qty: 5 });
-  await api("POST", "order", { playerId: a.playerId, token: a.token, market: "north", side: "B", px: 60, qty: 5 });
-  await api("POST", "order", { playerId: b.playerId, token: b.token, market: "south", side: "A", px: 35, qty: 5 });
-  await api("POST", "order", { playerId: a.playerId, token: a.token, market: "south", side: "B", px: 35, qty: 5 });
+
+  // The desk keeps a standing two-sided quote, so both books are live the
+  // instant trading opens and there is always something to trade against.
+  const opened = await api("GET", `state?${cred}`);
+  for (const m of ["north", "south"]) {
+    assert.ok(
+      opened.markets[m].bestBid != null && opened.markets[m].bestAsk != null,
+      `${m} opened with no quote`
+    );
+  }
+  const { bestBid, bestAsk } = opened.markets.north;
+
+  // Ada and Bo trade the pair with EACH OTHER, which means doing it inside the
+  // desk's spread. An earlier version of this test sold south at 35 against a
+  // 42 bid, so Bo's offer was lifted by the desk before Ada ever saw it and Ada
+  // ended the round flat - the quote working, not a bug. Two prices inside the
+  // spread that sum to less than 100, so the pair is bought for less than it pays.
+  const pxNorth = bestBid + 6;
+  const pxSouth = bestAsk - 11;
+  assert.ok(pxNorth > bestBid && pxNorth < bestAsk, "north leg is not inside the spread");
+  assert.ok(pxSouth > bestBid && pxSouth < bestAsk, "south leg is not inside the spread");
+  assert.ok(pxNorth + pxSouth < 100, "the pair is not being bought at a discount");
+
+  await api("POST", "order", { playerId: b.playerId, token: b.token, market: "north", side: "A", px: pxNorth, qty: 5 });
+  await api("POST", "order", { playerId: a.playerId, token: a.token, market: "north", side: "B", px: pxNorth, qty: 5 });
+  await api("POST", "order", { playerId: b.playerId, token: b.token, market: "south", side: "A", px: pxSouth, qty: 5 });
+  await api("POST", "order", { playerId: a.playerId, token: a.token, market: "south", side: "B", px: pxSouth, qty: 5 });
 
   const mid = await api("GET", `state?${cred}`);
   assert.strictEqual(mid.me.pos.north, 5);
   assert.strictEqual(mid.me.pos.south, 5);
+  // Holding the pair, the two outcomes are worth the same - which is the trade
+  // the week is teaching, and it should be readable without arithmetic.
+  assert.strictEqual(mid.me.settleC.north, mid.me.settleC.south);
 
   await api("POST", "admin/release", { token });
   const tighter = await api("GET", `data?${cred}`);
@@ -152,9 +178,12 @@ await ok("a whole round plays through over HTTP, from build to reveal", async ()
   assert.strictEqual(rv.truth.name, "2008 TC3");
   assert.ok(rv.truth.story.length > 80);
 
-  // Ada bought the pair for 95 and it paid 100, whichever way it went.
+  // Ada bought the pair for less than 100 and it paid 100, whichever way it went.
   const done = await api("GET", `state?${cred}`);
-  assert.strictEqual(done.me.cashC, 1_000_000 - 5 * 6000 - 5 * 3500 + 5 * 10_000);
+  assert.strictEqual(
+    done.me.cashC,
+    1_000_000 - 5 * pxNorth * 100 - 5 * pxSouth * 100 + 5 * 10_000
+  );
 
   const insp = await api("GET", `admin/inspect?token=${token}`);
   assert.deepStrictEqual(insp.audit, [], `audit broke: ${insp.audit.join(" | ")}`);

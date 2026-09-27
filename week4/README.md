@@ -26,9 +26,35 @@ five assumptions worth arguing about, and the one warning that matters.
 
 **Latitude is not linear in distance along the corridor.** A great circle
 climbs, flattens, and falls, so a Gaussian along the ground comes out skewed in
-latitude — measurably so; `test/corridor.test.js` checks the skew is real. Push
-it through Φ((line − µ)/σ) and you get a confident wrong answer. That is why
-the week is called what it is.
+latitude. Push it through Φ((line − µ)/σ) and you get a confident wrong answer.
+That is why the week is called what it is.
+
+And that claim is **measured, not asserted** — `test/lesson.test.js` fails the
+build if it stops being true. It has to, because it did stop being true. A
+playtester was handed a round where reaching for Φ(z) instead of simulating cost
+him **0.9 points of price**: one tick, correct and worth nothing. The round had
+put the line where latitude happens to be nearly linear, which is exactly where
+a Gaussian is right.
+
+Two things were wrong. The corridor was far too short — at σ = 600 km a great
+circle barely curves — and line placement was scoring only difficulty, so it
+spent the geometry without noticing. Now the corridor is **2400 km**, placement
+scores what the shortcut costs, and if a draw offers no line where it costs
+anything the round is **redrawn** rather than shipped. Measured over twenty
+rounds the shortcut is now wrong by a median of **6.9 points**, up to 15:
+
+| σ along the corridor | what Φ(z) costs, on the line actually used |
+| --- | --- |
+| 600 km | under 1 point — an assertion, not an edge |
+| 1000 km | 1.4 points |
+| 1500 km | 2.5 points |
+| 2400 km | **4–7 points, and 15 on 2018 LA's geometry** |
+
+The effect tracks the **asymmetry** of the latitude swing, not its size. 2018 LA
+climbs 5.0° one way along ±2σ and falls 0.9° the other, and prices nothing like
+a Gaussian; 2019 MO runs 10.8° up and 8.3° down — a far bigger swing — and
+prices almost exactly like one. The control room says which kind of round it
+just built, in words, before the bell.
 
 The covariance is also **not diagonal**. A team that samples the two components
 separately gets a different, wrong number, and there is a test for that too.
@@ -79,9 +105,48 @@ The nominal point a team is shown is **not** where the thing landed. It is the
 truth displaced by a draw from the very covariance they are handed — which is
 what a published solution *is*. Publish the true point as "nominal" and the
 favoured side is always the winning side, so the correct play is to buy it at
-any price and nobody has to think. One standard normal pair is drawn per round
-and pushed through each release's shrinking Cholesky factor, so successive
-solutions walk in toward the truth the way real ones do.
+any price and nobody has to think.
+
+Successive solutions **wander as they tighten** rather than marching straight in.
+Pushing one error draw through each release's shrinking Cholesky factor is
+simpler and was what the first version did, but it makes a dull round: every
+release makes the favoured side a little more favoured, so the only trade an
+update ever asks for is "buy more of what you already own". A playtester named
+that exactly. Now 35% of each solution is fresh noise, so the ellipse still
+shrinks monotonically but its centre moves both ways, and in **11 rounds out of
+20** somebody who was right at the open is wrong by the second release and right
+again by the close.
+
+That costs the guarantee the earlier version had. It used to forbid any line the
+solutions could cross, which kept the confidence ladder monotone — but once the
+centre wanders, the forbidden band swallows every line worth asking about and
+every round opens at 100% certain. (Measured: 14 in a row.) So crossing is
+allowed and the **collapse** is bounded instead: over 24 rounds the question
+opens at a median 66% against the 65% requested, never drops below **58%** at
+any release, and closes at a median **99%**, worst case 85%. The round may change
+its mind; it may not stop having one.
+
+## There is always something to trade against
+
+The four configurable noise slots only ever *take* liquidity — they fire a market
+order and cancel whatever does not fill. So a round opened with an empty book and
+stayed empty until a human posted something, and the first thing anyone tries is
+to buy. A playtester priced the market right to within a point, found no other
+side in either book, and reported the trading half as unplayable. Fairly.
+
+The desk now also keeps a **standing two-sided quote** in both books, on by
+default, 15 a side at 42 / 58. It is deliberately ignorant: anchored at 50,
+never moved by the data or the news, which makes it the thing a team with a real
+number is playing against. The spread is what stops it being free money that
+teaches nothing — at 42 / 58 in both books, buying both sides costs 116 to
+collect 100 and selling both collects 84 to owe 100, so there is no arbitrage
+against the desk itself. The only way to take its money is to be right about
+where the rock came down.
+
+It needs its own account, and that is not cosmetic: self-trade prevention in the
+matcher *cancels* your resting order rather than printing against you, so while
+the takers and the quoter shared a seat the desk deleted its own quotes within a
+minute of the bell.
 
 ## The margin knows the two books are one question
 
@@ -99,3 +164,29 @@ shared/rules.js      every constant, the player copy, and the AI prompt
 server/handler.js    the whole API
 src/                 the floor, the corridor map, the admin panel, the board
 ```
+
+## What the playtest changed
+
+A subagent played a round knowing only what a student would know. It priced the
+market correctly — NORTH 29.6 against a true 0.291, in about ninety seconds of
+actual work — and still reported the round as not worth playing. Everything
+below came out of that, and all of it is now covered by a test that fails if it
+regresses:
+
+- the Monte Carlo was worth **0.9 points**, so the week's whole premise was
+  decorative → corridor lengthened, placement scores the lesson, weak draws are
+  redrawn (`test/lesson.test.js`)
+- **no counterparty** in either book, so a correct price could not be acted on →
+  a standing quote, on by default
+- every release pushed the price the same way → solutions wander as they tighten
+- **`reserved` exceeded total cash**, because it summed each order's worst case
+  over *different* outcomes — a number that is never true. Now the worst case
+  over outcomes, so `reserved + free = cash`
+- prices had no units anywhere → the rules say dollars per share, and what a
+  resting order ties up
+- **`IF NORTH` / `IF SOUTH` showed buying power**, not profit — the right number
+  for "can I place this" and the wrong one for every question a trader asks
+- successful orders returned no `ok`, and `19.2°N` arrived as `19.2Â°N` because
+  responses never declared a charset
+- the advertised 40-order cap is unreachable one-sided at $10,000 and easy when
+  hedged, which the rules now say

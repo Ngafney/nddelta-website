@@ -105,7 +105,25 @@ await ok("every real event can carry a round", async () => {
     const ev = EVENTS.find((e) => e.key === key);
     assert.ok(Math.abs(b.truth.trueLat - ev.lat) < 1e-9, `${key} did not use the real impact point`);
     assert.ok(MARKETS.includes(b.truth.winner));
-    assert.ok(Math.abs(b.truth.lineDeg - ev.lat) < 9, `${key}: line ${b.truth.lineDeg} is nowhere near the impact`);
+    // The line is placed against the FIRST PUBLISHED SOLUTION, not against the
+    // truth - the room has never seen the truth, so a line placed near it would
+    // be placed with information nobody has. With a 2400 km corridor the
+    // published nominal can sit ten degrees or more from where the rock really
+    // came down, so "near the impact" is the wrong property to check and an
+    // earlier version of this test failed the moment the corridor got long
+    // enough for the week's lesson to bite.
+    //
+    // What has to be true is that the question is a real question: the line
+    // sits close enough to the opening solution that a good team is uncertain.
+    const opening = b.truth.releases[0];
+    assert.ok(
+      Math.abs(b.truth.lineDeg - opening.nominalLat) < 12,
+      `${key}: line ${b.truth.lineDeg} is nowhere near the opening solution ${opening.nominalLat}`
+    );
+    assert.ok(
+      opening.confidence > 0.5 && opening.confidence < 0.99,
+      `${key}: opening confidence ${opening.confidence} is not a question worth asking`
+    );
   }
   // put the flagship round back
   truth = (await POST("admin/round", { token: admin, seed: "api-test", event: "2008TC3" })).truth;
@@ -118,24 +136,55 @@ await ok("the published solution is NOT the true impact point", async () => {
   const rel = truth.releases;
   assert.ok(rel.length >= 4, `only ${rel.length} releases`);
   assert.ok(rel[0].offsetKm > 5, "the first solution sits exactly on the truth");
-  assert.ok(
-    rel[rel.length - 1].offsetKm < rel[0].offsetKm,
-    `the solution did not converge: ${rel[0].offsetKm} km → ${rel[rel.length - 1].offsetKm} km`
-  );
-  // And the uncertainty shrinks with it.
+
+  // The ellipse shrinks every release, and that part is guaranteed.
   for (let i = 1; i < rel.length; i++) {
     assert.ok(rel[i].sigmaKm < rel[i - 1].sigmaKm, `sigma grew at release ${i + 1}`);
   }
+
+  // Where its CENTRE sits is not guaranteed, and must not be asserted per
+  // round. Each solution carries fresh noise as well as a tighter version of
+  // the same error, because solutions that march straight in make the releases
+  // worthless to trade - the favoured side just gets more favoured. So the
+  // centre wanders, and on any single round the last solution can sit further
+  // from the truth than the first. This test asserted otherwise and failed on a
+  // round where the walk-in went 420 km then 491 km, which was the feature
+  // working rather than a bug.
+  //
+  // Convergence is a statement about the average, so measure the average.
+  let firstSum = 0;
+  let lastSum = 0;
+  const N = 6;
+  for (let k = 0; k < N; k++) {
+    const b = await POST("admin/round", { token: admin, seed: `converge-${k}` });
+    const r = b.truth.releases;
+    firstSum += r[0].offsetKm;
+    lastSum += r[r.length - 1].offsetKm;
+  }
+  assert.ok(
+    lastSum / N < 0.65 * (firstSum / N),
+    `solutions do not converge on average: ${Math.round(firstSum / N)} km → ${Math.round(lastSum / N)} km over ${N} rounds`
+  );
+  // put the flagship round back for the tests that follow
+  truth = (await POST("admin/round", { token: admin, seed: "api-test", event: "2008TC3" })).truth;
 });
 
 await ok("the question is hard at first and easier by the end", async () => {
   const rel = truth.releases;
-  // Near the target, not on it: the line has to be a latitude a person can say
-  // out loud, so placeLine picks the best available 0.1-degree line rather than
-  // an exact one. Measured across events and error draws that costs at most
-  // three points, so six is a real bound and not a shrug.
+  // Near the target, not on it, for two reasons that are both deliberate.
+  //
+  // The line has to be a latitude a person can say out loud, so placement picks
+  // the best available 0.1-degree line rather than an exact one. And difficulty
+  // is not the only thing being scored: placement also wants a line where the
+  // normal approximation is actually wrong, because that is what the week is
+  // for, and it will accept a slightly easier question to get one.
+  //
+  // Measured over 24 rounds against a 65% request, the opening confidence runs
+  // 62% to 73% with a median of 66%. So ten points is a real bound and not a
+  // shrug - it failed at six, and a weighting that held six made rounds open as
+  // certain as 84%, which is a worse trade than this one.
   assert.ok(
-    Math.abs(rel[0].confidence - CONFIDENCE.defaultStart) < 0.06,
+    Math.abs(rel[0].confidence - CONFIDENCE.defaultStart) < 0.1,
     `the opening release sits at ${(rel[0].confidence * 100).toFixed(1)}%`
   );
   assert.ok(
@@ -271,9 +320,21 @@ await ok("the noise desk trades on its own schedule and is announced", async () 
   assert.strictEqual(round.bots.length, 2, "the room has to be told the bots exist");
   assert.ok(round.bots.every((b) => b.shares === 5 && b.everySec === 2));
 
-  // Give them something to hit, wind the clock on, and poll.
-  await POST("order", { ...cred(bob), market: "north", side: "A", px: 60, qty: 40 });
-  await POST("order", { ...cred(bob), market: "south", side: "B", px: 20, qty: 40 });
+  // The desk also keeps a standing two-sided quote in both books, so that a
+  // round never opens with an empty market. That means resting orders OUTSIDE
+  // its spread are not the best price and the takers never reach them - an
+  // earlier version of this test offered north at 60 against a 58 quote and
+  // concluded the desk had stopped working. Sit inside the spread instead.
+  const q = (await GET("state", cred(bob))).markets;
+  for (const m of ["north", "south"]) {
+    assert.ok(
+      q[m].bestBid != null && q[m].bestAsk != null,
+      `${m} has no standing quote, so there is nothing for a room to trade against`
+    );
+  }
+  const inside = Math.round((q.north.bestBid + q.north.bestAsk) / 2);
+  await POST("order", { ...cred(bob), market: "north", side: "A", px: inside, qty: 40 });
+  await POST("order", { ...cred(bob), market: "south", side: "B", px: inside, qty: 40 });
   const before = (await GET("state", cred(bob))).me.pos;
   await new Promise((r) => setTimeout(r, 2300));
   await GET("config");

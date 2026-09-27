@@ -25,7 +25,7 @@ import {
   newMarket, newPlayer, placeOrder, cancelOrder, cancelLevel, cancelAll, settle,
   powers, freeC, orderHolds, reservedC, grid, midPx, bookLevels, createTeam, joinTeam,
   leaveTeam, teamView, makeTeamCode, bestBid, bestAsk, markPx, valueC, leaderboard,
-  auditState, snapTick, maxSharesAt, isMarket, EngineError,
+  auditState, snapTick, maxSharesAt, isMarket, EngineError, payout, SHARE_C, bookOf,
 } from "../shared/engine.js";
 import {
   MARKETS, MARKET_META, BOOK, LIMITS, MONEY, SCENARIO, CONFIDENCE,
@@ -34,6 +34,7 @@ import {
 import { EVENTS, EVENT_KEYS, eventByKey, OTHER_IMPACTS } from "../shared/events.js";
 import {
   corridorOf, covariance, chol2, walk, latAt, northProbability, confidenceOf,
+  nonlinearityPts,
   placeLine, R_EARTH_KM,
 } from "../shared/corridor.js";
 
@@ -219,10 +220,28 @@ function rateLimit(key, max, windowMs, message = "slow down a moment") {
 /* ── the noise desk ───────────────────────────────────────────────────── */
 
 const BOT_PID = "survey-desk";
+/**
+ * The standing quote sits in its OWN account, and it has to.
+ *
+ * Self-trade prevention in the matcher does not skip your own resting order, it
+ * CANCELS it - correct behaviour, and it meant the desk's market orders deleted
+ * the desk's own quotes the first time they crossed. The book emptied within a
+ * minute of the bell and the round was back to having no other side, which is
+ * the bug this whole mechanism exists to fix.
+ *
+ * Two seats: one takes, one quotes. They trade with each other, which also
+ * gives the room a tape to read instead of a blank one.
+ */
+const MAKER_PID = "quote-desk";
 const BOT_TEAM = "survey-desk-team";
 
 /** Seat the bot at its own hidden table so it can trade like anyone else. */
 function seatBot(state) {
+  if (!state.players[MAKER_PID]) {
+    const q = newPlayer(MAKER_PID, `${BOTS.name} (QUOTES)`, "maker-device", state.startCashC * 400, Date.now());
+    q.teamId = BOT_TEAM;
+    state.players[MAKER_PID] = q;
+  }
   if (state.players[BOT_PID]) return;
   const p = newPlayer(BOT_PID, BOTS.name, "bot-device", state.startCashC * 400, Date.now());
   p.teamId = BOT_TEAM;
@@ -231,7 +250,7 @@ function seatBot(state) {
     id: BOT_TEAM,
     name: BOTS.name,
     code: "----",
-    members: [BOT_PID],
+    members: [BOT_PID, MAKER_PID],
     createdAt: Date.now(),
     hidden: true,
   };
@@ -284,6 +303,49 @@ function runBotsIfDue(state, now) {
   return fired;
 }
 
+/**
+ * Keep a standing two-sided quote in both books.
+ *
+ * Re-posted rather than maintained: the desk cancels whatever it still has
+ * resting and puts fresh orders up. That is cheap at this size, it cannot drift
+ * out of sync with the book, and it means a quote eaten by a team is replaced
+ * within a refresh instead of leaving the book empty for the rest of the round.
+ *
+ * Anchored at BOTS.maker.anchor, which does not move. The desk is the
+ * uninformed side on purpose.
+ */
+function runMakerIfDue(state, now) {
+  const cfg = state.maker;
+  if (!cfg || !cfg.on || state.status !== "live") return 0;
+  if (cfg.nextAt && now < cfg.nextAt) return 0;
+  cfg.nextAt = now + Math.max(5, cfg.refreshSec ?? 15) * 1000;
+  seatBot(state);
+  const g = grid(state);
+  let posted = 0;
+  for (const market of MARKETS) {
+    // Clear the desk's own quotes in this book before re-posting them.
+    for (const o of bookOf(state, market).orders.filter((o) => o.pid === MAKER_PID)) {
+      try {
+        cancelOrder(state, MAKER_PID, o.id, market);
+      } catch (e) {
+        if (!(e instanceof EngineError)) throw e;
+      }
+    }
+    const bid = Math.max(g.orderMin, Math.round(cfg.anchor - cfg.halfSpread));
+    const ask = Math.min(g.orderMax, Math.round(cfg.anchor + cfg.halfSpread));
+    for (const [side, px] of [["B", bid], ["A", ask]]) {
+      try {
+        placeOrder(state, market, MAKER_PID, side, px, cfg.shares, now);
+        posted++;
+      } catch (e) {
+        if (!(e instanceof EngineError)) throw e;
+        cfg.lastError = e.message;
+      }
+    }
+  }
+  return posted;
+}
+
 /* ── the clock ────────────────────────────────────────────────────────── */
 
 /**
@@ -304,6 +366,9 @@ async function advanceIfDue(state, version, now) {
   }
   if (state.status === "live") {
     if (runBotsIfDue(state, now)) changed = true;
+    // Also on the polling path, not only when someone trades: the standing
+    // quote has to stay up for a room that is reading rather than clicking.
+    if (runMakerIfDue(state, now)) changed = true;
   }
   if (state.status === "ended") {
     const spec = await loadSpec(state.roundId);
@@ -323,7 +388,13 @@ function openTrading(state, now, minutes) {
   state.status = "live";
   state.startedAt = now;
   state.endsAt = now + Math.round(minutes * 60_000);
-  for (const bot of state.bots ?? []) bot.nextAt = now + (bot.everySec ?? 30) * 1000;
+  (state.bots ?? []).forEach((bot, i) => {
+    bot.nextAt = now + 1500 * (i + 1);
+  });
+  // The standing quote goes up with the bell, not a refresh later: the first
+  // player to look must find a market, not an empty book.
+  if (state.maker) state.maker.nextAt = 0;
+  runMakerIfDue(state, now);
 }
 
 async function recordHistory(state, spec, now) {
@@ -425,6 +496,15 @@ function meView(state, p) {
     reservedC: reservedC(state, p.id),
     freeC: freeC(state, p),
     powers: pw,
+    // Cash settled at $100 a share on the winning book, holds all released.
+    // The point of showing both: a hedged book makes them nearly equal, and
+    // you can see your own risk without doing arithmetic under time pressure.
+    settleC: Object.fromEntries(
+      MARKETS.map((outcome) => [
+        outcome,
+        p.cash + MARKETS.reduce((sum, m) => sum + payout(outcome, m) * (p.pos?.[m] ?? 0) * SHARE_C, 0),
+      ])
+    ),
     valueC: valueC(state, p),
     startC: p.startC,
     spentC: p.spentC,
@@ -571,7 +651,7 @@ export async function handle(method, route, body, query) {
       return tx((state) => {
         const p = requirePlayer(state, body);
         const out = leaveTeam(state, p.id);
-        return { ...out, me: meView(state, p) };
+        return { ok: true, ...out, me: meView(state, p) };
       });
     }
 
@@ -643,12 +723,14 @@ export async function handle(method, route, body, query) {
       return tx((state) => {
         const p = requirePlayer(state, body);
         runBotsIfDue(state, now);
+        runMakerIfDue(state, now);
         const market = String(body.market ?? "");
         if (!isMarket(market)) throw httpError(400, "no such market");
         const side = body.side === "B" || body.side === "A" ? body.side : null;
         if (!side) throw httpError(400, "bad side");
         const res = placeOrder(state, market, p.id, side, Number(body.px), Number(body.qty ?? 1), now);
         return {
+          ok: true,
           market,
           filled: res.filled,
           canceled: res.canceled ?? 0,
@@ -670,7 +752,7 @@ export async function handle(method, route, body, query) {
         else if (body.orderId != null) out = cancelOrder(state, p.id, Number(body.orderId), market);
         else if (market && body.side && body.px != null) out = cancelLevel(state, p.id, market, body.side, Number(body.px));
         else throw httpError(400, "nothing to cancel");
-        return { ...out, me: meView(state, p) };
+        return { ok: true, ...out, me: meView(state, p) };
       });
     }
 
@@ -846,7 +928,35 @@ export async function handle(method, route, body, query) {
             fills: prev.fills ?? 0,
           };
         });
-        return { bots: state.bots };
+        // The standing quote too, if the operator sent one. Turning it off is a
+        // legitimate choice - a room of sixty makes its own market - but it has
+        // to be a choice rather than the default, because a round that opens
+        // with an empty book has nothing for anyone to do.
+        if (body.maker && typeof body.maker === "object") {
+          const m = body.maker;
+          const prev = state.maker ?? { ...BOTS.maker };
+          state.maker = {
+            ...prev,
+            on: !!m.on,
+            halfSpread: Math.min(45, Math.max(1, Math.round(numOr(m.halfSpread, prev.halfSpread)))),
+            shares: Math.min(BOTS.maxShares, Math.max(1, Math.round(numOr(m.shares, prev.shares)))),
+            refreshSec: Math.min(BOTS.maxSeconds, Math.max(5, Math.round(numOr(m.refreshSec, prev.refreshSec)))),
+            nextAt: 0, // re-quote at the next poll so a change is visible at once
+          };
+          if (!state.maker.on) {
+            // Pull the quotes it already has resting, or they sit there forever.
+            for (const market of MARKETS) {
+              for (const o of bookOf(state, market).orders.filter((o) => o.pid === MAKER_PID)) {
+                try {
+                  cancelOrder(state, MAKER_PID, o.id, market);
+                } catch (e) {
+                  if (!(e instanceof EngineError)) throw e;
+                }
+              }
+            }
+          }
+        }
+        return { bots: state.bots, maker: state.maker };
       });
     }
 
@@ -913,6 +1023,7 @@ export async function handle(method, route, body, query) {
             downloads: p.downloads ?? 0,
           })),
         bots: r.state.bots ?? [],
+        maker: r.state.maker ?? null,
         // The operator alone sees the answer, before anybody else does.
         truth: spec
           ? {
@@ -925,6 +1036,11 @@ export async function handle(method, route, body, query) {
                 sigmaKm: x.sigmaKm,
                 pNorth: x.pNorth,
                 confidence: x.confidence,
+                // What a team reaching for the normal approximation would price
+                // instead, and what that costs them. The operator wants to know
+                // before the bell whether this round teaches the week's lesson.
+                gaussPNorth: x.gaussPNorth,
+                gaussGapPts: x.gaussGapPts,
               })),
             }
           : null,
@@ -980,6 +1096,91 @@ function normalPair(rand) {
  * each release's shrinking Cholesky factor, so successive solutions walk in
  * toward the truth the way real ones do, rather than jumping about.
  */
+/**
+ * Pick the line of latitude the round asks about.
+ *
+ * Four things want to be true, and they pull against each other:
+ *
+ *   HARD AT THE OPEN. The first solution should leave the room about as
+ *   uncertain as the operator asked for. That is the only dial they get.
+ *
+ *   DECIDED BY THE CLOSE. A line the sharpest solution still cannot call makes
+ *   a miserable round - the room works for an hour and ends up knowing less.
+ *
+ *   NEVER A PURE COIN TOSS ON THE WAY. The published solution wanders as it
+ *   tightens, so it can wander across the line: the market goes confident, then
+ *   ambiguous, then confident the other way. Measured on a live round once as
+ *   63 -> 59 -> 55 -> 51 -> 59 -> 71%, which is a worse game after every
+ *   release.
+ *
+ *   AND THE LESSON HAS TO BITE. The week is built on "simulate, do not reach
+ *   for PHI(z)". A playtester was handed a round where the shortcut was wrong
+ *   by 0.9 points - one tick - because the line happened to sit where latitude
+ *   is very nearly linear in distance along the corridor, which is exactly
+ *   where a Gaussian is right. Correct, and worth nothing. So MEASURE what the
+ *   shortcut costs and prefer lines where it costs real money.
+ *
+ * An earlier version tried to guarantee the third by forbidding any line the
+ * solutions could cross. That works only while the solutions march straight in;
+ * once they wander - and once the corridor is long enough for the fourth point
+ * to bite - the forbidden band swallows every line that makes an interesting
+ * question, and every round opens at 100%. Measured: 14 of 14 rounds certain
+ * from the first release. So the crossing is allowed and the COLLAPSE is what
+ * gets bounded: the round may change its mind, it may not stop having one.
+ *
+ * All four are scored rather than enforced, because they are all negotiable
+ * against each other and an unshippable round is the worst outcome of the four.
+ */
+function chooseLine(event, corridor, releases, startConf, rand) {
+  const views = releases.map((r) => ({
+    view: { lat: r.nominalLat, lon: r.nominalLon },
+    C: r.covarianceKm2,
+  }));
+  const base = Math.round(releases[0].nominalLat * 10);
+  let best = null;
+  for (let step = -110; step <= 110; step++) {
+    const line = (base + step) / 10;
+    // confidenceOf returns { p, confidence }, not a number. Taking the object
+    // made every score NaN, every comparison false, and the chooser silently
+    // kept its FIRST candidate - a line eleven degrees away that nobody could
+    // be uncertain about. It shipped three times before the score curve was
+    // printed, because a round built fine and only the confidences looked odd.
+    // Hence the assertion below.
+    const conf = views.map((v) => confidenceOf(v.view, corridor, v.C, line, 1200, rand).confidence);
+    const open = conf[0];
+    const end = conf[conf.length - 1];
+    const floor = Math.min(...conf);
+    // What the normal approximation costs a team on the data they open with.
+    const gap = Math.abs(
+      nonlinearityPts(views[0].view, corridor, views[0].C, line, 1200, rand).pts
+    );
+    // The lesson terms are deliberately modest, and finding that balance took
+    // two wrong answers. Weighted at 0.02 the lesson lost every argument and one
+    // round in four was hollow - the shortcut costing under half a point, which
+    // is exactly the round the playtester was given. Weighted at 0.6 it won too
+    // many: rounds opened as certain as 84% against the 65% the operator asked
+    // for, because the placer would pay almost any amount of difficulty for a
+    // curvier line.
+    //
+    // The fix is not a weight. A draw that offers no good line cannot be
+    // rescued by scoring harder, so buildRound takes a fresh draw instead, and
+    // that lets these terms stay small enough to leave difficulty alone.
+    const score =
+      Math.abs(open - startConf) +          // as hard as the operator asked
+      3 * Math.max(0, 0.85 - end) +         // and settled by the last release
+      2 * Math.max(0, 0.58 - floor) +       // and never a pure coin toss
+      0.15 * Math.max(0, 2.5 - gap) -       // with a nudge away from hollow ones
+      0.02 * Math.min(gap, 10);             // and a nudge toward the lesson
+    if (!Number.isFinite(score)) {
+      throw new Error(
+        `line placement scored ${score} at ${line} - open ${open}, end ${end}, gap ${gap}`
+      );
+    }
+    if (!best || score < best.score) best = { line, score, open, end, floor, gap };
+  }
+  return best;
+}
+
 async function buildRound(body, now) {
   const seed = String(body.seed ?? "").trim() || rid(4);
   const roundId = rid(5);
@@ -994,84 +1195,92 @@ async function buildRound(body, now) {
   const defaultSize = Math.round(clamp(numOr(body.defaultSize, LIMITS.defaultOrderSize), 1, LIMITS.maxSharesPerOrder));
   const sigma0 = clamp(numOr(body.sigmaKm, SCENARIO.sigma0Km), 40, 4000);
 
-  // One error draw for the whole round; each release sees it through a
-  // tighter factor, so the published solution converges on the truth.
-  const z = normalPair(rand);
-
-  const releases = SCENARIO.shrink.map((f, i) => {
-    const sigmaKm = sigma0 * f;
-    const C = covariance(sigmaKm, SCENARIO.ratio, SCENARIO.tiltDeg);
-    const L = chol2(C);
-    const along = L[0][0] * z[0];
-    const crossKm = L[1][0] * z[0] + L[1][1] * z[1];
-    const nominal = walk(event.lat, event.lon, corridor.azimuthDeg, along, crossKm);
-    return { index: i + 1, sigmaKm, covarianceKm2: C, nominalLat: nominal.lat, nominalLon: nominal.lon };
-  });
-
-  // Place the line against BOTH ends of the round.
+  // How much of each published solution is fresh noise rather than the same
+  // error seen more sharply.
   //
-  // Scoring only the first release is not enough. The published solution walks
-  // in toward the truth as it tightens, so if the rock happens to land almost
-  // exactly on the line, the LAST and sharpest solution is the least certain
-  // of all — a tighter ellipse straddling the line is a coin toss. That is
-  // honest statistics and it makes a miserable round: the room works harder
-  // and ends up knowing less.
+  // Reusing a single draw for every release makes all six solutions sit on one
+  // straight path in to the truth, and that is a boring round: the favoured
+  // side is favoured a little harder every time, so the only trade a release
+  // ever asks for is "buy more of what you already own". A playtest named it
+  // exactly - every release just made SOUTH righter.
   //
-  // So the line has to be hard at the start AND settled by the end. Search the
-  // lines a person could actually say, score the opening confidence against
-  // the operator's target, and refuse any line the final solution cannot call.
-  const first = releases[0];
-  const last = releases[releases.length - 1];
+  // Real successive solutions wander as they tighten. The ellipse still shrinks
+  // monotonically, but the centre moves both ways, so a release can move the
+  // price against you, and that is what makes the updates worth trading rather
+  // than worth waiting out. Measured, it turns roughly half of all rounds into
+  // ones where somebody who was right at the open is wrong by the second
+  // release and right again by the close.
+  const WANDER = 0.35;
+  const keep = Math.sqrt(1 - WANDER * WANDER);
+
+  /** One candidate round: a fresh error draw, and the best line for it. */
+  const draw = () => {
+    const z = normalPair(rand);
+    const releases = SCENARIO.shrink.map((f, i) => {
+      const sigmaKm = sigma0 * f;
+      const C = covariance(sigmaKm, SCENARIO.ratio, SCENARIO.tiltDeg);
+      const L = chol2(C);
+      const w = i === 0 ? [0, 0] : normalPair(rand);
+      const e0 = keep * z[0] + WANDER * w[0];
+      const e1 = keep * z[1] + WANDER * w[1];
+      const along = L[0][0] * e0;
+      const crossKm = L[1][0] * e0 + L[1][1] * e1;
+      const nominal = walk(event.lat, event.lon, corridor.azimuthDeg, along, crossKm);
+      return { index: i + 1, sigmaKm, covarianceKm2: C, nominalLat: nominal.lat, nominalLon: nominal.lon };
+    });
+    return { releases, placed: chooseLine(event, corridor, releases, startConf, rand) };
+  };
+
   const explicit = numOr(body.lineDeg, null);
+  let releases;
+  let placed = null;
   let lineDeg;
+
   if (explicit != null) {
+    // The operator named the line. Their round, their call - one draw, no
+    // second-guessing, even if the geometry makes a dull question.
+    releases = draw().releases;
     lineDeg = explicit;
   } else {
-    const openView = { lat: first.nominalLat, lon: first.nominalLon };
-    const endView = { lat: last.nominalLat, lon: last.nominalLon };
-    const C1 = first.covarianceKm2;
-    const Cn = last.covarianceKm2;
-    // Every published solution lies on the path from the first nominal to the
-    // truth — they are the same error draw through a shrinking factor. So a
-    // line BETWEEN them gets crossed mid-round: the market is confident, then
-    // the solution walks onto the line and it collapses to a coin toss, then
-    // it recovers on the other side. Measured on a live round that produced
-    // 63 → 59 → 55 → 51 → 59 → 71%, which is a worse game after every release.
+    // Otherwise, redraw rather than ship a hollow round.
     //
-    // Keeping the line off that segment makes the ladder monotone by
-    // construction: all six solutions sit on one side, each tighter than the
-    // last, so each is more certain than the last.
-    const lo = Math.min(first.nominalLat, event.lat);
-    const hi = Math.max(first.nominalLat, event.lat);
-    const base = Math.round(first.nominalLat * 10);
-    let best = null;
-    for (let step = -90; step <= 90; step++) {
-      const line = (base + step) / 10;
-      if (line > lo - 0.05 && line < hi + 0.05) continue; // would be crossed
-      const p1 = northProbability(openView, corridor, C1, line, 2500, rand);
-      const open = Math.max(p1, 1 - p1);
-      const pn = northProbability(endView, corridor, Cn, line, 2500, rand);
-      const end = Math.max(pn, 1 - pn);
-      const score = Math.abs(open - startConf) + (end < 0.85 ? 3 * (0.85 - end) : 0);
-      if (!best || score < best.score) best = { line, score, open, end };
+    // Where the published solution happens to land is random, and some draws
+    // simply do not offer any line that is both as hard as the operator asked
+    // for and sits where the corridor's curvature matters. Line placement can
+    // only choose among the lines the draw gives it; it cannot fix a bad draw.
+    // Measured over twenty rounds, one in five came out with the normal
+    // approximation costing under two points - a hollow round, and the exact
+    // complaint a playtester made about the one he was given. A new draw costs
+    // about a second and fixes it, so take one.
+    const WANT = 3.5;   // points of shortcut error: good enough, stop looking
+    const FLOOR = 2.0;  // below this the round does not teach anything
+    let bestTry = null;
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const got = draw();
+      const gap = Math.abs(got.placed?.gap ?? 0);
+      if (!bestTry || gap > Math.abs(bestTry.placed?.gap ?? 0)) bestTry = got;
+      if (gap >= WANT) break;
     }
-    // If the truth sits so near the first solution that nothing is excluded,
-    // fall back to scoring every line rather than shipping no round at all.
-    if (!best) {
-      for (let step = -90; step <= 90; step++) {
-        const line = (base + step) / 10;
-        const p1 = northProbability(openView, corridor, C1, line, 2500, rand);
-        const open = Math.max(p1, 1 - p1);
-        if (!best || Math.abs(open - startConf) < best.score) best = { line, score: Math.abs(open - startConf) };
-      }
+    releases = bestTry.releases;
+    placed = bestTry.placed;
+    lineDeg = placed.line;
+    if (Math.abs(placed.gap ?? 0) < FLOOR) {
+      // Not fatal - the round still works as a market, and the operator is told
+      // on the control room so they can rebuild if the Monte Carlo is the point.
+      placed.weakLesson = true;
     }
-    lineDeg = best.line;
   }
 
   // What a good team should be able to see at each release, priced the same
   // way the room is being asked to price it.
   for (const r of releases) {
     const view = { lat: r.nominalLat, lon: r.nominalLon };
+    // Both prices: the one simulating gets, and the one the shortcut gets. The
+    // difference is the week's lesson in points, and the control room shows it
+    // so the operator knows before the bell whether the lesson is live.
+    const lin = nonlinearityPts(view, corridor, r.covarianceKm2, lineDeg, SCENARIO.draws, rand);
+    r.gaussPNorth = lin.gauss;
+    r.gaussGapPts = lin.pts;
     const p = northProbability(view, corridor, r.covarianceKm2, lineDeg, SCENARIO.draws, rand);
     r.pNorth = p;
     r.confidence = Math.max(p, 1 - p);
@@ -1120,10 +1329,16 @@ async function buildRound(body, now) {
   state.lineDeg = lineDeg;
   state.eventName = event.name;
   state.tradingMinutes = clamp(numOr(body.tradingMinutes, TIMERS.defaultTradingMinutes), TIMERS.minMinutes, TIMERS.maxMinutes);
+  // ON by default, quietly. A round that opens with an empty book has nothing
+  // on the other side: a playtest priced the market right to within a point and
+  // then could not act on it, because there was no counterparty in either book.
+  // Four slots, all four books' sides covered, small size, slow cadence - the
+  // operator can turn any of them off or wind them up from the control room.
   state.bots = BOTS.slots.map((sl) => ({
     key: sl.key, market: sl.market, side: sl.side,
-    on: false, shares: 0, everySec: 30, nextAt: null, sent: 0, fills: 0,
+    on: true, shares: 8, everySec: 45, nextAt: null, sent: 0, fills: 0,
   }));
+  state.maker = { on: true, ...BOTS.maker, nextAt: null };
 
   if (body.keepPlayers) {
     const prev = (await readMarket({ fresh: true })).state;
@@ -1160,6 +1375,14 @@ async function buildRound(body, now) {
         sigmaKm: r.sigmaKm,
         pNorth: r.pNorth,
         confidence: r.confidence,
+        // The operator is trusted with the true impact point already, so there
+        // is nothing to protect by hiding where each solution says it lands -
+        // and it is the only thing the line is placed relative to, which makes
+        // it the number to look at when a round comes out strangely.
+        nominalLat: r.nominalLat,
+        nominalLon: r.nominalLon,
+        gaussPNorth: r.gaussPNorth,
+        gaussGapPts: r.gaussGapPts,
         offsetKm: Math.round(
           haversineKm(r.nominalLat, r.nominalLon, event.lat, event.lon)
         ),
@@ -1225,12 +1448,12 @@ export async function nodeHandler(req, res, route) {
       res.end(result.__raw);
       return;
     }
-    res.setHeader("Content-Type", "application/json");
+    res.setHeader("Content-Type", "application/json; charset=utf-8");
     res.end(JSON.stringify(result));
   } catch (e) {
     const status = e.status ?? (e instanceof EngineError ? 400 : 500);
     res.statusCode = status;
-    res.setHeader("Content-Type", "application/json");
+    res.setHeader("Content-Type", "application/json; charset=utf-8");
     res.setHeader("Cache-Control", "no-store");
     if (status >= 500) console.error("[api]", e);
     res.end(JSON.stringify({ error: e.message ?? "server error", code: e.code ?? null }));

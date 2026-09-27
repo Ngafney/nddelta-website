@@ -186,8 +186,33 @@ export function orderHolds(state, pid) {
   return rows;
 }
 
+/**
+ * What resting orders actually tie up.
+ *
+ * NOT the sum of the per-order worst cases. Each order's worst case is taken at
+ * whichever outcome hurts that order most, and for a bid on NORTH that is SOUTH
+ * settling while for a bid on SOUTH it is NORTH - opposite outcomes, only one
+ * of which can happen. Adding them reports a cost the player can never pay: a
+ * playtester holding $10,000 of cash was shown $18,750 reserved and $450 free,
+ * three numbers that cannot all be true, and read it as a bug. Fairly.
+ *
+ * So reserve what binds: the largest total hold across the outcomes that can
+ * actually occur. With no position this is exactly `cash - freeC`, which is the
+ * arithmetic a player expects to be able to do in their head.
+ */
 export function reservedC(state, pid) {
-  return orderHolds(state, pid).reduce((s, o) => s + o.holdC, 0);
+  let worst = 0;
+  for (const outcome of MARKETS) {
+    let held = 0;
+    for (const m of MARKETS) {
+      for (const o of bookOf(state, m).orders) {
+        if (o.pid !== pid) continue;
+        held += holdC(outcome, m, o.side, o.px) * o.qty;
+      }
+    }
+    if (held > worst) worst = held;
+  }
+  return worst;
 }
 
 /** Most shares this player could rest on one side of one book at one price. */

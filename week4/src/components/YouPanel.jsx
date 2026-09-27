@@ -4,10 +4,16 @@ import { money } from "./PixelBits.jsx";
 /**
  * Where you stand, on both books at once.
  *
- * The two solvency numbers are shown side by side rather than collapsed into
- * one, because they are the game: if NORTH lands you are worth one thing and
- * if SOUTH lands you are worth another, and a player who cannot see both
- * cannot tell whether they are hedged or merely busy.
+ * The two outcomes are shown side by side rather than collapsed into one,
+ * because they are the game: if NORTH lands you are worth one thing and if
+ * SOUTH lands you are worth another, and a player who cannot see both cannot
+ * tell whether they are hedged or merely busy.
+ *
+ * They show PROFIT AT SETTLEMENT, not buying power. An earlier version showed
+ * buying power here - cash net of what resting orders tie up - which is the
+ * right number for "can I place this order" and the wrong one for every
+ * question a trader actually asks. A playtester went looking for "what do I
+ * make if I am right" and could not find it anywhere on the screen.
  */
 export default function YouPanel({ me, team, markets, round }) {
   if (!me) return null;
@@ -18,8 +24,8 @@ export default function YouPanel({ me, team, markets, round }) {
     <div className="youpanel">
       <div className="you-row">
         <Cell label="CASH" value={money(me.cashC)} />
-        <Cell label="RESERVED" value={money(me.reservedC)} dim />
-        <Cell label="FREE" value={money(me.freeC)} />
+        <Cell label="RESERVED" value={money(me.reservedC)} sub="by resting orders" dim />
+        <Cell label="FREE" value={money(me.freeC)} sub="left to spend" />
         <Cell
           label="PORTFOLIO"
           value={money(me.valueC)}
@@ -43,14 +49,20 @@ export default function YouPanel({ me, team, markets, round }) {
             </div>
           );
         })}
-        <div className="ifbox">
-          <i>IF NORTH</i>
-          <b className={me.powers?.north >= 0 ? "" : "down"}>{money(me.powers?.north ?? 0)}</b>
-        </div>
-        <div className="ifbox">
-          <i>IF SOUTH</i>
-          <b className={me.powers?.south >= 0 ? "" : "down"}>{money(me.powers?.south ?? 0)}</b>
-        </div>
+        {["north", "south"].map((outcome) => {
+          // Profit if this side pays: settled cash, less what you started with.
+          const at = me.settleC?.[outcome];
+          const gain = at == null ? null : at - me.startC;
+          return (
+            <div key={outcome} className={`ifbox ${outcome}`}>
+              <i>IF {outcome.toUpperCase()} PAYS</i>
+              <b className={gain == null ? "" : gain > 0 ? "up" : gain < 0 ? "down" : ""}>
+                {gain == null ? "\u2014" : `${gain >= 0 ? "+" : ""}${money(gain)}`}
+              </b>
+              <em>{at == null ? "" : `worth ${money(at)}`}</em>
+            </div>
+          );
+        })}
       </div>
 
       {team && (
