@@ -91,7 +91,10 @@ export const SCENARIO = {
    * What each successive release multiplies sigma by — more observations, a
    * longer arc, a tighter solution.
    */
-  shrink: [1, 0.78, 0.62, 0.5, 0.4, 0.3],
+  // Gentle on purpose. A steeper schedule reaches certainty by the third
+  // release and the last two have nothing left to say, which kills the trading
+  // they were meant to cause.
+  shrink: [1, 0.88, 0.78, 0.7, 0.63, 0.57],
   /** Monte Carlo draws the SERVER uses to price and to settle. */
   draws: 20000,
 };

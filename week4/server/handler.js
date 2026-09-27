@@ -1031,18 +1031,39 @@ async function buildRound(body, now) {
     const endView = { lat: last.nominalLat, lon: last.nominalLon };
     const C1 = first.covarianceKm2;
     const Cn = last.covarianceKm2;
+    // Every published solution lies on the path from the first nominal to the
+    // truth — they are the same error draw through a shrinking factor. So a
+    // line BETWEEN them gets crossed mid-round: the market is confident, then
+    // the solution walks onto the line and it collapses to a coin toss, then
+    // it recovers on the other side. Measured on a live round that produced
+    // 63 → 59 → 55 → 51 → 59 → 71%, which is a worse game after every release.
+    //
+    // Keeping the line off that segment makes the ladder monotone by
+    // construction: all six solutions sit on one side, each tighter than the
+    // last, so each is more certain than the last.
+    const lo = Math.min(first.nominalLat, event.lat);
+    const hi = Math.max(first.nominalLat, event.lat);
     const base = Math.round(first.nominalLat * 10);
     let best = null;
-    for (let step = -80; step <= 80; step++) {
+    for (let step = -90; step <= 90; step++) {
       const line = (base + step) / 10;
+      if (line > lo - 0.05 && line < hi + 0.05) continue; // would be crossed
       const p1 = northProbability(openView, corridor, C1, line, 2500, rand);
       const open = Math.max(p1, 1 - p1);
       const pn = northProbability(endView, corridor, Cn, line, 2500, rand);
       const end = Math.max(pn, 1 - pn);
-      // Hard now, and decided later. A line the last solution still cannot call
-      // is worse than one that is slightly off the requested difficulty.
-      const score = Math.abs(open - startConf) + (end < 0.8 ? 4 * (0.8 - end) : 0);
+      const score = Math.abs(open - startConf) + (end < 0.85 ? 3 * (0.85 - end) : 0);
       if (!best || score < best.score) best = { line, score, open, end };
+    }
+    // If the truth sits so near the first solution that nothing is excluded,
+    // fall back to scoring every line rather than shipping no round at all.
+    if (!best) {
+      for (let step = -90; step <= 90; step++) {
+        const line = (base + step) / 10;
+        const p1 = northProbability(openView, corridor, C1, line, 2500, rand);
+        const open = Math.max(p1, 1 - p1);
+        if (!best || Math.abs(open - startConf) < best.score) best = { line, score: Math.abs(open - startConf) };
+      }
     }
     lineDeg = best.line;
   }
