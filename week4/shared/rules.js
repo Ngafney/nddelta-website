@@ -217,7 +217,9 @@ Because exactly one pays, NORTH and SOUTH should add to about 100. If they do no
 
 **One warning worth taking seriously.** Latitude is *not* a straight-line function of distance along the corridor — a great circle climbs, flattens and falls. So a Gaussian spread along the ground comes out lopsided in latitude, and a normal approximation will hand you a confident wrong answer. Simulate. That is why the week is called what it is.
 
-**More data arrives.** The operator releases updated solutions as the round runs — a tighter ellipse each time, the way a real warning sharpens as the arc grows. Every release is announced loudly and should move your price.
+**More data arrives.** The operator releases updated solutions as the round runs — the way a real warning sharpens as the arc grows. Every release is announced loudly and should move your price.
+
+Two things change each time, and they are not the same thing. The **ellipse always shrinks**. The **nominal point also moves**, and it can move either way — a new solution is a new fit, not the old one with the error rubbed off. So a release can make you more confident, or less, or flip you. Re-price it; do not assume the last update just points harder in the same direction.
 
 **Your money.** **$10,000** — and every price on this screen is **dollars per share**. A share of NORTH pays **$100** if it lands north and **$0** if it does not, so a price of 30 means $30 a share.
 

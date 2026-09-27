@@ -170,30 +170,43 @@ await ok("the published solution is NOT the true impact point", async () => {
 });
 
 await ok("the question is hard at first and easier by the end", async () => {
-  const rel = truth.releases;
-  // Near the target, not on it, for two reasons that are both deliberate.
+  // How close the opening question lands to what the operator asked for is a
+  // property of the DISTRIBUTION, not of any one round, and asserting it per
+  // round makes a flaky test. Rounds are not reproducible even from a fixed
+  // seed - the round id is random and goes into the stream - and difficulty is
+  // not the only thing line placement is scoring. It also wants a line where
+  // the normal approximation is actually wrong, because that is the week's
+  // whole point, and it will take a slightly easier question to get one.
   //
-  // The line has to be a latitude a person can say out loud, so placement picks
-  // the best available 0.1-degree line rather than an exact one. And difficulty
-  // is not the only thing being scored: placement also wants a line where the
-  // normal approximation is actually wrong, because that is what the week is
-  // for, and it will accept a slightly easier question to get one.
-  //
-  // Measured over 24 rounds against a 65% request, the opening confidence runs
-  // 62% to 73% with a median of 66%. So ten points is a real bound and not a
-  // shrug - it failed at six, and a weighting that held six made rounds open as
-  // certain as 84%, which is a worse trade than this one.
-  assert.ok(
-    Math.abs(rel[0].confidence - CONFIDENCE.defaultStart) < 0.1,
-    `the opening release sits at ${(rel[0].confidence * 100).toFixed(1)}%`
-  );
-  assert.ok(
-    rel[rel.length - 1].confidence > rel[0].confidence,
-    "the last solution is no more convincing than the first"
-  );
-  for (const r of rel) {
-    assert.ok(r.pNorth >= 0 && r.pNorth <= 1, `p = ${r.pNorth}`);
+  // So measure a sample. Over 24 rounds against a 65% request the opening
+  // confidence ran 62-73% with a median of 66%; a per-round bound of six points
+  // failed outright, and one of ten points still failed about one run in seven.
+  const N = 8;
+  const opens = [];
+  for (let k = 0; k < N; k++) {
+    const b = await POST("admin/round", { token: admin, startConfidence: CONFIDENCE.defaultStart });
+    const r = b.truth.releases;
+    opens.push(r[0].confidence);
+    // Whatever the difficulty, every round has to end more decided than it
+    // began and has to stay a probability. Those are per-round promises.
+    assert.ok(
+      r[r.length - 1].confidence > r[0].confidence,
+      `round ${k}: the last solution is no more convincing than the first`
+    );
+    for (const x of r) assert.ok(x.pNorth >= 0 && x.pNorth <= 1, `p = ${x.pNorth}`);
   }
+  const sorted = [...opens].sort((a, b) => a - b);
+  const median = sorted[Math.floor(N / 2)];
+  assert.ok(
+    Math.abs(median - CONFIDENCE.defaultStart) < 0.06,
+    `the typical round opens at ${(median * 100).toFixed(1)}%, not near ${CONFIDENCE.defaultStart * 100}%`
+  );
+  assert.ok(
+    sorted[sorted.length - 1] - CONFIDENCE.defaultStart < 0.2,
+    `a round opened at ${(sorted[sorted.length - 1] * 100).toFixed(1)}%, which is not a question`
+  );
+  // put the flagship round back for the tests that follow
+  truth = (await POST("admin/round", { token: admin, seed: "api-test", event: "2008TC3" })).truth;
 });
 
 let alice, bob, carol;
