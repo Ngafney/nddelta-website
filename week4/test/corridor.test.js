@@ -200,5 +200,57 @@ ok("the AI prompt carries the numbers, the assumptions, and the warning", () => 
   assert.ok(!/winner|answer is|actually landed/i.test(text), "the prompt leaks the outcome");
 });
 
+/**
+ * The displacement map means what the round SAYS it means.
+ *
+ * The data panel hands every team a covariance in kilometres along and across
+ * the corridor, and the prompt tells them exactly how to turn a draw from it
+ * into an impact point: one geodesic leg down the corridor, then one 90 degrees
+ * off the track where it now is. Settlement has to do the same thing, or the
+ * published numbers do not describe the market being settled.
+ *
+ * They once did not. The cross-track leg was a rotation about an axis built at
+ * the ORIGINAL point rather than the displaced one, which is a rotation of the
+ * whole sphere about a fixed line: the arc a point travels through shrinks by
+ * sin(angle from the axis), so a 634 km cross-track offset arrived as 448 km
+ * for a sample 5000 km down the corridor. A team following the instructions
+ * priced NORTH at 91 where the market settled as though it were 65.
+ *
+ * It hid for as long as it did because the error is third order in arc length -
+ * about three kilometres on the 600 km corridor the round used at first. So the
+ * check has to be made at the length the round actually uses.
+ */
+ok("a cross-track offset is that many kilometres, wherever it is applied", () => {
+  const event = EVENTS[3];
+  const corridor = corridorOf(event);
+  const arcKm = (a, b) => {
+    const t = (d) => (d * Math.PI) / 180;
+    const c =
+      Math.sin(t(a.lat)) * Math.sin(t(b.lat)) +
+      Math.cos(t(a.lat)) * Math.cos(t(b.lat)) * Math.cos(t(b.lon - a.lon));
+    return Math.acos(Math.max(-1, Math.min(1, c))) * R_EARTH_KM;
+  };
+  for (const alongKm of [0, 1000, 2500, -2500, 5000, -5000, 8000]) {
+    for (const crossKm of [250, -250, 1268]) {
+      const onTrack = walk(event.lat, event.lon, corridor.azimuthDeg, alongKm, 0);
+      const offTrack = walk(event.lat, event.lon, corridor.azimuthDeg, alongKm, crossKm);
+      const got = arcKm(onTrack, offTrack);
+      assert.ok(
+        Math.abs(got - Math.abs(crossKm)) < 0.001,
+        `${alongKm} km along, a ${crossKm} km cross-track step actually moved ${got.toFixed(1)} km`
+      );
+    }
+  }
+  // And the along-track leg is the length it claims to be, for the same reason.
+  for (const alongKm of [0, 500, -500, 4000, -4000]) {
+    const p = walk(event.lat, event.lon, corridor.azimuthDeg, alongKm, 0);
+    const got = arcKm({ lat: event.lat, lon: event.lon }, p);
+    assert.ok(
+      Math.abs(got - Math.abs(alongKm)) < 0.001,
+      `a ${alongKm} km along-track step actually moved ${got.toFixed(1)} km`
+    );
+  }
+});
+
 console.log(`\n${passed} passed, ${failed} failed\n`);
 process.exit(failed ? 1 : 0);

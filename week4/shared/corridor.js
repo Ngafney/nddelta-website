@@ -118,18 +118,38 @@ export function corridorOf(event) {
  */
 export function walk(latDeg, lonDeg, azimuthDeg, alongKm, crossKm = 0) {
   const p = toUnit(latDeg, lonDeg);
-  const up = p;
-  const east = unit(cross([0, 0, 1], up));
-  const north = cross(up, east);
+  const east = unit(cross([0, 0, 1], p));
+  const north = cross(p, east);
   const az = azimuthDeg * DEG;
-  // Heading, and the direction 90° to its right, both tangent to the sphere.
   const head = add(scale(north, Math.cos(az)), scale(east, Math.sin(az)));
-  const right = add(scale(north, Math.cos(az + Math.PI / 2)), scale(east, Math.sin(az + Math.PI / 2)));
 
-  // Rotate about the axis perpendicular to the travel plane, twice.
-  let v = rotate(p, unit(cross(p, head)), alongKm / R_EARTH_KM);
-  if (crossKm !== 0) v = rotate(v, unit(cross(p, right)), crossKm / R_EARTH_KM);
-  return toLatLon(v);
+  // Leg one: down the corridor, rotating about the pole of the travel plane.
+  const axis = unit(cross(p, head));
+  const a = alongKm / R_EARTH_KM;
+  const p1 = rotate(p, axis, a);
+  if (crossKm === 0) return toLatLon(p1);
+
+  // Leg two: 90 degrees to the right OF THE TRACK WHERE IT NOW IS.
+  //
+  // The heading has to be carried along the first leg and the second rotation
+  // taken about an axis through the NEW point. An earlier version rotated about
+  // an axis built at the ORIGINAL point, which is a rotation of the whole
+  // sphere about a fixed line rather than a step sideways off the track: the
+  // arc it moves a point through shrinks by sin(angle from the axis), so the
+  // further down the corridor a sample sat, the smaller its cross-track offset
+  // secretly became. Measured on a live round, a 634 km offset arrived as 586
+  // km at 2500 km along and 448 km at 5000 km - 29% short - and the published
+  // covariance therefore did not mean what settlement did with it. A team
+  // following the round's own instructions priced NORTH at 91 where the market
+  // settled as though it were 65.
+  //
+  // Invisible while the corridor was 600 km long, which is why it survived: the
+  // error is third order in arc length and came to about three kilometres.
+  // Lengthening the corridor to 2400 km to make the Monte Carlo worth running
+  // is what brought it into the open.
+  const head1 = rotate(head, axis, a);
+  const right1 = cross(head1, p1); // unit already: both are unit and orthogonal
+  return toLatLon(rotate(p1, unit(cross(p1, right1)), crossKm / R_EARTH_KM));
 }
 
 /** Rodrigues rotation of `v` about unit axis `k` by angle `a`. */

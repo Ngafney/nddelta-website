@@ -279,10 +279,13 @@ ASSUMPTIONS I AM MAKING — please tell me if any are wrong before you write cod
   3. A displacement of (along, cross) means: travel "along" km from the nominal
      point along the great circle whose initial bearing is the corridor azimuth,
      then "cross" km along the great circle leaving THAT point at 90 degrees to
-     the right of it. Two legs, in that order. (Treating it instead as one flat
-     tangent-plane displacement moves the answer by well under a kilometre at
-     this scale, so it will not change your price - but the two-leg version is
-     the one settlement uses.)
+     the right of it - 90 degrees off the track WHERE IT NOW IS, not off the
+     original heading. Two legs, in that order, and that is what settlement
+     uses. (The obvious alternative, one combined step of hypot(along, cross)
+     km on a single bearing, can put an individual sample up to 1000 km away
+     from the two-leg answer on a corridor this long, but the two disagree on
+     P(north) by only about 0.2 points - measured. So it will not change your
+     price; it will change where you think any one sample landed.)
   4. A sphere of radius 6371.0088 km, with geodetic latitude equal to
      geocentric. This is the assumption to distrust hardest: on the real
      ellipsoid the two differ by up to about 0.19 degrees at mid-latitudes, and
