@@ -1487,3 +1487,71 @@ select { appearance: none; cursor: pointer; }
    kind of thing, so it reads as one. */
 .botrow.maker { border-left: 3px solid var(--gold, #e9b949); margin-bottom: 8px; }
 .botrow.maker.on .botname { color: var(--gold, #e9b949); }
+
+/* ---- DeltaGPT --------------------------------------------------------- */
+/* A chat column that has to stay readable on a phone in a lecture hall, so
+   the bubbles are full width and the speaker is a label above, not a gutter. */
+.aipanel { display: flex; flex-direction: column; }
+.aimodel { font-size: 8px; text-transform: none; }
+.chat {
+  min-height: 300px;
+  max-height: 58vh;
+  overflow-y: auto;
+  padding: 10px 4px 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.chatrow { display: flex; flex-direction: column; gap: 4px; }
+.chatrow .who { font-style: normal; font-size: 7px; letter-spacing: 0.08em; color: var(--dim); }
+.chatrow.user .who { color: var(--gold, #e9b949); }
+.chatrow.tool .who { color: #6fc0ff; }
+.chatrow.sysnote .who { color: #7ee787; }
+.bubble {
+  background: #0c1526;
+  border: 1px solid var(--line-dim);
+  padding: 9px 11px;
+  font-size: 11px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.chatrow.user .bubble { background: #131d33; border-color: #2b3f63; }
+.chatrow.sysnote .bubble { border-left: 3px solid #7ee787; }
+.bubble p { margin: 0 0 6px; }
+.bubble p:last-child { margin-bottom: 0; }
+.bubble p:empty { display: none; }
+.bubble code { background: #06101f; padding: 1px 4px; font-size: 10px; }
+.bubble b { color: var(--gold, #e9b949); }
+pre.code, pre.out {
+  background: #06101f;
+  border: 1px solid var(--line-dim);
+  padding: 8px;
+  margin: 6px 0 0;
+  font-size: 10px;
+  line-height: 1.5;
+  overflow-x: auto;
+  white-space: pre;
+}
+pre.out { border-color: #2b4f63; color: #b9e6ff; }
+.toolwhy { font-size: 10px; color: var(--dim); margin-bottom: 4px; }
+.chaterr { border-left: 3px solid #ff6b6b; background: rgba(255,107,107,0.08); padding: 8px 10px; font-size: 11px; }
+.chatbox { display: flex; gap: 8px; align-items: stretch; margin-top: 8px; }
+.chatbox textarea {
+  flex: 1;
+  resize: vertical;
+  font: inherit;
+  font-size: 11px;
+  background: #06101f;
+  color: var(--fg);
+  border: 1px solid var(--line);
+  padding: 8px;
+  line-height: 1.5;
+}
+.chatfoot { display: flex; justify-content: space-between; gap: 10px; margin-top: 6px; font-size: 9px; flex-wrap: wrap; }
+.linky { background: none; border: 0; color: #6fc0ff; font: inherit; font-size: 9px; cursor: pointer; padding: 0; text-decoration: underline; }
+@media (max-width: 560px) {
+  .chat { max-height: 50vh; }
+  .chatbox { flex-direction: column; }
+}
+.airow { display: grid; grid-template-columns: 2fr 1fr; gap: 10px; }
+@media (max-width: 560px) { .airow { grid-template-columns: 1fr; } }

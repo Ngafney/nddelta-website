@@ -64,7 +64,9 @@ function Console({ token, onOut }) {
   const [startCash, setStartCash] = useState("10000");
   const [defaultSize, setDefaultSize] = useState("10");
   const [keepPlayers, setKeepPlayers] = useState(false);
-  const [maker, setMaker] = useState({ on: true, halfSpread: 8, shares: 15, refreshSec: 15 });
+  const [aiKey, setAiKey] = useState("");
+  const [aiModel, setAiModel] = useState("");
+  const [ai, setAi] = useState(null);
   const [bots, setBots] = useState(() =>
     Object.fromEntries(BOT_SLOTS.map((s) => [s.key, { on: false, shares: "200", everySec: "20" }]))
   );
@@ -74,14 +76,9 @@ function Console({ token, onOut }) {
       const r = await api.get("admin/inspect", { token });
       setInfo(r);
       setErr(null);
-      if (r.maker) {
-        setMaker({
-          on: !!r.maker.on,
-          halfSpread: r.maker.halfSpread ?? 8,
-          shares: r.maker.shares ?? 15,
-          refreshSec: r.maker.refreshSec ?? 15,
-        });
-      }
+      // Cheap, and the operator needs to see at a glance whether the room can
+      // actually talk to the assistant.
+      api.get("ai/status").then(setAi).catch(() => {});
       if (r.bots?.length) {
         setBots((cur) => {
           const next = { ...cur };
@@ -291,57 +288,62 @@ function Console({ token, onOut }) {
         </section>
       )}
 
+      {/* ── DeltaGPT ────────────────────────────── */}
+      <section className="panel">
+        <div className="panel-title">DELTAGPT</div>
+        <p className="hint">
+          The assistant the room talks to, on your OpenAI key. The key is stored server-side and is
+          never sent to a student's browser — they only ever see answers. Set OPENAI_API_KEY in the
+          environment and this box is unnecessary; paste one here if you cannot reach the dashboard.
+        </p>
+        <div className="airow">
+          <Field label="OPENAI API KEY" hint={ai ? (ai.ready ? `live · key from the ${ai.source}` : "not set — the tab tells students to ask you") : ""}>
+            <input
+              type="password"
+              autoComplete="off"
+              placeholder={ai?.ready ? "•••••• set — paste a new one to replace it" : "sk-…"}
+              value={aiKey}
+              onChange={(e) => setAiKey(e.target.value)}
+            />
+          </Field>
+          <Field label="MODEL" hint={`blank keeps ${ai?.model ?? "the default"}`}>
+            <input placeholder={ai?.model ?? ""} value={aiModel} onChange={(e) => setAiModel(e.target.value)} />
+          </Field>
+        </div>
+        <PxButton
+          disabled={!!busy}
+          onClick={() =>
+            act("ai", async () => {
+              const body = { token };
+              if (aiKey.trim()) body.key = aiKey.trim();
+              if (aiModel.trim()) body.model = aiModel.trim();
+              const out = await api.post("admin/ai", body);
+              setAi(out);
+              setAiKey("");
+              setAiModel("");
+              setNote(out.ready ? `DeltaGPT is live on ${out.model}.` : "Still no key — the tab stays off.");
+            })
+          }
+        >
+          {busy === "ai" ? <Spinner text="SAVING" /> : "APPLY"}
+        </PxButton>
+        {ai && (
+          <div className="hint" style={{ marginTop: 8 }}>
+            {ai.ready ? "● LIVE" : "○ OFF"} · {ai.calls ?? 0} calls · {(ai.tokens ?? 0).toLocaleString()} tokens this round
+          </div>
+        )}
+      </section>
+
       {/* ── bots ────────────────────────────────────────────────── */}
       {round && (
         <section className="panel">
           <div className="panel-title">NOISE DESK</div>
           <p className="hint">
-            Uninformed market orders on a fixed schedule. The room is told these exist and what they are doing.
+            Uninformed market orders on a fixed schedule — the desk TAKES liquidity and never
+            quotes. The room makes the market; these are what pay the room for doing it. Students
+            are told the desk exists and what it is doing.
           </p>
 
-          <div className={`botrow maker ${maker.on ? "on" : ""}`}>
-            <label className="botname">
-              <input
-                type="checkbox"
-                checked={maker.on}
-                onChange={(e) => setMaker((m) => ({ ...m, on: e.target.checked }))}
-              />
-              STANDING QUOTE
-            </label>
-            <span>
-              50 ±
-              <input
-                type="number"
-                min={1}
-                max={45}
-                value={maker.halfSpread}
-                onChange={(e) => setMaker((m) => ({ ...m, halfSpread: e.target.value }))}
-              />
-              <i>ticks</i>
-            </span>
-            <span>
-              <input
-                type="number"
-                min={1}
-                max={500}
-                value={maker.shares}
-                onChange={(e) => setMaker((m) => ({ ...m, shares: e.target.value }))}
-              />
-              <i>shares a side</i>
-            </span>
-            <span className="dim botstat">
-              {maker.on
-                ? `quotes ${Math.max(1, 50 - Number(maker.halfSpread) || 42)} / ${
-                    Math.min(99, 50 + Number(maker.halfSpread) || 58)
-                  } in both books`
-                : "books open empty"}
-            </span>
-          </div>
-          <p className="hint">
-            A two-sided quote parked at 50 in both books, so the room always has something to trade
-            against. It never reads the data, which is what makes it beatable — and the spread is
-            what stops buying both sides being free money.
-          </p>
           <div className="bots">
             {BOT_SLOTS.map((slot) => {
               const b = bots[slot.key];
@@ -388,7 +390,6 @@ function Console({ token, onOut }) {
               act("bots", () =>
                 api.post("admin/bots", {
                   token,
-                  maker,
                   bots: BOT_SLOTS.map((s) => ({
                     key: s.key,
                     on: bots[s.key].on,

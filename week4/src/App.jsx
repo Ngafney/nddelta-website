@@ -11,6 +11,7 @@ import Rules from "./components/Rules.jsx";
 import AdminPanel from "./components/AdminPanel.jsx";
 import BigBoard from "./components/BigBoard.jsx";
 import DataPanel from "./components/DataPanel.jsx";
+import AiPanel from "./components/AiPanel.jsx";
 import StaleBuild from "./components/StaleBuild.jsx";
 
 const MARKETS = ["north", "south"];
@@ -343,6 +344,7 @@ function Floor() {
         {[
           ["trade", "MARKETS"],
           ["data", `DATA${released ? ` · ${released}` : ""}`],
+          ["ai", "DELTAGPT"],
           ["sky", "MAP"],
           ["board", "LEADERBOARD"],
         ].map(([k, label]) => (
@@ -399,6 +401,7 @@ function Floor() {
       )}
 
       {tab === "data" && <DataPanel player={player} round={round} />}
+      {tab === "ai" && <AiPanel player={player} round={round} />}
       {tab === "sky" && <DataPanel player={player} round={round} />}
       {tab === "board" && (
         <Leaderboard rows={board} myTeamId={state.team?.id} settled={round.status === "settled"} />

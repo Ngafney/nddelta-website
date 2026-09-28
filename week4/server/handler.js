@@ -32,6 +32,7 @@ import {
   PHASES, TIMERS, BOTS, RULES_TEXT, DATA_NOTE, MODEL_NOTE, aiPrompt,
 } from "../shared/rules.js";
 import { EVENTS, EVENT_KEYS, eventByKey, OTHER_IMPACTS } from "../shared/events.js";
+import { AI_DEFAULTS, AI_MODELS, PYTHON_TOOL, systemPrompt, apiKeyFrom, chat } from "./ai.js";
 import {
   corridorOf, covariance, chol2, walk, latAt, northProbability, confidenceOf,
   nonlinearityPts,
@@ -220,28 +221,10 @@ function rateLimit(key, max, windowMs, message = "slow down a moment") {
 /* ── the noise desk ───────────────────────────────────────────────────── */
 
 const BOT_PID = "survey-desk";
-/**
- * The standing quote sits in its OWN account, and it has to.
- *
- * Self-trade prevention in the matcher does not skip your own resting order, it
- * CANCELS it - correct behaviour, and it meant the desk's market orders deleted
- * the desk's own quotes the first time they crossed. The book emptied within a
- * minute of the bell and the round was back to having no other side, which is
- * the bug this whole mechanism exists to fix.
- *
- * Two seats: one takes, one quotes. They trade with each other, which also
- * gives the room a tape to read instead of a blank one.
- */
-const MAKER_PID = "quote-desk";
 const BOT_TEAM = "survey-desk-team";
 
 /** Seat the bot at its own hidden table so it can trade like anyone else. */
 function seatBot(state) {
-  if (!state.players[MAKER_PID]) {
-    const q = newPlayer(MAKER_PID, `${BOTS.name} (QUOTES)`, "maker-device", state.startCashC * 400, Date.now());
-    q.teamId = BOT_TEAM;
-    state.players[MAKER_PID] = q;
-  }
   if (state.players[BOT_PID]) return;
   const p = newPlayer(BOT_PID, BOTS.name, "bot-device", state.startCashC * 400, Date.now());
   p.teamId = BOT_TEAM;
@@ -250,7 +233,7 @@ function seatBot(state) {
     id: BOT_TEAM,
     name: BOTS.name,
     code: "----",
-    members: [BOT_PID, MAKER_PID],
+    members: [BOT_PID],
     createdAt: Date.now(),
     hidden: true,
   };
@@ -303,49 +286,6 @@ function runBotsIfDue(state, now) {
   return fired;
 }
 
-/**
- * Keep a standing two-sided quote in both books.
- *
- * Re-posted rather than maintained: the desk cancels whatever it still has
- * resting and puts fresh orders up. That is cheap at this size, it cannot drift
- * out of sync with the book, and it means a quote eaten by a team is replaced
- * within a refresh instead of leaving the book empty for the rest of the round.
- *
- * Anchored at BOTS.maker.anchor, which does not move. The desk is the
- * uninformed side on purpose.
- */
-function runMakerIfDue(state, now) {
-  const cfg = state.maker;
-  if (!cfg || !cfg.on || state.status !== "live") return 0;
-  if (cfg.nextAt && now < cfg.nextAt) return 0;
-  cfg.nextAt = now + Math.max(5, cfg.refreshSec ?? 15) * 1000;
-  seatBot(state);
-  const g = grid(state);
-  let posted = 0;
-  for (const market of MARKETS) {
-    // Clear the desk's own quotes in this book before re-posting them.
-    for (const o of bookOf(state, market).orders.filter((o) => o.pid === MAKER_PID)) {
-      try {
-        cancelOrder(state, MAKER_PID, o.id, market);
-      } catch (e) {
-        if (!(e instanceof EngineError)) throw e;
-      }
-    }
-    const bid = Math.max(g.orderMin, Math.round(cfg.anchor - cfg.halfSpread));
-    const ask = Math.min(g.orderMax, Math.round(cfg.anchor + cfg.halfSpread));
-    for (const [side, px] of [["B", bid], ["A", ask]]) {
-      try {
-        placeOrder(state, market, MAKER_PID, side, px, cfg.shares, now);
-        posted++;
-      } catch (e) {
-        if (!(e instanceof EngineError)) throw e;
-        cfg.lastError = e.message;
-      }
-    }
-  }
-  return posted;
-}
-
 /* ── the clock ────────────────────────────────────────────────────────── */
 
 /**
@@ -366,9 +306,6 @@ async function advanceIfDue(state, version, now) {
   }
   if (state.status === "live") {
     if (runBotsIfDue(state, now)) changed = true;
-    // Also on the polling path, not only when someone trades: the standing
-    // quote has to stay up for a room that is reading rather than clicking.
-    if (runMakerIfDue(state, now)) changed = true;
   }
   if (state.status === "ended") {
     const spec = await loadSpec(state.roundId);
@@ -391,10 +328,7 @@ function openTrading(state, now, minutes) {
   (state.bots ?? []).forEach((bot, i) => {
     bot.nextAt = now + 1500 * (i + 1);
   });
-  // The standing quote goes up with the bell, not a refresh later: the first
-  // player to look must find a market, not an empty book.
-  if (state.maker) state.maker.nextAt = 0;
-  runMakerIfDue(state, now);
+
 }
 
 async function recordHistory(state, spec, now) {
@@ -512,6 +446,39 @@ function meView(state, p) {
     downloads: p.downloads ?? 0,
     settledPos: p.settledPos ?? null,
   };
+}
+
+/**
+ * Keep only the fields OpenAI accepts, and cap the sizes.
+ *
+ * The transcript arrives from the browser, so it is untrusted input in the
+ * ordinary way: a student could hand-edit it, and a long tool result could
+ * otherwise carry a megabyte of print() output straight into a billed request.
+ */
+function sanitizeMessage(m) {
+  const role = ["user", "assistant", "tool", "system"].includes(m?.role) ? m.role : "user";
+  // A system message from the client would let a student rewrite the brief.
+  const safeRole = role === "system" ? "user" : role;
+  const out = { role: safeRole };
+  if (typeof m.content === "string") out.content = m.content.slice(0, 20_000);
+  else if (m.content == null) out.content = "";
+  else out.content = String(m.content).slice(0, 20_000);
+  if (safeRole === "tool") {
+    out.tool_call_id = String(m.tool_call_id ?? "").slice(0, 100);
+    if (!out.tool_call_id) return { role: "user", content: out.content };
+  }
+  if (safeRole === "assistant" && Array.isArray(m.tool_calls) && m.tool_calls.length) {
+    out.tool_calls = m.tool_calls.slice(0, 4).map((c) => ({
+      id: String(c.id ?? "").slice(0, 100),
+      type: "function",
+      function: {
+        name: String(c.function?.name ?? "run_python").slice(0, 60),
+        arguments: String(c.function?.arguments ?? "{}").slice(0, 20_000),
+      },
+    }));
+    if (!out.content) out.content = null;
+  }
+  return out;
 }
 
 /** What the gate needs to show a team code: the code, and how many seats. */
@@ -723,7 +690,6 @@ export async function handle(method, route, body, query) {
       return tx((state) => {
         const p = requirePlayer(state, body);
         runBotsIfDue(state, now);
-        runMakerIfDue(state, now);
         const market = String(body.market ?? "");
         if (!isMarket(market)) throw httpError(400, "no such market");
         const side = body.side === "B" || body.side === "A" ? body.side : null;
@@ -754,6 +720,98 @@ export async function handle(method, route, body, query) {
         else throw httpError(400, "nothing to cancel");
         return { ok: true, ...out, me: meView(state, p) };
       });
+    }
+
+    /* ── DeltaGPT ───────────────────────────────────── */
+
+    /**
+     * Is the assistant usable, and what does the room need to know about it?
+     *
+     * Answered without a key check costing an API call, because every client
+     * polls this and a lecture hall is sixty clients.
+     */
+    case "GET ai/status": {
+      const r = await readMarket();
+      const key = apiKeyFrom(r.state);
+      return {
+        ready: !!key,
+        model: r.state?.ai?.model ?? AI_DEFAULTS.model,
+        // Where the key came from, so an operator can tell a deploy-time key
+        // from one they pasted. Never the key itself.
+        source: process.env.OPENAI_API_KEY ? "environment" : r.state?.ai?.key ? "control room" : null,
+      };
+    }
+
+    /**
+     * One turn of the conversation.
+     *
+     * The transcript lives in the browser and is sent up each time. That keeps
+     * the server stateless across a serverless deploy and means a student who
+     * reloads does not lose their thread - but it also means the transcript is
+     * whatever the client says it is, so it is capped and the system prompt is
+     * always rebuilt HERE from the real round state. A student cannot talk the
+     * assistant into thinking a later release is out.
+     */
+    case "POST ai/chat": {
+      const pid = body.playerId;
+      rateLimit(`ai:${pid}`, 20, 60_000, "give it a moment - that is a lot of questions in a minute");
+      const r = await readMarket();
+      if (!r.state) throw httpError(409, "no round yet", "no-round");
+      const { state } = await advanceIfDue(r.state, r.version, now);
+      const p = requirePlayer(state, body);
+
+      const key = apiKeyFrom(state);
+      if (!key) {
+        throw httpError(503, "DeltaGPT has no API key yet - ask the operator to set it", "no-key");
+      }
+
+      // The data the room is actually allowed to have, rebuilt from the round.
+      const spec = await loadSpec(state.roundId);
+      const solution = spec && state.released > 0 ? publishedSolution(state, spec) : null;
+      const sys = systemPrompt({
+        solution,
+        released: state.released ?? 0,
+        totalReleases: SCENARIO.shrink.length,
+      });
+
+      const sent = Array.isArray(body.messages) ? body.messages : [];
+      if (!sent.length) throw httpError(400, "nothing to say");
+      // Trim to the most recent exchanges so a long afternoon cannot run the
+      // context - and the bill - away. Tool calls must stay adjacent to the
+      // message that made them or OpenAI rejects the whole request, so the
+      // window is cut at a plain user message.
+      let window = sent.slice(-AI_DEFAULTS.maxTurns);
+      while (window.length && window[0].role !== "user") window = window.slice(1);
+      if (!window.length) window = sent.slice(-2);
+
+      const messages = [{ role: "system", content: sys }, ...window.map(sanitizeMessage)];
+      const out = await chat({
+        key,
+        model: state.ai?.model ?? AI_DEFAULTS.model,
+        messages,
+        tools: [PYTHON_TOOL],
+        temperature: state.ai?.temperature,
+        maxOutputTokens: AI_DEFAULTS.maxOutputTokens,
+      });
+
+      // Usage is worth counting: it is the only warning an operator gets that
+      // a room of sixty is burning through a month of credit in an hour. Done
+      // after the call and not allowed to fail it - a lost tally is a rounding
+      // error, a lost answer is a student stuck in front of the class.
+      try {
+        await tx((st) => {
+          st.ai = st.ai ?? {};
+          st.ai.calls = (st.ai.calls ?? 0) + 1;
+          st.ai.tokens = (st.ai.tokens ?? 0) + (out.usage?.total_tokens ?? 0);
+          const who = st.players?.[p.id];
+          if (who) who.aiCalls = (who.aiCalls ?? 0) + 1;
+          return null;
+        });
+      } catch {
+        /* counting is not worth an error in front of the room */
+      }
+
+      return { message: out.message, finish: out.finish, release: state.released ?? 0 };
     }
 
     /* ── the reveal ───────────────────────────────────────────────────── */
@@ -928,35 +986,33 @@ export async function handle(method, route, body, query) {
             fills: prev.fills ?? 0,
           };
         });
-        // The standing quote too, if the operator sent one. Turning it off is a
-        // legitimate choice - a room of sixty makes its own market - but it has
-        // to be a choice rather than the default, because a round that opens
-        // with an empty book has nothing for anyone to do.
-        if (body.maker && typeof body.maker === "object") {
-          const m = body.maker;
-          const prev = state.maker ?? { ...BOTS.maker };
-          state.maker = {
-            ...prev,
-            on: !!m.on,
-            halfSpread: Math.min(45, Math.max(1, Math.round(numOr(m.halfSpread, prev.halfSpread)))),
-            shares: Math.min(BOTS.maxShares, Math.max(1, Math.round(numOr(m.shares, prev.shares)))),
-            refreshSec: Math.min(BOTS.maxSeconds, Math.max(5, Math.round(numOr(m.refreshSec, prev.refreshSec)))),
-            nextAt: 0, // re-quote at the next poll so a change is visible at once
-          };
-          if (!state.maker.on) {
-            // Pull the quotes it already has resting, or they sit there forever.
-            for (const market of MARKETS) {
-              for (const o of bookOf(state, market).orders.filter((o) => o.pid === MAKER_PID)) {
-                try {
-                  cancelOrder(state, MAKER_PID, o.id, market);
-                } catch (e) {
-                  if (!(e instanceof EngineError)) throw e;
-                }
-              }
-            }
-          }
+        return { bots: state.bots };
+      });
+    }
+
+    /** Key and model, set without a deploy. The key is never read back out. */
+    case "POST admin/ai": {
+      await requireAdmin(body);
+      return tx((state) => {
+        state.ai = state.ai ?? {};
+        if (typeof body.key === "string") {
+          const k = body.key.trim();
+          // An empty box means "clear it", not "set it to nothing by accident":
+          // the client only sends the field when the operator typed in it.
+          state.ai.key = k || undefined;
         }
-        return { bots: state.bots, maker: state.maker };
+        if (typeof body.model === "string" && body.model.trim()) {
+          state.ai.model = body.model.trim().slice(0, 60);
+        }
+        const key = apiKeyFrom(state);
+        return {
+          ok: true,
+          ready: !!key,
+          model: state.ai.model ?? AI_DEFAULTS.model,
+          source: process.env.OPENAI_API_KEY ? "environment" : state.ai.key ? "control room" : null,
+          calls: state.ai.calls ?? 0,
+          tokens: state.ai.tokens ?? 0,
+        };
       });
     }
 
@@ -1023,7 +1079,14 @@ export async function handle(method, route, body, query) {
             downloads: p.downloads ?? 0,
           })),
         bots: r.state.bots ?? [],
-        maker: r.state.maker ?? null,
+        // What the room is spending, and on what. Never the key.
+        ai: {
+          ready: !!apiKeyFrom(r.state),
+          model: r.state.ai?.model ?? AI_DEFAULTS.model,
+          source: process.env.OPENAI_API_KEY ? "environment" : r.state.ai?.key ? "control room" : null,
+          calls: r.state.ai?.calls ?? 0,
+          tokens: r.state.ai?.tokens ?? 0,
+        },
         // The operator alone sees the answer, before anybody else does.
         truth: spec
           ? {
@@ -1338,7 +1401,6 @@ async function buildRound(body, now) {
     key: sl.key, market: sl.market, side: sl.side,
     on: true, shares: 8, everySec: 45, nextAt: null, sent: 0, fills: 0,
   }));
-  state.maker = { on: true, ...BOTS.maker, nextAt: null };
 
   if (body.keepPlayers) {
     const prev = (await readMarket({ fresh: true })).state;

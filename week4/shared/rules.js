@@ -169,34 +169,6 @@ export const BOTS = {
   maxSeconds: 600,
   maxSweep: 25,
   name: "SURVEY DESK",
-
-  /**
-   * The desk also leaves a standing two-sided quote in both books.
-   *
-   * Without this there is nothing to trade against. The four slots above only
-   * TAKE liquidity - they fire a market order and cancel whatever does not
-   * fill - so a round opened with no resting orders stayed empty until a human
-   * posted one, and the first thing anyone tries is to buy. A playtester priced
-   * the market correctly to within a point, found nothing on the other side of
-   * either book, and reported the trading half as unplayable. Fairly.
-   *
-   * The quote is deliberately IGNORANT: anchored at 50 in both books, never
-   * moved by the data, never moved by the news. That makes it the thing a team
-   * with a real number is playing against, which is the point of the week.
-   *
-   * The spread is what keeps it from being free money in a way that teaches
-   * nothing. Anchored at 50 with an 8-tick half-spread, the two books quote
-   * 42 bid / 58 offer each: buying both sides costs 116 to collect 100, and
-   * selling both collects 84 to owe 100. So there is no arbitrage against the
-   * desk itself - the only way to take its money is to be right about where
-   * the rock came down.
-   */
-  maker: {
-    anchor: 50,
-    halfSpread: 8,
-    shares: 15,
-    refreshSec: 15,
-  },
 };
 
 /* ── player-facing copy ───────────────────────────────────────────────── */
@@ -227,7 +199,11 @@ A resting bid ties up **$price × shares**: bidding 30 for 10 shares holds $300.
 
 Holding NORTH *and* SOUTH together is far cheaper than holding either alone — exactly one of them pays $100, so the pair is nearly riskless and the margin knows it. This is the most useful sentence on this page.
 
-**There are bots.** An uninformed desk trades both books on a fixed schedule, regardless of what the data says. It is always there, it never learns, and it is why there is something on the other side of your first order. It is liquidity, it is noise, and it is where your money comes from.
+**You make the market.** The books open EMPTY. Nothing trades until someone posts a price, and that someone is you. Post a bid and an offer around what you think NORTH is worth and wait to be hit — that is the job.
+
+**The desk only takes.** An uninformed desk fires market orders on a fixed schedule, in both books, in whatever direction the operator set, regardless of what the data says. It never quotes. So it can only ever trade against *your* resting orders, and every share it takes from you is paid for out of its ignorance. If nobody quotes, nothing happens and nobody makes anything.
+
+Quote too wide and the desk trades with someone else. Quote too tight and it runs you over. That trade-off is the game.
 
 **Limits.** At most 50 shares an order and 40 resting orders each. You will
 almost never meet the second one: margin runs out first, and how much sooner

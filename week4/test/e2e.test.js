@@ -134,28 +134,15 @@ await ok("a whole round plays through over HTTP, from build to reveal", async ()
 
   await api("POST", "admin/open", { token, minutes: 30 });
 
-  // The desk keeps a standing two-sided quote, so both books are live the
-  // instant trading opens and there is always something to trade against.
+  // The books open EMPTY - the desk never quotes - so Ada and Bo make the
+  // market between them. Two prices that sum to less than 100, so the pair is
+  // bought for less than the 100 it is certain to pay.
+  const pxNorth = 60, pxSouth = 35;
   const opened = await api("GET", `state?${cred}`);
   for (const m of ["north", "south"]) {
-    assert.ok(
-      opened.markets[m].bestBid != null && opened.markets[m].bestAsk != null,
-      `${m} opened with no quote`
-    );
+    assert.strictEqual(opened.markets[m].bestBid, null, `${m} opened with a bid nobody posted`);
+    assert.strictEqual(opened.markets[m].bestAsk, null, `${m} opened with an offer nobody posted`);
   }
-  const { bestBid, bestAsk } = opened.markets.north;
-
-  // Ada and Bo trade the pair with EACH OTHER, which means doing it inside the
-  // desk's spread. An earlier version of this test sold south at 35 against a
-  // 42 bid, so Bo's offer was lifted by the desk before Ada ever saw it and Ada
-  // ended the round flat - the quote working, not a bug. Two prices inside the
-  // spread that sum to less than 100, so the pair is bought for less than it pays.
-  const pxNorth = bestBid + 6;
-  const pxSouth = bestAsk - 11;
-  assert.ok(pxNorth > bestBid && pxNorth < bestAsk, "north leg is not inside the spread");
-  assert.ok(pxSouth > bestBid && pxSouth < bestAsk, "south leg is not inside the spread");
-  assert.ok(pxNorth + pxSouth < 100, "the pair is not being bought at a discount");
-
   await api("POST", "order", { playerId: b.playerId, token: b.token, market: "north", side: "A", px: pxNorth, qty: 5 });
   await api("POST", "order", { playerId: a.playerId, token: a.token, market: "north", side: "B", px: pxNorth, qty: 5 });
   await api("POST", "order", { playerId: b.playerId, token: b.token, market: "south", side: "A", px: pxSouth, qty: 5 });

@@ -333,21 +333,10 @@ await ok("the noise desk trades on its own schedule and is announced", async () 
   assert.strictEqual(round.bots.length, 2, "the room has to be told the bots exist");
   assert.ok(round.bots.every((b) => b.shares === 5 && b.everySec === 2));
 
-  // The desk also keeps a standing two-sided quote in both books, so that a
-  // round never opens with an empty market. That means resting orders OUTSIDE
-  // its spread are not the best price and the takers never reach them - an
-  // earlier version of this test offered north at 60 against a 58 quote and
-  // concluded the desk had stopped working. Sit inside the spread instead.
-  const q = (await GET("state", cred(bob))).markets;
-  for (const m of ["north", "south"]) {
-    assert.ok(
-      q[m].bestBid != null && q[m].bestAsk != null,
-      `${m} has no standing quote, so there is nothing for a room to trade against`
-    );
-  }
-  const inside = Math.round((q.north.bestBid + q.north.bestAsk) / 2);
-  await POST("order", { ...cred(bob), market: "north", side: "A", px: inside, qty: 40 });
-  await POST("order", { ...cred(bob), market: "south", side: "B", px: inside, qty: 40 });
+  // The desk only TAKES, so it needs resting orders to hit. That is the whole
+  // shape of the round: the room quotes, the desk runs into the quotes.
+  await POST("order", { ...cred(bob), market: "north", side: "A", px: 60, qty: 40 });
+  await POST("order", { ...cred(bob), market: "south", side: "B", px: 20, qty: 40 });
   const before = (await GET("state", cred(bob))).me.pos;
   await new Promise((r) => setTimeout(r, 2300));
   await GET("config");
