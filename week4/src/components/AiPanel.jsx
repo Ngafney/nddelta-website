@@ -34,8 +34,11 @@ function loadPyodide(onNote) {
       document.head.appendChild(s);
     });
     const py = await window.loadPyodide({ indexURL: PYODIDE.replace("pyodide.js", "") });
-    onNote?.("loading numpy");
-    await py.loadPackage("numpy");
+    // scipy as well as numpy: least_squares is the first thing any model
+    // reaches for on an orbit fit, and without it the very first block of
+    // code the room sees fails on an import.
+    onNote?.("loading numpy and scipy");
+    await py.loadPackage(["numpy", "scipy"]);
     onNote?.(null);
     return py;
   })().catch((e) => {
