@@ -93,9 +93,26 @@ export function systemPrompt(ctx) {
   sigma along / across   ${d.sigmaAlongKm.toFixed(0)} km / ${d.sigmaCrossKm.toFixed(0)} km
   THE LINE               ${d.lineDeg.toFixed(1)}°
 
-These exact numbers are already loaded in the Python sandbox as DATA, so you
-never need to retype them: DATA["nominal_lat_deg"], DATA["cov_along_along_km2"],
-DATA["line_latitude_deg"] and so on.`
+All of it is ALREADY LOADED in the Python sandbox as a dict called DATA, so you
+never need to retype a number. These are the only keys it has - use them exactly,
+do not guess others, and note the covariance arrives as four separate scalars:
+
+  DATA["nominal_lat_deg"]        DATA["nominal_lon_deg"]
+  DATA["corridor_azimuth_deg"]   DATA["ground_speed_km_s"]
+  DATA["cov_along_along_km2"]    DATA["cov_along_cross_km2"]
+  DATA["cov_cross_along_km2"]    DATA["cov_cross_cross_km2"]
+  DATA["sigma_along_km"]         DATA["sigma_cross_km"]
+  DATA["line_latitude_deg"]      DATA["earth_radius_km"]
+  DATA["event"]  DATA["release"]  DATA["of"]
+
+so the covariance matrix is
+
+  C = np.array([[DATA["cov_along_along_km2"], DATA["cov_along_cross_km2"]],
+                [DATA["cov_cross_along_km2"], DATA["cov_cross_cross_km2"]]])
+
+numpy is imported as np and math is available. Write the whole thing in one
+call where you can: a student watching you spend three rounds discovering the
+key names is a student who has stopped trusting you.`
     : `NO DATA IS OUT YET. The operator has not released the first solution.
 Help them get ready — talk through method, set up code — but you have no
 numbers to work with and you should say so.`;
@@ -169,7 +186,12 @@ export async function chat({ key, model, messages, tools, temperature, maxOutput
     body.temperature = temperature ?? AI_DEFAULTS.temperature;
     body.max_tokens = maxOutputTokens ?? AI_DEFAULTS.maxOutputTokens;
   } else {
-    body.max_completion_tokens = maxOutputTokens ?? AI_DEFAULTS.maxOutputTokens;
+    // The reasoning models spend tokens thinking before they write anything,
+    // and that spend comes out of the SAME budget. Measured against gpt-5 at a
+    // 2000 cap: it thought for the whole allowance and returned an empty reply
+    // with no tool call, which on screen is DeltaGPT saying nothing at all.
+    // Give them room.
+    body.max_completion_tokens = Math.max(maxOutputTokens ?? AI_DEFAULTS.maxOutputTokens, 8000);
   }
 
   let res;
