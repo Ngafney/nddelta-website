@@ -68,7 +68,11 @@ export function makeTruth(rand, opts = {}) {
   const wantHit = opts.wantHit ?? rand() < 0.5;
   // In Earth radii, measured centre to centre. Either just inside or just out:
   // a round that is not marginal is not worth a market.
-  const radii = wantHit ? 0.25 + rand() * 0.65 : 1.25 + rand() * 2.2;
+  // In Earth radii, centre to centre, and kept CLOSE to the boundary either
+  // way. A miss by three Earth radii is a miss the first week of data already
+  // settles, and a market that opens at 0 and stays there is not a market -
+  // measured on a live round that priced 0/0/0/13/0/0 across all six releases.
+  const radii = wantHit ? 0.3 + rand() * 0.6 : 1.12 + rand() * 0.55;
   const state = encounterState({
     tEncDays: T_ENCOUNTER,
     missAu: radii * EARTH_RADIUS_AU,
