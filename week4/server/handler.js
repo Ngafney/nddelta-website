@@ -765,7 +765,7 @@ export async function handle(method, route, body, query) {
       const sys = systemPrompt({
         solution,
         released: state.released ?? 0,
-        totalReleases: SCENARIO.shrink.length,
+        totalReleases: RELEASE_COUNTS.length,
       });
 
       const sent = Array.isArray(body.messages) ? body.messages : [];
