@@ -147,9 +147,14 @@ export function walk(latDeg, lonDeg, azimuthDeg, alongKm, crossKm = 0) {
   // error is third order in arc length and came to about three kilometres.
   // Lengthening the corridor to 2400 km to make the Monte Carlo worth running
   // is what brought it into the open.
+  // The axis for that second rotation is exactly the transported heading:
+  // p1 x (head1 x p1) = head1, because p1 and head1 are unit and orthogonal.
+  // So no bearing is ever computed, which matters - the obvious alternative,
+  // recovering the forward azimuth at p1 with an initial-bearing formula and
+  // adding 180, is undefined at along = 0 and has the sign backwards for
+  // negative along, which is half of every draw.
   const head1 = rotate(head, axis, a);
-  const right1 = cross(head1, p1); // unit already: both are unit and orthogonal
-  return toLatLon(rotate(p1, unit(cross(p1, right1)), crossKm / R_EARTH_KM));
+  return toLatLon(rotate(p1, head1, crossKm / R_EARTH_KM));
 }
 
 /** Rodrigues rotation of `v` about unit axis `k` by angle `a`. */
