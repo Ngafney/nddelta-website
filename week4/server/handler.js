@@ -40,7 +40,6 @@ import {
 import {
   AU_KM, GM_SUN, GM_EARTH, EARTH, EARTH_RADIUS_AU, EARTH_RADIUS_KM, trail, earthAt,
 } from "../shared/orbit.js";
-import { AI_DEFAULTS, AI_MODELS, PYTHON_TOOL, systemPrompt, apiKeyFrom, chat } from "./ai.js";
 
 
 /* ── secrets ──────────────────────────────────────────────────────────── */
@@ -452,39 +451,6 @@ function meView(state, p) {
   };
 }
 
-/**
- * Keep only the fields OpenAI accepts, and cap the sizes.
- *
- * The transcript arrives from the browser, so it is untrusted input in the
- * ordinary way: a student could hand-edit it, and a long tool result could
- * otherwise carry a megabyte of print() output straight into a billed request.
- */
-function sanitizeMessage(m) {
-  const role = ["user", "assistant", "tool", "system"].includes(m?.role) ? m.role : "user";
-  // A system message from the client would let a student rewrite the brief.
-  const safeRole = role === "system" ? "user" : role;
-  const out = { role: safeRole };
-  if (typeof m.content === "string") out.content = m.content.slice(0, 20_000);
-  else if (m.content == null) out.content = "";
-  else out.content = String(m.content).slice(0, 20_000);
-  if (safeRole === "tool") {
-    out.tool_call_id = String(m.tool_call_id ?? "").slice(0, 100);
-    if (!out.tool_call_id) return { role: "user", content: out.content };
-  }
-  if (safeRole === "assistant" && Array.isArray(m.tool_calls) && m.tool_calls.length) {
-    out.tool_calls = m.tool_calls.slice(0, 4).map((c) => ({
-      id: String(c.id ?? "").slice(0, 100),
-      type: "function",
-      function: {
-        name: String(c.function?.name ?? "run_python").slice(0, 60),
-        arguments: String(c.function?.arguments ?? "{}").slice(0, 20_000),
-      },
-    }));
-    if (!out.content) out.content = null;
-  }
-  return out;
-}
-
 /** What the gate needs to show a team code: the code, and how many seats. */
 const teamCard = (team) => ({
   id: team.id,
@@ -509,6 +475,10 @@ function publishedSolution(state, spec) {
     of: spec.releases.length,
     sightings,
     arcDays: RELEASE_ARCS[upto - 1],
+    // What the next batch will bring, so the panel can say so rather than
+    // leaving the room wondering whether more is coming at all.
+    nextAdds: upto < RELEASE_COUNTS.length ? RELEASE_COUNTS[upto] - RELEASE_COUNTS[upto - 1] : 0,
+    nextArcDays: upto < RELEASE_ARCS.length ? RELEASE_ARCS[upto] : null,
     sightingSigmaKm: SIGHTING_SIGMA_KM,
     earthEphemSigmaKm: EARTH_EPHEM_SIGMA_KM,
     gmSun: GM_SUN,
@@ -716,98 +686,6 @@ export async function handle(method, route, body, query) {
       });
     }
 
-    /* ── DeltaGPT ───────────────────────────────────── */
-
-    /**
-     * Is the assistant usable, and what does the room need to know about it?
-     *
-     * Answered without a key check costing an API call, because every client
-     * polls this and a lecture hall is sixty clients.
-     */
-    case "GET ai/status": {
-      const r = await readMarket();
-      const key = apiKeyFrom(r.state);
-      return {
-        ready: !!key,
-        model: r.state?.ai?.model ?? AI_DEFAULTS.model,
-        // Where the key came from, so an operator can tell a deploy-time key
-        // from one they pasted. Never the key itself.
-        source: process.env.OPENAI_API_KEY ? "environment" : r.state?.ai?.key ? "control room" : null,
-      };
-    }
-
-    /**
-     * One turn of the conversation.
-     *
-     * The transcript lives in the browser and is sent up each time. That keeps
-     * the server stateless across a serverless deploy and means a student who
-     * reloads does not lose their thread - but it also means the transcript is
-     * whatever the client says it is, so it is capped and the system prompt is
-     * always rebuilt HERE from the real round state. A student cannot talk the
-     * assistant into thinking a later release is out.
-     */
-    case "POST ai/chat": {
-      const pid = body.playerId;
-      rateLimit(`ai:${pid}`, 20, 60_000, "give it a moment - that is a lot of questions in a minute");
-      const r = await readMarket();
-      if (!r.state) throw httpError(409, "no round yet", "no-round");
-      const { state } = await advanceIfDue(r.state, r.version, now);
-      const p = requirePlayer(state, body);
-
-      const key = apiKeyFrom(state);
-      if (!key) {
-        throw httpError(503, "DeltaGPT has no API key yet - ask the operator to set it", "no-key");
-      }
-
-      // The data the room is actually allowed to have, rebuilt from the round.
-      const spec = await loadSpec(state.roundId);
-      const solution = spec && state.released > 0 ? publishedSolution(state, spec) : null;
-      const sys = systemPrompt({
-        solution,
-        released: state.released ?? 0,
-        totalReleases: RELEASE_COUNTS.length,
-      });
-
-      const sent = Array.isArray(body.messages) ? body.messages : [];
-      if (!sent.length) throw httpError(400, "nothing to say");
-      // Trim to the most recent exchanges so a long afternoon cannot run the
-      // context - and the bill - away. Tool calls must stay adjacent to the
-      // message that made them or OpenAI rejects the whole request, so the
-      // window is cut at a plain user message.
-      let window = sent.slice(-AI_DEFAULTS.maxTurns);
-      while (window.length && window[0].role !== "user") window = window.slice(1);
-      if (!window.length) window = sent.slice(-2);
-
-      const messages = [{ role: "system", content: sys }, ...window.map(sanitizeMessage)];
-      const out = await chat({
-        key,
-        model: state.ai?.model ?? AI_DEFAULTS.model,
-        messages,
-        tools: [PYTHON_TOOL],
-        temperature: state.ai?.temperature,
-        maxOutputTokens: AI_DEFAULTS.maxOutputTokens,
-      });
-
-      // Usage is worth counting: it is the only warning an operator gets that
-      // a room of sixty is burning through a month of credit in an hour. Done
-      // after the call and not allowed to fail it - a lost tally is a rounding
-      // error, a lost answer is a student stuck in front of the class.
-      try {
-        await tx((st) => {
-          st.ai = st.ai ?? {};
-          st.ai.calls = (st.ai.calls ?? 0) + 1;
-          st.ai.tokens = (st.ai.tokens ?? 0) + (out.usage?.total_tokens ?? 0);
-          const who = st.players?.[p.id];
-          if (who) who.aiCalls = (who.aiCalls ?? 0) + 1;
-          return null;
-        });
-      } catch {
-        /* counting is not worth an error in front of the room */
-      }
-
-      return { message: out.message, finish: out.finish, release: state.released ?? 0 };
-    }
-
     /* ── the reveal ───────────────────────────────────────────────────── */
 
     case "GET reveal": {
@@ -988,32 +866,6 @@ export async function handle(method, route, body, query) {
       });
     }
 
-    /** Key and model, set without a deploy. The key is never read back out. */
-    case "POST admin/ai": {
-      await requireAdmin(body);
-      return tx((state) => {
-        state.ai = state.ai ?? {};
-        if (typeof body.key === "string") {
-          const k = body.key.trim();
-          // An empty box means "clear it", not "set it to nothing by accident":
-          // the client only sends the field when the operator typed in it.
-          state.ai.key = k || undefined;
-        }
-        if (typeof body.model === "string" && body.model.trim()) {
-          state.ai.model = body.model.trim().slice(0, 60);
-        }
-        const key = apiKeyFrom(state);
-        return {
-          ok: true,
-          ready: !!key,
-          model: state.ai.model ?? AI_DEFAULTS.model,
-          source: process.env.OPENAI_API_KEY ? "environment" : state.ai.key ? "control room" : null,
-          calls: state.ai.calls ?? 0,
-          tokens: state.ai.tokens ?? 0,
-        };
-      });
-    }
-
     case "POST admin/reset": {
       await requireAdmin(body);
       if (body.confirm !== "RESET") throw httpError(400, 'send confirm:"RESET" to wipe the game');
@@ -1077,14 +929,6 @@ export async function handle(method, route, body, query) {
             downloads: p.downloads ?? 0,
           })),
         bots: r.state.bots ?? [],
-        // What the room is spending, and on what. Never the key.
-        ai: {
-          ready: !!apiKeyFrom(r.state),
-          model: r.state.ai?.model ?? AI_DEFAULTS.model,
-          source: process.env.OPENAI_API_KEY ? "environment" : r.state.ai?.key ? "control room" : null,
-          calls: r.state.ai?.calls ?? 0,
-          tokens: r.state.ai?.tokens ?? 0,
-        },
         // The operator alone sees the answer, before anybody else does.
         truth: spec
           ? {

@@ -8,6 +8,7 @@
  * at once. On a desktop there is room, so they stack.
  */
 import React, { useEffect, useRef } from "react";
+import { label } from "../labels.js";
 import { useMedia, NARROW } from "./PixelBits.jsx";
 
 export default function Toasts({ items, onExpire }) {
@@ -97,7 +98,7 @@ export function fillToasts(fills) {
     return {
       key: `fill-${g.market ?? ""}-${g.side}-${g.taker ? "t" : "m"}-${g.seq}`,
       kind: g.side,
-      title: g.market ? `${g.market.toUpperCase()} · ${title}` : title,
+      title: g.market ? `${label(g.market)} · ${title}` : title,
       body: `${bought ? "Bought" : "Sold"} ${g.qty} share${g.qty > 1 ? "s" : ""} at ${price}`,
     };
   });

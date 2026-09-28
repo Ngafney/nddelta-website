@@ -1555,3 +1555,31 @@ pre.out { border-color: #2b4f63; color: #b9e6ff; }
 }
 .airow { display: grid; grid-template-columns: 2fr 1fr; gap: 10px; }
 @media (max-width: 560px) { .airow { grid-template-columns: 1fr; } }
+
+/* ---- the data tab, which now has to teach ------------------------------ */
+.explain { max-width: 62ch; }
+.explain h3 { font-size: 11px; letter-spacing: 0.06em; color: var(--gold, #e9b949); margin: 16px 0 4px; }
+.explain h3:first-child { margin-top: 4px; }
+.explain p { font-size: 12px; line-height: 1.7; margin: 0 0 8px; }
+.explain p.dim { color: var(--dim); }
+.explain b { color: var(--fg); }
+.panel-title.sub { margin-top: 22px; font-size: 10px; }
+.tablewrap { overflow-x: auto; border: 1px solid var(--line-dim); background: #06101f; }
+.tablewrap.tall { max-height: 340px; overflow-y: auto; }
+.obstable { border-collapse: collapse; width: 100%; font-size: 11px; }
+.obstable th { position: sticky; top: 0; background: #0c1526; text-align: left; padding: 7px 10px;
+  font-size: 8px; letter-spacing: 0.08em; color: var(--dim); border-bottom: 1px solid var(--line-dim); }
+.obstable td { padding: 5px 10px; border-bottom: 1px solid rgba(255,255,255,0.04); }
+.obstable td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.factgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 6px; margin: 8px 0 4px; }
+.fact { background: #0c1526; border: 1px solid var(--line-dim); padding: 7px 9px; }
+.fact i { font-style: normal; font-size: 7px; letter-spacing: 0.08em; color: var(--dim); display: block; }
+.fact b { display: block; font-size: 10px; margin-top: 3px; overflow-wrap: anywhere; }
+.fact em { display: block; font-style: normal; font-size: 8px; color: var(--dim); margin-top: 2px; }
+.datarow { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 12px 0; }
+.pxbtn.dl { text-decoration: none; display: inline-block; }
+.nextbatch { border-left: 3px solid var(--gold, #e9b949); background: rgba(233,185,73,0.08);
+  padding: 10px 12px; font-size: 11px; line-height: 1.6; margin: 14px 0; }
+.nextbatch.done { border-left-color: var(--dim); background: rgba(107,114,128,0.10); }
+.nextbatch b { color: var(--gold, #e9b949); }
+.nextbatch.done b { color: var(--fg); }

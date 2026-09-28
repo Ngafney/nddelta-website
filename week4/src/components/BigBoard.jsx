@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { label } from "../labels.js";
 import { api } from "../api.js";
 import { money, clock, Spinner } from "./PixelBits.jsx";
 
@@ -64,7 +65,7 @@ export default function BigBoard() {
           const lost = settled && r.winner && r.winner !== m;
           return (
             <div key={m} className={`bb-market ${m} ${won ? "won" : ""} ${lost ? "lost" : ""}`}>
-              <h2>{m.toUpperCase()}</h2>
+              <h2>{label(m)}</h2>
               <div className="bb-px">{mk.mark != null ? Math.round(mk.mark) : "—"}</div>
               <div className="bb-bidask">
                 <span>bid {mk.bestBid ?? "—"}</span>

@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
+import { label } from "./labels.js";
 import { api, loadPlayer, savePlayer, clearPlayer, withPlayer } from "./api.js";
 import { clock, Spinner } from "./components/PixelBits.jsx";
 import Gate from "./components/Gate.jsx";
@@ -11,13 +12,12 @@ import Rules from "./components/Rules.jsx";
 import AdminPanel from "./components/AdminPanel.jsx";
 import BigBoard from "./components/BigBoard.jsx";
 import DataPanel from "./components/DataPanel.jsx";
-import AiPanel from "./components/AiPanel.jsx";
 import StaleBuild from "./components/StaleBuild.jsx";
 
 const MARKETS = ["north", "south"];
 const META = {
-  north: { name: "NORTH", blurb: "lands north of the equator" },
-  south: { name: "SOUTH", blurb: "lands south of the equator" },
+  north: { name: "HIT", blurb: "it comes within one Earth radius" },
+  south: { name: "MISS", blurb: "it goes past" },
 };
 
 export default function App() {
@@ -344,8 +344,6 @@ function Floor() {
         {[
           ["trade", "MARKETS"],
           ["data", `DATA${released ? ` · ${released}` : ""}`],
-          ["ai", "DELTAGPT"],
-          ["sky", "MAP"],
           ["board", "LEADERBOARD"],
         ].map(([k, label]) => (
           <button key={k} className={tab === k ? "on" : ""} onClick={() => setTab(k)}>
@@ -401,8 +399,6 @@ function Floor() {
       )}
 
       {tab === "data" && <DataPanel player={player} round={round} />}
-      {tab === "ai" && <AiPanel player={player} round={round} />}
-      {tab === "sky" && <DataPanel player={player} round={round} />}
       {tab === "board" && (
         <Leaderboard rows={board} myTeamId={state.team?.id} settled={round.status === "settled"} />
       )}
@@ -426,7 +422,7 @@ function PairHint({ markets }) {
   return (
     <div className={`pairhint ${Math.abs(off) >= 3 ? "loud" : ""}`}>
       <span>
-        NORTH <b>{Math.round(n)}</b> + SOUTH <b>{Math.round(s)}</b> = <b>{sum}</b>
+        HIT <b>{Math.round(n)}</b> + MISS <b>{Math.round(s)}</b> = <b>{sum}</b>
       </span>
       {off === 0 ? (
         <em>the books agree</em>

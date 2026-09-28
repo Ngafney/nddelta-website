@@ -1,13 +1,14 @@
 import React from "react";
+import { label } from "../labels.js";
 import { money } from "./PixelBits.jsx";
 
 /**
  * Where you stand, on both books at once.
  *
  * The two outcomes are shown side by side rather than collapsed into one,
- * because they are the game: if NORTH lands you are worth one thing and if
- * SOUTH lands you are worth another, and a player who cannot see both cannot
- * tell whether they are hedged or merely busy.
+ * because they are the game: if HIT pays you are worth one thing and if MISS
+ * pays you are worth another, and a player who cannot see both cannot tell
+ * whether they are hedged or merely busy.
  *
  * They show PROFIT AT SETTLEMENT, not buying power. An earlier version showed
  * buying power here - cash net of what resting orders tie up - which is the
@@ -40,7 +41,7 @@ export default function YouPanel({ me, team, markets, round }) {
           const mark = markets?.[m]?.mark;
           return (
             <div key={m} className={`posbox ${m} ${pos > 0 ? "long" : pos < 0 ? "short" : "flat"}`}>
-              <i>{m.toUpperCase()}</i>
+              <i>{label(m)}</i>
               <b>
                 {pos > 0 ? "+" : ""}
                 {pos}
@@ -55,7 +56,7 @@ export default function YouPanel({ me, team, markets, round }) {
           const gain = at == null ? null : at - me.startC;
           return (
             <div key={outcome} className={`ifbox ${outcome}`}>
-              <i>IF {outcome.toUpperCase()} PAYS</i>
+              <i>IF {label(outcome)} PAYS</i>
               <b className={gain == null ? "" : gain > 0 ? "up" : gain < 0 ? "down" : ""}>
                 {gain == null ? "\u2014" : `${gain >= 0 ? "+" : ""}${money(gain)}`}
               </b>

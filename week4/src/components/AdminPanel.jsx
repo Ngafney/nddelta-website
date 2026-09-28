@@ -4,10 +4,10 @@ import { PxButton, Spinner, money, clock } from "./PixelBits.jsx";
 import { EVENTS } from "../../shared/events.js";
 
 const BOT_SLOTS = [
-  { key: "north-buy", label: "BUY NORTH", market: "north", side: "B" },
-  { key: "north-sell", label: "SELL NORTH", market: "north", side: "A" },
-  { key: "south-buy", label: "BUY SOUTH", market: "south", side: "B" },
-  { key: "south-sell", label: "SELL SOUTH", market: "south", side: "A" },
+  { key: "north-buy", label: "BUY HIT", market: "north", side: "B" },
+  { key: "north-sell", label: "SELL HIT", market: "north", side: "A" },
+  { key: "south-buy", label: "BUY MISS", market: "south", side: "B" },
+  { key: "south-sell", label: "SELL MISS", market: "south", side: "A" },
 ];
 
 export default function AdminPanel() {
@@ -64,9 +64,6 @@ function Console({ token, onOut }) {
   const [startCash, setStartCash] = useState("10000");
   const [defaultSize, setDefaultSize] = useState("10");
   const [keepPlayers, setKeepPlayers] = useState(false);
-  const [aiKey, setAiKey] = useState("");
-  const [aiModel, setAiModel] = useState("");
-  const [ai, setAi] = useState(null);
   const [bots, setBots] = useState(() =>
     Object.fromEntries(BOT_SLOTS.map((s) => [s.key, { on: false, shares: "200", everySec: "20" }]))
   );
@@ -76,9 +73,6 @@ function Console({ token, onOut }) {
       const r = await api.get("admin/inspect", { token });
       setInfo(r);
       setErr(null);
-      // Cheap, and the operator needs to see at a glance whether the room can
-      // actually talk to the assistant.
-      api.get("ai/status").then(setAi).catch(() => {});
       if (r.bots?.length) {
         setBots((cur) => {
           const next = { ...cur };
@@ -287,52 +281,6 @@ function Console({ token, onOut }) {
           </PxButton>
         </section>
       )}
-
-      {/* ── DeltaGPT ────────────────────────────── */}
-      <section className="panel">
-        <div className="panel-title">DELTAGPT</div>
-        <p className="hint">
-          The assistant the room talks to, on your OpenAI key. The key is stored server-side and is
-          never sent to a student's browser — they only ever see answers. Set OPENAI_API_KEY in the
-          environment and this box is unnecessary; paste one here if you cannot reach the dashboard.
-        </p>
-        <div className="airow">
-          <Field label="OPENAI API KEY" hint={ai ? (ai.ready ? `live · key from the ${ai.source}` : "not set — the tab tells students to ask you") : ""}>
-            <input
-              type="password"
-              autoComplete="off"
-              placeholder={ai?.ready ? "•••••• set — paste a new one to replace it" : "sk-…"}
-              value={aiKey}
-              onChange={(e) => setAiKey(e.target.value)}
-            />
-          </Field>
-          <Field label="MODEL" hint={`blank keeps ${ai?.model ?? "the default"}`}>
-            <input placeholder={ai?.model ?? ""} value={aiModel} onChange={(e) => setAiModel(e.target.value)} />
-          </Field>
-        </div>
-        <PxButton
-          disabled={!!busy}
-          onClick={() =>
-            act("ai", async () => {
-              const body = { token };
-              if (aiKey.trim()) body.key = aiKey.trim();
-              if (aiModel.trim()) body.model = aiModel.trim();
-              const out = await api.post("admin/ai", body);
-              setAi(out);
-              setAiKey("");
-              setAiModel("");
-              setNote(out.ready ? `DeltaGPT is live on ${out.model}.` : "Still no key — the tab stays off.");
-            })
-          }
-        >
-          {busy === "ai" ? <Spinner text="SAVING" /> : "APPLY"}
-        </PxButton>
-        {ai && (
-          <div className="hint" style={{ marginTop: 8 }}>
-            {ai.ready ? "● LIVE" : "○ OFF"} · {ai.calls ?? 0} calls · {(ai.tokens ?? 0).toLocaleString()} tokens this round
-          </div>
-        )}
-      </section>
 
       {/* ── bots ────────────────────────────────────────────────── */}
       {round && (
