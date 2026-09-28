@@ -139,14 +139,27 @@ THE ONE THING THAT MATTERS MATHEMATICALLY
 
 Latitude is not a linear function of distance along the corridor — a great circle climbs, flattens and falls — so a Gaussian spread along the ground does not stay Gaussian in latitude. Φ((line − µ)/σ) gives a confidently wrong answer, typically by 2–12 points of price here. The fix is to simulate. The displacement map, exactly, is:
 
-    u    = unit vector to the nominal point
-    h    = unit heading there, bearing = the corridor azimuth
-    pole = normalise(u × h)
-    p1   = rotate(u, about pole, by along/R)      # down the corridor
-    h1   = rotate(h, about pole, by along/R)      # the heading, carried along
-    p2   = rotate(p1, about h1,  by cross/R)      # sideways off the track
+    phi, lam = radians(nominal_lat), radians(nominal_lon)
+    u     = [cos(phi)cos(lam), cos(phi)sin(lam), sin(phi)]
+    east  = [-sin(lam), cos(lam), 0]
+    north = [-sin(phi)cos(lam), -sin(phi)sin(lam), cos(phi)]
+    h     = north*cos(az) + east*sin(az)          # the heading. DERIVE east and
+                                                  # north as above; writing this
+                                                  # basis out from memory is the
+                                                  # single commonest way to get
+                                                  # a silently wrong answer here
+    pole  = normalise(u × h)
+    p1    = rotate(u, about pole, by along/R)     # down the corridor
+    h1    = rotate(h, about pole, by along/R)     # the heading, carried along
+    p2    = rotate(p1, about h1,  by cross/R)     # sideways off the track
 
-with Rodrigues rotation and R = 6371.0088 km; the latitude is asin(p2_z). Do NOT write this with bearing formulas — recovering a forward azimuth at p1 and adding 180 is undefined when along is 0 and backwards when along is negative, which is half the samples, and it silently costs about twenty points. The covariance is NOT diagonal: draw the two components together.
+with Rodrigues rotation and R = 6371.0088 km; the latitude is asin(p2_z).
+
+ALWAYS sanity-check before you report a number, in the same code: with
+along = cross = 0 the map must return the nominal latitude to ~1e-9, and
+|p1| = |p2| = 1. Print those checks. A sign slipped into east or north gives a
+plausible-looking probability that is ten points wrong and nothing on screen
+says so. Do NOT write this with bearing formulas — recovering a forward azimuth at p1 and adding 180 is undefined when along is 0 and backwards when along is negative, which is half the samples, and it silently costs about twenty points. The covariance is NOT diagonal: draw the two components together.
 
 HOW TO WORK WITH A STUDENT
 
