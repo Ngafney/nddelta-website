@@ -1,0 +1,295 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="What the Week 4 dataset looks like, field by field, and what to put in front of students.">
+<style>*{box-sizing:border-box}html{-webkit-text-size-adjust:100%}body{margin:0}img{max-width:100%}</style>
+<title>Impact Corridor Brief</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Serif:wght@600&display=swap">
+<style>
+  :root {
+    --paper: #f6f3ed;
+    --ink: #1c1a17;
+    --ink-soft: #55504a;
+    --rule: #ddd6ca;
+    --card: #fffdf9;
+    --corridor: #c2571f;
+    --track: #2b6b8f;
+    --line: #8a1f3d;
+    --good: #2f6b3a;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #141311;
+      --ink: #ece7de;
+      --ink-soft: #a29a8e;
+      --rule: #322e28;
+      --card: #1c1a17;
+      --corridor: #e8843f;
+      --track: #6bb4dc;
+      --line: #e4708f;
+      --good: #7bc68a;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #141311;
+    --ink: #ece7de;
+    --ink-soft: #a29a8e;
+    --rule: #322e28;
+    --card: #1c1a17;
+    --corridor: #e8843f;
+    --track: #6bb4dc;
+    --line: #e4708f;
+    --good: #7bc68a;
+    color-scheme: dark;
+  }
+
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: "IBM Plex Sans", system-ui, sans-serif;
+    font-size: 15px;
+    line-height: 1.65;
+    padding-inline: 20px;
+    padding-block: 0 72px;
+  }
+  .wrap { max-width: 720px; margin: 0 auto; }
+
+  header { padding-block: 44px 28px; border-bottom: 2px solid var(--ink); }
+  .eyebrow {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--corridor); margin: 0 0 10px;
+  }
+  h1 {
+    font-family: "IBM Plex Serif", Georgia, serif; font-weight: 600;
+    font-size: clamp(30px, 6vw, 44px); line-height: 1.1; margin: 0 0 12px;
+    text-wrap: balance; letter-spacing: -0.01em;
+  }
+  .standfirst { font-size: 17px; color: var(--ink-soft); margin: 0; max-width: 58ch; }
+
+  h2 {
+    font-family: "IBM Plex Serif", Georgia, serif; font-weight: 600;
+    font-size: 24px; margin: 46px 0 6px; text-wrap: balance;
+  }
+  h3 { font-size: 15px; font-weight: 600; margin: 26px 0 4px; }
+  p { margin: 0 0 14px; max-width: 66ch; }
+  .sub { color: var(--ink-soft); font-size: 14px; margin-top: -2px; }
+  a { color: var(--track); }
+
+  code, .mono { font-family: "IBM Plex Mono", ui-monospace, monospace; }
+  code { font-size: 0.9em; background: var(--card); padding: 1px 5px; border: 1px solid var(--rule); }
+
+  .block {
+    background: var(--card); border: 1px solid var(--rule);
+    padding: 16px; margin: 18px 0; overflow-x: auto;
+  }
+  .block pre { margin: 0; font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 12.5px; line-height: 1.7; }
+  .block .cm { color: var(--ink-soft); }
+  .block .k { color: var(--track); }
+  .block .v { color: var(--ink); font-weight: 500; }
+
+  table { border-collapse: collapse; width: 100%; font-size: 13.5px; }
+  .tablewrap { overflow-x: auto; margin: 18px 0; border: 1px solid var(--rule); background: var(--card); }
+  th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+  th { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-soft); font-weight: 600; }
+  tr:last-child td { border-bottom: 0; }
+  td.key { font-family: "IBM Plex Mono", ui-monospace, monospace; white-space: nowrap; color: var(--track); font-size: 12.5px; }
+  td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+  .brief {
+    border-left: 3px solid var(--corridor); background: var(--card);
+    padding: 14px 16px; margin: 0 0 14px;
+  }
+  .brief .tag {
+    font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 10.5px;
+    letter-spacing: 0.1em; text-transform: uppercase; color: var(--corridor);
+    display: block; margin-bottom: 5px;
+  }
+  .brief p { margin: 0; }
+  .brief p + p { margin-top: 8px; }
+  .brief.hard { border-left-color: var(--line); }
+  .brief.hard .tag { color: var(--line); }
+
+  .say {
+    font-family: "IBM Plex Serif", Georgia, serif; font-size: 16px;
+    border-left: 2px solid var(--rule); padding-left: 14px; margin: 14px 0;
+    color: var(--ink);
+  }
+
+  .warn {
+    background: color-mix(in srgb, var(--line) 8%, var(--card));
+    border: 1px solid color-mix(in srgb, var(--line) 30%, var(--rule));
+    padding: 14px 16px; margin: 18px 0;
+  }
+  .warn strong { color: var(--line); }
+
+  figure { margin: 22px 0; }
+  figcaption { font-size: 12.5px; color: var(--ink-soft); margin-top: 8px; }
+  svg { max-width: 100%; height: auto; display: block; }
+
+  footer { margin-top: 56px; padding-top: 18px; border-top: 1px solid var(--rule); font-size: 13px; color: var(--ink-soft); }
+</style>
+
+<div class="wrap">
+  <header>
+    <p class="eyebrow">Week 4 · Monte Carlo · operator brief</p>
+    <h1>What the room is actually looking at</h1>
+    <p class="standfirst">Thirteen numbers, one line of latitude, and a market that stays shut until somebody quotes. This is the dataset students get, what each field means, and what to put in front of them.</p>
+  </header>
+
+  <h2>The dataset</h2>
+  <p>Every team gets the same thing, in three forms: a labelled panel on the <strong>DATA</strong> tab, a one-click CSV, and the same numbers preloaded into the Python sandbox on the <strong>DELTAGPT</strong> tab as a dict called <code>DATA</code>. There is no other data. There is no telescope archive, no orbit to fit, no image to look at.</p>
+
+  <p class="sub">A real solution, release 1 of 6 — this is the whole file:</p>
+
+  <div class="block"><pre><span class="cm"># impact solution 1 of 6
+# distances in km; along = corridor direction, cross = 90 deg clockwise
+# the covariance is NOT diagonal - draw the two components together</span>
+<span class="k">key</span>,<span class="k">value</span>
+nominal_lat_deg,<span class="v">22.620814</span>
+nominal_lon_deg,<span class="v">-11.601677</span>
+corridor_azimuth_deg,<span class="v">247.000</span>
+ground_speed_km_s,<span class="v">7.500</span>
+cov_along_along_km2,<span class="v">5517927.281</span>
+cov_along_cross_km2,<span class="v">1138862.601</span>
+cov_cross_along_km2,<span class="v">1138862.601</span>
+cov_cross_cross_km2,<span class="v">402072.719</span>
+sigma_along_km,<span class="v">2349.027</span>
+sigma_cross_km,<span class="v">634.092</span>
+line_latitude_deg,<span class="v">23.500</span>
+earth_radius_km,<span class="v">6371.0088</span></pre></div>
+
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Field</th><th>What it is</th></tr></thead>
+      <tbody>
+        <tr><td class="key">nominal_lat_deg<br>nominal_lon_deg</td><td>Where the current solution says it lands. <strong>Not</strong> where it landed — it is the truth displaced by a draw from the covariance below, which is what a published impact solution actually is.</td></tr>
+        <tr><td class="key">corridor_azimuth_deg</td><td>The direction the fireball travels across the ground, clockwise from north. 247° is west-southwest.</td></tr>
+        <tr><td class="key">ground_speed_km_s</td><td>Speed relative to the ground. Flavour, not needed to price it.</td></tr>
+        <tr><td class="key">cov_*_km2</td><td>The 2×2 covariance of the impact point in km², in the corridor frame: how far it might be <em>along</em> the track and <em>across</em> it. The off-diagonal is not zero.</td></tr>
+        <tr><td class="key">sigma_along_km<br>sigma_cross_km</td><td>The same thing as standard deviations, for convenience. 2349 km along, 634 km across — a long thin ellipse lying on the corridor.</td></tr>
+        <tr><td class="key">line_latitude_deg</td><td>The line the market asks about. North of it or south of it.</td></tr>
+        <tr><td class="key">earth_radius_km</td><td>The sphere settlement uses. Take it literally.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2>The shape of the problem</h2>
+  <p>The nominal point sits 0.88° south of the line here. The ellipse is 2349 km long and tilted onto a corridor running west-southwest, so most of the uncertainty is <em>along</em> the track — and latitude is a curved function of distance along a great circle.</p>
+
+  <figure>
+    <svg viewBox="0 0 640 230" role="img" aria-label="An uncertainty ellipse lying along a corridor that crosses a line of latitude">
+      <line x1="20" y1="96" x2="620" y2="96" stroke="var(--line)" stroke-width="2"></line>
+      <text x="24" y="88" font-family="IBM Plex Mono, monospace" font-size="11" fill="var(--line)">line 23.5°N</text>
+      <text x="596" y="88" font-family="IBM Plex Mono, monospace" font-size="10" fill="var(--line)" text-anchor="end">NORTH ↑</text>
+      <text x="596" y="112" font-family="IBM Plex Mono, monospace" font-size="10" fill="var(--line)" text-anchor="end">SOUTH ↓</text>
+      <line x1="40" y1="182" x2="600" y2="60" stroke="var(--corridor)" stroke-width="1.6" stroke-dasharray="7 6"></line>
+      <ellipse cx="300" cy="126" rx="232" ry="46" transform="rotate(-12 300 126)" fill="var(--track)" fill-opacity="0.12" stroke="var(--track)" stroke-opacity="0.5" stroke-width="1"></ellipse>
+      <ellipse cx="300" cy="126" rx="116" ry="23" transform="rotate(-12 300 126)" fill="var(--track)" fill-opacity="0.18" stroke="var(--track)" stroke-opacity="0.8" stroke-width="1"></ellipse>
+      <circle cx="300" cy="126" r="5" fill="var(--corridor)"></circle>
+      <text x="312" y="130" font-family="IBM Plex Mono, monospace" font-size="11" fill="var(--ink)">nominal 22.62°N</text>
+      <text x="40" y="206" font-family="IBM Plex Mono, monospace" font-size="10.5" fill="var(--ink-soft)">4698 km per 2σ along the corridor</text>
+    </svg>
+    <figcaption>1σ and 2σ, drawn to scale against the line. The ellipse is tilted off the corridor because the two components are correlated — sampling them separately gives a different, wrong answer.</figcaption>
+  </figure>
+
+  <div class="warn">
+    <p><strong>The trap, and the reason the week is called what it is.</strong> A team that takes the mean and standard deviation of latitude and reaches for Φ((line − µ)/σ) gets a confident wrong answer — typically 2 to 12 points of price on these geometries. A great circle climbs, flattens and falls, so a Gaussian spread along the ground does not stay Gaussian in latitude. The fix is to draw samples and walk each one down the corridor. It is about fifteen lines.</p>
+  </div>
+
+  <h2>How real is this?</h2>
+  <p>Worth being straight with the room, because a sharp student will ask.</p>
+
+  <h3>Real, and checkable</h3>
+  <p>The object, the date and time to the second, where it actually came down, its speed, size and energy, and how much warning there was. Settlement is not a simulation — the market pays out on which side of the line the rock genuinely landed. For 2008&nbsp;TC3 the corridor direction is a published trajectory solution too.</p>
+
+  <h3>Modelled, and not real</h3>
+  <p>The uncertainty. Nobody publishes a covariance matrix for a four-metre rock found hours before it arrives, so the <em>shape</em> is taken from what impact corridors look like — long, thin, tilted — and the <em>scale</em> is solved so the opening question is as hard as you asked for. Students are not being handed the file JPL was working from.</p>
+
+  <h3>How good were the real predictions?</h3>
+  <p>Far better than this game, and far worse — it depends entirely on how many observations the object gave up before it arrived.</p>
+
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Event</th><th>Warning</th><th>What the prediction actually was</th></tr></thead>
+      <tbody>
+        <tr>
+          <td class="num">2008 TC3</td><td class="num">~19 h</td>
+          <td>About <strong>900 astrometric observations</strong>, from observers spread far enough apart to give real parallax. The final impact-point uncertainty was a <strong>3σ ellipse of 1.4 km × 0.15 km</strong>. Meteorites were recovered along the predicted line.</td>
+        </tr>
+        <tr>
+          <td class="num">2018 LA</td><td class="num">8.5 h</td>
+          <td>Barely any astrometry. The early solution put the impact <strong>somewhere between the central Pacific and Africa</strong> with about 82% confidence — a corridor most of a hemisphere long. It was pinned down afterwards, from fireball video.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="warn">
+    <p><strong>So the game sits deliberately in between, and does not correspond to one real published moment.</strong> A 2349 km σ is far vaguer than 2008 TC3's final answer and far tighter than 2018 LA's first one. It represents the regime a few hours in with a thin dataset — which is real — but the specific ellipse is ours, not theirs.</p>
+    <p>The honest version for students: <em>for a well-observed impactor there would be no market at all, because the answer was known to within a kilometre eleven hours out.</em> The uncertainty here is the uncertainty of the first few hours, held still long enough to trade.</p>
+  </div>
+
+  <h3>What is genuinely the same</h3>
+  <p>The thing the week is actually teaching is untouched by any of that. A real impact prediction <em>is</em> published as a nominal point plus a covariance in along/cross-track kilometres, turning that into the probability of landing on one side of a boundary <em>does</em> require sampling rather than a normal approximation, and the reason <em>is</em> that latitude is curved in distance along a great circle. That part is the working astronomer's actual problem, at the actual scale.</p>
+
+  <h2>What to tell them</h2>
+  <p>Six briefs, in the order they become useful. The first three are for the research window; the rest are for the bell.</p>
+
+  <div class="brief">
+    <span class="tag">Before anything else</span>
+    <p>“Download the CSV. Open DeltaGPT. Tell it what you think the answer is <em>before</em> you ask it anything — it won't give you a price until you do, and that's on purpose.”</p>
+  </div>
+
+  <div class="brief">
+    <span class="tag">The core task</span>
+    <p>“Turn that covariance into a probability. Draw at least 100,000 samples, walk each one down the corridor from the nominal point, read off its latitude, count how many land north. That fraction is what NORTH is worth.”</p>
+    <p class="sub">Every team should reach the same number to within a few tenths of a point. If two teams differ by five, one of them has a bug — usually the local basis or a diagonal covariance.</p>
+  </div>
+
+  <div class="brief hard">
+    <span class="tag">The one that separates them</span>
+    <p>“Now compute it the lazy way as well — mean and standard deviation of the latitudes, then a normal CDF. Write both numbers down. Which is right, and how much money is the difference worth at 100 shares?”</p>
+  </div>
+
+  <div class="brief">
+    <span class="tag">At the bell</span>
+    <p>“The books open empty. Nothing happens until you quote. Decide three things and say them out loud to your team: <strong>where</strong> you're bid and offered, <strong>how wide</strong>, and <strong>how many shares</strong>.”</p>
+    <p class="sub">The desk only takes. It will run into whoever is showing the best price, so a wide quote never trades and a tight one gets picked off when the data moves.</p>
+  </div>
+
+  <div class="brief">
+    <span class="tag">The free lunch to find</span>
+    <p>“NORTH and SOUTH should add to 100. If you can buy both sides for less than that, you've been handed $100 for less than $100 — and the margin knows the pair is riskless, so it barely costs you anything to hold.”</p>
+  </div>
+
+  <div class="brief hard">
+    <span class="tag">When someone asks if it's real</span>
+    <p>“The asteroid is real and the payout is a historical fact. The error bars are ours. Ask me afterwards how close the real predictions were — one of these was nailed to a tenth of a kilometre, and one of them could only be placed somewhere between the Pacific and Africa.”</p>
+  </div>
+
+  <div class="brief">
+    <span class="tag">On every release</span>
+    <p>“Re-run it. The ellipse always shrinks, but the nominal point <em>moves</em>, and it can move either way. A new solution is a new fit, not the old one with the error rubbed off. Don't assume the update points the same way as the last one.”</p>
+  </div>
+
+  <h2>Things worth saying out loud</h2>
+  <p class="say">“The asteroid is real. It was really spotted on the way in, it really hit, and the market settles on where it actually came down — not on a simulation.”</p>
+  <p class="say">“You are not being asked to determine an orbit. You are being asked to turn an uncertainty into a price.”</p>
+  <p class="say">“DeltaGPT will write the code and argue about method all day. It will not tell you where to quote. That call is yours and it is the only part being graded.”</p>
+
+  <h2>Operating it</h2>
+  <p>Control room at <code>/week4/admin</code>. Build a round, open research, then open the books. The release button hands out the next solution when you want the market to move; six are available and the question gets easier each time. The noise desk has four slots — market, direction, size, frequency — and all four take liquidity and never quote, which is what makes quoting worth doing.</p>
+  <p>The panel tells you before the bell whether the round it built actually teaches the lesson: it shows, per release, how many points the normal approximation is wrong by. Under 2 and the Monte Carlo barely pays; rebuild.</p>
+
+  <footer>
+    Built for ND Delta Week 4. Every number above is from a live round; the covariance is the same at release 1 in every round, so the file a student opens will look exactly like this one. Impact-prediction accuracies from the published literature on 2008&nbsp;TC3 and 2018&nbsp;LA.
+  </footer>
+</div>
+
+</body>
+</html>
