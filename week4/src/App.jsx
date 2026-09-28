@@ -454,12 +454,7 @@ function Shell({ children, round, msLeft }) {
           <div className="topstate">
             <span className={`phase ${round.status}`}>{round.phase}</span>
             {msLeft != null && <span className="clock">{clock(msLeft)}</span>}
-            {round.lineDeg != null && (
-              <span className="qline">
-                {round.eventName} · N/S of {Math.abs(round.lineDeg).toFixed(1)}°
-                {round.lineDeg >= 0 ? "N" : "S"}
-              </span>
-            )}
+            {round.eventName && <span className="dim">{round.eventName} · hit or miss</span>}
             <span className="dim">
               {round.players} players · {round.teams} teams
             </span>

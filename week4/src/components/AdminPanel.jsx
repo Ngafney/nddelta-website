@@ -196,7 +196,7 @@ function Console({ token, onOut }) {
               });
               setNote(
                 `${out.truth.event} — it came down at ${fmtLat(out.truth.trueLat)}, ` +
-                  `so ${out.truth.winner.toUpperCase()} of the ${fmtLat(out.truth.lineDeg)} line pays.`
+                  `it ${out.truth.outcome === "HIT" ? "HITS" : "MISSES"} - closest approach ${out.truth.missKm.toLocaleString()} km.`
               );
             })
           }
@@ -261,7 +261,7 @@ function Console({ token, onOut }) {
                 <div key={i} className={`relrow ${out ? "out" : ""}`}>
                   <span className="relidx">{i + 1}</span>
                   <span>σ {Math.round(r.sigmaKm)} km along</span>
-                  <span className="dim">N {(r.pNorth * 100).toFixed(0)}%</span>
+                  <span className="dim">{r.pHit == null ? "--" : Math.round(r.pHit * 100) + "% hit"}</span>
                   <span className="relconf">
                     {(r.confidence * 100).toFixed(0)}%<em> conf</em>
                   </span>
@@ -411,54 +411,37 @@ function Console({ token, onOut }) {
           <div className="panel-title">THE ANSWER (YOURS ONLY)</div>
           <div className="truthgrid">
             <div>
-              <i>ASTEROID</i>
-              <b>{truth.event?.name ?? "—"}</b>
+              <i>OUTCOME</i>
+              <b className={truth.outcome === "HIT" ? "north" : "south"}>{truth.outcome}</b>
             </div>
             <div>
-              <i>IT LANDED</i>
-              <b>{fmtLat(truth.event?.lat ?? 0)}</b>
+              <i>CLOSEST APPROACH</i>
+              <b>{(truth.missKm ?? 0).toLocaleString()} km</b>
             </div>
             <div>
-              <i>THE LINE</i>
-              <b>{fmtLat(truth.lineDeg ?? 0)}</b>
+              <i>EARTH RADIUS</i>
+              <b>{(truth.earthRadiusKm ?? 0).toLocaleString()} km</b>
             </div>
             <div>
-              <i>SO IT PAYS</i>
-              <b className={truth.winner}>{truth.winner?.toUpperCase()}</b>
+              <i>ON DAY</i>
+              <b>{truth.tDays}</b>
             </div>
             <div>
-              <i>WARNING</i>
-              <b>{truth.event?.leadHours}h</b>
-            </div>
-            <div>
-              <i>CORRIDOR</i>
+              <i>BAD SIGHTINGS</i>
               <b>
-                {truth.corridor?.azimuthDeg}°{" "}
-                {truth.corridor?.geometry === "modelled" ? "(modelled)" : "(published)"}
+                {truth.badSightings} of {truth.totalSightings}
               </b>
+            </div>
+            <div>
+              <i>MARGIN</i>
+              <b>{Math.abs((truth.missKm ?? 0) - (truth.earthRadiusKm ?? 0)).toLocaleString()} km</b>
             </div>
           </div>
           <div className="hint" style={{ marginTop: 8 }}>
-            {truth.event?.where} · {truth.event?.story}
+            A reference price at each release, from the same Monte Carlo the room is being asked to
+            run. The room will not match it exactly, and teams that treat the bad sightings
+            differently should not.
           </div>
-          {truth.releases?.[0]?.gaussGapPts != null && (
-            <div className={`lesson ${Math.abs(truth.releases[0].gaussGapPts) >= 2 ? "on" : "off"}`}>
-              {Math.abs(truth.releases[0].gaussGapPts) >= 2 ? (
-                <>
-                  <b>The lesson is live.</b> A team that reaches for the normal approximation
-                  instead of simulating prices NORTH about{" "}
-                  <b>{Math.abs(truth.releases[0].gaussGapPts).toFixed(1)} points</b> wrong on the
-                  opening data. That is the edge the room is playing for.
-                </>
-              ) : (
-                <>
-                  <b>Weak geometry this round.</b> The normal approximation is only{" "}
-                  {Math.abs(truth.releases[0].gaussGapPts).toFixed(1)} points wrong here, so
-                  simulating barely pays. Rebuild, or widen σ, if the Monte Carlo is the point.
-                </>
-              )}
-            </div>
-          )}
         </section>
       )}
 

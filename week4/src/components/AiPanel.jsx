@@ -16,6 +16,8 @@ import { PxButton, Spinner } from "./PixelBits.jsx";
  * simply thinks, computes, and answers.
  */
 
+const NL = String.fromCharCode(10);
+
 const PYODIDE = "https://cdn.jsdelivr.net/pyodide/v0.26.4/full/pyodide.js";
 
 /** Load Pyodide once per page, on demand. numpy comes with it. */
@@ -43,29 +45,38 @@ function loadPyodide(onNote) {
   return pyodidePromise;
 }
 
-/** Put the round's own numbers in the namespace so nobody retypes them. */
+/** Put the sightings and the constants in the namespace, as numpy arrays. */
 function dataLiteral(d) {
-  if (!d) return "DATA = {}\n";
-  const C = d.covarianceKm2;
-  return [
-    "DATA = {",
-    `    "event": ${JSON.stringify(d.eventName)},`,
-    `    "release": ${d.release}, "of": ${d.of},`,
-    `    "nominal_lat_deg": ${d.nominalLat},`,
-    `    "nominal_lon_deg": ${d.nominalLon},`,
-    `    "corridor_azimuth_deg": ${d.azimuthDeg},`,
-    `    "ground_speed_km_s": ${d.groundSpeedKms},`,
-    `    "cov_along_along_km2": ${C[0][0]},`,
-    `    "cov_along_cross_km2": ${C[0][1]},`,
-    `    "cov_cross_along_km2": ${C[1][0]},`,
-    `    "cov_cross_cross_km2": ${C[1][1]},`,
-    `    "sigma_along_km": ${d.sigmaAlongKm},`,
-    `    "sigma_cross_km": ${d.sigmaCrossKm},`,
-    `    "line_latitude_deg": ${d.lineDeg},`,
-    `    "earth_radius_km": 6371.0088,`,
-    "}",
-    "",
-  ].join("\n");
+  if (!d) return "DATA = {}" + NL + "T = X = Y = None" + NL;
+  const kv = {
+    sighting_sigma_au: d.sightingSigmaKm / d.auKm,
+    sighting_sigma_km: d.sightingSigmaKm,
+    earth_ephem_sigma_km: d.earthEphemSigmaKm,
+    gm_sun: d.gmSun,
+    gm_sun_rel_sigma: d.gmSunRelSigma,
+    gm_earth: d.gmEarth,
+    earth_a_au: d.earth.aAu,
+    earth_e: d.earth.e,
+    earth_period_days: d.earth.periodDays,
+    earth_peri_rad: d.earth.peri,
+    earth_M0_rad: d.earth.M0,
+    earth_radius_au: d.earthRadiusAu,
+    earth_radius_km: d.earthRadiusKm,
+    au_km: d.auKm,
+    t_encounter: d.tEncounter,
+    t_end: d.tEnd,
+    release: d.release,
+    of: d.of,
+  };
+  const arr = (vals, n) => `${n} = np.array([` + vals.join(", ") + "])";
+  return (
+    "DATA = {" + NL +
+    Object.entries(kv).map(([k, v]) => `    ${JSON.stringify(k)}: ${v},`).join(NL) +
+    NL + "}" + NL +
+    arr(d.sightings.map((s) => s.t), "T") + NL +
+    arr(d.sightings.map((s) => s.x), "X") + NL +
+    arr(d.sightings.map((s) => s.y), "Y") + NL
+  );
 }
 
 const GREETING = `I'm DeltaGPT. I've got this round's numbers in front of me and I can run Python right here in your browser.

@@ -1,16 +1,17 @@
 import React, { useEffect, useState } from "react";
 import { api, withPlayer } from "../api.js";
 import { PxButton, Spinner } from "./PixelBits.jsx";
-import CorridorMap from "./CorridorMap.jsx";
+import OrbitMap from "./OrbitMap.jsx";
 
 /**
- * The published impact solution: the numbers, the picture, and the block you
- * hand to an AI.
+ * The sightings, the constants, and the block a team hands to an assistant.
  *
- * The prompt is built on the SERVER from the same object that fills the table
- * above it, so the two can never disagree. A team that copies it, argues with
- * a model about the five assumptions, and runs what comes back has done the
- * round — which is the point.
+ * Deliberately plain: a table of numbers. There is no clever summary of the
+ * data because working out what the data means is the exercise, and a panel
+ * that pre-digests it would be doing the interesting part for them.
+ *
+ * The one thing it does help with is the download and the prompt, because
+ * retyping thirty-two coordinate pairs teaches nobody anything.
  */
 export default function DataPanel({ player, round }) {
   const [d, setD] = useState(null);
@@ -19,125 +20,138 @@ export default function DataPanel({ player, round }) {
   const released = round?.released ?? 0;
 
   useEffect(() => {
-    let gone = false;
+    if (!released) return undefined;
+    let live = true;
     api
       .get("data", withPlayer(player))
-      .then((x) => !gone && (setD(x), setErr(null)))
-      .catch((e) => !gone && (setErr(e.message), setD(null)));
+      .then((x) => live && (setD(x), setErr(null)))
+      .catch((e) => live && setErr(e.message));
     return () => {
-      gone = true;
+      live = false;
     };
-  }, [player, released]);
+  }, [released, player]);
 
+  if (!released) {
+    return (
+      <section className="panel">
+        <div className="panel-title">SIGHTINGS</div>
+        <p className="hint">Nothing released yet. The operator opens the first batch when the round starts.</p>
+      </section>
+    );
+  }
   if (err) {
     return (
-      <div className="panel">
-        <div className="dead-note">
-          NOTHING RELEASED YET
-          <br />
-          <span style={{ color: "var(--dim)", fontSize: 9 }}>{err}</span>
-        </div>
-      </div>
+      <section className="panel">
+        <div className="panel-title">SIGHTINGS</div>
+        <p className="hint">{err}</p>
+      </section>
     );
   }
-  if (!d) {
-    return (
-      <div className="panel">
-        <Spinner text="READING THE SOLUTION" />
-      </div>
-    );
-  }
+  if (!d) return <Spinner text="READING THE SIGHTINGS" />;
 
   const href = `/api/week4/data.csv?${new URLSearchParams(withPlayer(player))}`;
-  const C = d.covarianceKm2;
-
-  const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(d.prompt);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2500);
-    } catch {
-      // Clipboard can be refused; the textarea below is always selectable.
-      setCopied(false);
-    }
-  };
 
   return (
-    <div className="panel datapanel">
-      <div className="data-head">
-        <div>
-          <h3>IMPACT SOLUTION {d.release} OF {d.of}</h3>
-          <p className="dim">
-            {d.eventName} · nominal point <b>{fmt(d.nominalLat)}</b>, <b>{fmtLon(d.nominalLon)}</b> ·
-            corridor bearing <b>{d.azimuthDeg.toFixed(0)}°</b>
-            {d.geometry === "modelled" && <em className="tag"> corridor modelled</em>}
-          </p>
-        </div>
-        <a className="pxbtn pxbtn--green pxbtn--big" href={href} download>
-          ⭳ CSV
-        </a>
+    <section className="panel">
+      <div className="panel-title">
+        SIGHTINGS <span className="dim">· batch {d.release} of {d.of}</span>
+      </div>
+      <p className="hint">
+        {d.sightings.length} positions over {d.arcDays} days. Each is 1σ <b>{d.sightingSigmaKm} km</b> in
+        x and in y. About one in twenty-five is a blunder rather than noise — nobody will tell you which.
+      </p>
+
+      <OrbitMap
+        obs={d.sightings}
+        au={Math.max(2.2, ...d.sightings.map((s) => Math.hypot(s.x, s.y) * 1.25))}
+        earthTrail={earthRing(d.earth)}
+        encounter={null}
+        astTrail={null}
+        cloud={null}
+      />
+
+      <div className="factgrid">
+        <Fact label="GM SUN" value={d.gmSun} sub="AU³/day²" />
+        <Fact label="GM EARTH" value={d.gmEarth} sub="AU³/day²" />
+        <Fact label="EARTH RADIUS" value={`${d.earthRadiusKm.toFixed(0)} km`} sub={`${d.earthRadiusAu.toExponential(4)} AU`} />
+        <Fact label="ENCOUNTER" value={`~day ${d.tEncounter}`} sub={`integrate to ${d.tEnd}`} />
+        <Fact label="EARTH ORBIT" value={`a ${d.earth.aAu}  e ${d.earth.e}`} sub={`period ${d.earth.periodDays} d`} />
+        <Fact label="EARTH POSITION" value={`± ${d.earthEphemSigmaKm} km`} sub="its ephemeris is not perfect either" />
       </div>
 
-      <CorridorMap solution={d} />
-
-      <div className="data-grid">
-        <Fact label="THE LINE" value={fmt(d.lineDeg)} hint="north of it, or south" />
-        <Fact label="σ ALONG" value={`${Math.round(d.sigmaAlongKm)} km`} hint="down the corridor" />
-        <Fact label="σ ACROSS" value={`${Math.round(d.sigmaCrossKm)} km`} hint="either side of it" />
-        <Fact label="GROUND SPEED" value={`${d.groundSpeedKms.toFixed(1)} km/s`} />
-      </div>
-
-      <div className="covbox">
-        <div className="panel-title">COVARIANCE, km² — [along, cross]</div>
-        <table className="covmat">
+      <div className="tablewrap">
+        <table className="obstable">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>t (days)</th>
+              <th>x (AU)</th>
+              <th>y (AU)</th>
+            </tr>
+          </thead>
           <tbody>
-            {C.map((row, i) => (
+            {d.sightings.map((s, i) => (
               <tr key={i}>
-                {row.map((v, j) => (
-                  <td key={j} className={i !== j ? "offdiag" : ""}>
-                    {v.toFixed(1)}
-                  </td>
-                ))}
+                <td className="dim">{i + 1}</td>
+                <td className="num">{s.t}</td>
+                <td className="num">{s.x.toFixed(8)}</td>
+                <td className="num">{s.y.toFixed(8)}</td>
               </tr>
             ))}
           </tbody>
         </table>
-        <p className="dim">
-          The off-diagonal terms are not zero. Draw the two components together — a Cholesky factor,
-          or <code>numpy.random.multivariate_normal</code> — or your answer will be wrong in a way
-          that looks fine.
-        </p>
       </div>
 
-      <div className="askai">
-        <div className="panel-title">HAND THIS TO AN AI</div>
-        <p className="dim">
-          Everything needed is below, including the assumptions worth arguing about. Paste it into
-          whatever model you like, push back on anything that looks wrong, and run what it gives you.
-        </p>
-        <div className="askai-actions">
-          <PxButton variant={copied ? "green" : "gold"} onClick={copy}>
-            {copied ? "COPIED ✓" : "COPY THE PROMPT"}
-          </PxButton>
-        </div>
-        <textarea className="promptbox" readOnly value={d.prompt} onFocus={(e) => e.target.select()} rows={18} />
+      <div className="datarow">
+        <a className="pxbtn dl" href={href}>
+          ↓ DOWNLOAD CSV
+        </a>
+        <PxButton
+          onClick={() => {
+            navigator.clipboard
+              .writeText(d.prompt)
+              .then(() => {
+                setCopied(true);
+                setTimeout(() => setCopied(false), 1800);
+              })
+              .catch(() => setCopied(false));
+          }}
+        >
+          {copied ? "COPIED" : "COPY THE PROMPT"}
+        </PxButton>
+        <span className="dim">…or just open the DELTAGPT tab, which already has all of this.</span>
       </div>
 
-      <p className="dim data-note">{d.note}</p>
-      {d.modelNote && <p className="model-note">{d.modelNote}</p>}
-    </div>
+      <textarea className="promptbox" readOnly value={d.prompt} rows={12} />
+      <p className="hint">{d.note}</p>
+      <p className="hint">{d.modelNote}</p>
+    </section>
   );
 }
 
-const fmt = (v) => `${Math.abs(v).toFixed(2)}°${v >= 0 ? "N" : "S"}`;
-const fmtLon = (v) => `${Math.abs(v).toFixed(2)}°${v >= 0 ? "E" : "W"}`;
+/** The Earth's ellipse, for the picture. Kepler, same as everywhere else. */
+function earthRing(e) {
+  if (!e) return [];
+  const out = [];
+  for (let i = 0; i <= 180; i++) {
+    const M = (2 * Math.PI * i) / 180;
+    let E = M + e.e * Math.sin(M);
+    for (let k = 0; k < 8; k++) E -= (E - e.e * Math.sin(E) - M) / (1 - e.e * Math.cos(E));
+    const px = e.aAu * (Math.cos(E) - e.e);
+    const py = e.aAu * Math.sqrt(1 - e.e * e.e) * Math.sin(E);
+    const c = Math.cos(e.peri);
+    const s = Math.sin(e.peri);
+    out.push([px * c - py * s, px * s + py * c]);
+  }
+  return out;
+}
 
-function Fact({ label, value, hint }) {
+function Fact({ label, value, sub }) {
   return (
     <div className="fact">
       <i>{label}</i>
       <b>{value}</b>
-      {hint && <em>{hint}</em>}
+      {sub && <em>{sub}</em>}
     </div>
   );
 }

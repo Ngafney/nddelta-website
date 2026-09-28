@@ -1,154 +1,120 @@
 import React, { useEffect, useState } from "react";
-import { PxButton, money } from "./PixelBits.jsx";
-import CorridorMap from "./CorridorMap.jsx";
+import { api } from "../api.js";
+import { Spinner, money } from "./PixelBits.jsx";
+import OrbitMap from "./OrbitMap.jsx";
 
 /**
- * Where it actually landed.
+ * How close it actually came, and which sightings were lying.
  *
- * The payoff here is not a simulation finishing — it is that the thing was
- * real. A rock was spotted, a warning went out, people argued about a corridor,
- * and then it arrived exactly where it was always going to. So the reveal shows
- * the ellipse the room was trading against, drops the true point onto it, and
- * then gets out of the way and tells the story.
- *
- * Three beats, once, and then it sits still.
+ * Two beats. First the number: the miss distance against the Earth's radius,
+ * because on a marginal encounter those two are within a few hundred
+ * kilometres of each other and seeing that is the point. Then the sightings,
+ * with the bad ones finally marked — a team that spotted them gets to be right
+ * out loud, and a team that fitted everything gets to see what it cost.
  */
-const MAP_MS = 2600;
-const VERDICT_MS = 1400;
-
-export default function Reveal({ data, onNext }) {
+export default function Reveal({ round }) {
+  const [d, setD] = useState(null);
+  const [err, setErr] = useState(null);
   const [beat, setBeat] = useState(0);
 
   useEffect(() => {
-    const a = setTimeout(() => setBeat(1), MAP_MS);
-    const b = setTimeout(() => setBeat(2), MAP_MS + VERDICT_MS);
+    let live = true;
+    api
+      .get("reveal")
+      .then((x) => live && setD(x))
+      .catch((e) => live && setErr(e.message));
     return () => {
-      clearTimeout(a);
-      clearTimeout(b);
+      live = false;
     };
   }, []);
 
-  const t = data.truth;
-  const north = data.winner === "north";
-  // The last solution the room actually saw.
-  const shown = Math.max(1, data.shown || data.releases.length);
-  const last = data.releases[shown - 1] ?? data.releases[data.releases.length - 1];
+  useEffect(() => {
+    if (!d) return undefined;
+    const t = setTimeout(() => setBeat((b) => Math.min(b + 1, 2)), 1400);
+    return () => clearTimeout(t);
+  }, [d, beat]);
 
-  const solution = {
-    nominalLat: last.nominalLat,
-    nominalLon: last.nominalLon,
-    azimuthDeg: data.corridor.azimuthDeg,
-    covarianceKm2: covFrom(last.sigmaKm),
-    lineDeg: data.lineDeg,
-  };
+  if (err) return <div className="panel"><p className="hint">{err}</p></div>;
+  if (!d) return <Spinner text="FINDING OUT" />;
+
+  const t = d.truth;
+  const hit = t.hit;
+  const bad = (d.sightings ?? []).filter((s) => s.bad);
 
   return (
-    <div className="reveal">
-      <div className="reveal-head">
-        <span className="verdict-kicker">THIS ACTUALLY HAPPENED</span>
-        <h2>
-          {t.name}
-          {t.nick ? ` · ${t.nick}` : ""}
-        </h2>
+    <section className={`panel reveal ${hit ? "north" : "south"}`}>
+      <div className="panel-title">IMPACT</div>
+
+      <div className={`reveal-verdict ${hit ? "north" : "south"}`}>
+        <h1>{hit ? "IT HIT" : "IT MISSED"}</h1>
+        <p>
+          Closest approach <b>{t.missKm.toLocaleString()} km</b> from the Earth's centre, on day{" "}
+          {t.tDays}. The Earth's radius is <b>{t.earthRadiusKm.toLocaleString()} km</b>.
+        </p>
         <p className="dim">
-          {new Date(t.when).toUTCString().replace("GMT", "UTC")} · {t.where}
+          {hit
+            ? `It came inside the surface by ${(t.earthRadiusKm - t.missKm).toLocaleString()} km.`
+            : `It cleared the surface by ${(t.missKm - t.earthRadiusKm).toLocaleString()} km.`}
         </p>
       </div>
 
-      <div className="reveal-map">
-        <CorridorMap
-          solution={solution}
-          truth={beat >= 1 ? { lat: t.lat, lon: t.lon } : null}
-          releases={beat >= 1 ? data.releases.slice(0, shown) : null}
-        />
-      </div>
-
       {beat >= 1 && (
-        <div className={`reveal-verdict ${data.winner}`}>
-          <h1>{north ? "NORTH" : "SOUTH"}</h1>
-          <p>
-            It came down at <b>{fmt(t.lat)}</b>, {fmtLon(t.lon)} — {Math.abs(t.lat - data.lineDeg).toFixed(2)}°{" "}
-            {north ? "north" : "south"} of the {fmt(data.lineDeg)} line.{" "}
-            <b>{north ? "NORTH" : "SOUTH"} pays $100</b>.
-          </p>
-        </div>
+        <>
+          <OrbitMap obs={d.sightings} au={3.2} encounter={null} earthTrail={null} astTrail={null} cloud={null} />
+          <div className="hint">
+            {bad.length === 0 ? (
+              <>Every sighting in this round was honest. The noise alone was enough.</>
+            ) : (
+              <>
+                <b>
+                  {bad.length} of {d.sightings.length} sightings were wrong
+                </b>{" "}
+                — not noisy, wrong: number{bad.length > 1 ? "s" : ""}{" "}
+                {bad.map((b) => b.i + 1).join(", ")}. If you fitted them, they dragged your orbit.
+              </>
+            )}
+          </div>
+        </>
       )}
 
       {beat >= 2 && (
         <>
-          <div className="physics-note">
-            <div className="panel-title">WHAT IT WAS</div>
-            <ul>
-              <li>
-                Discovered <b>{t.leadHours.toFixed(1)} hours</b> before it arrived, travelling{" "}
-                <b>{t.speedKms} km/s</b>.
-              </li>
-              <li>
-                About <b>{t.diameterM[0]}–{t.diameterM[1]} m</b> across, and it let go roughly{" "}
-                <b>{t.impactKt} kilotons</b> of energy.
-              </li>
-              <li>{t.story}</li>
-            </ul>
+          <div className="panel-title" style={{ marginTop: 18 }}>
+            WHAT THE MARKET SHOULD HAVE SAID
           </div>
-
-          {data.others?.length > 0 && (
-            <div className="others">
-              <div className="panel-title">AND THE OTHERS</div>
-              <p className="dim">
-                Eleven asteroids have been caught on the way in. The rest of them:
-              </p>
-              <div className="otherlist">
-                {data.others.map((o) => (
-                  <span key={o.name}>
-                    <b>{o.name}</b> {o.where} · {o.leadHours}h
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
-
-          <div className="reveal-board">
-            <div className="panel-title">FINAL STANDINGS</div>
-            {data.leaderboard.slice(0, 10).map((x) => (
-              <div key={x.id} className={`lbrow p${x.rank}`}>
-                <span className="rk">{x.rank}</span>
-                <span className="nm">{x.name}</span>
-                <span className="vl">{money(x.valueC)}</span>
-                <span className={`dl ${x.valueC - x.startC >= 0 ? "up" : "down"}`}>
-                  {x.valueC - x.startC >= 0 ? "+" : ""}
-                  {money(x.valueC - x.startC)}
+          <div className="releases">
+            {(d.releases ?? []).map((r) => (
+              <div key={r.index} className={`relrow ${r.index <= d.shown ? "out" : ""}`}>
+                <span className="relidx">{r.index}</span>
+                <span>
+                  {r.sightings} sightings · {r.arcDays} days
                 </span>
+                <span className="relconf">
+                  {r.pHit == null ? "—" : `${Math.round(r.pHit * 100)}%`}
+                  <em> hit</em>
+                </span>
+                <span className="dim">
+                  {r.medianMissKm == null ? "" : `median miss ${Math.round(r.medianMissKm).toLocaleString()} km`}
+                </span>
+                <span className="relstate">{r.index <= d.shown ? "RELEASED" : "held"}</span>
               </div>
             ))}
           </div>
 
-          <PxButton variant="green" onClick={onNext}>
-            NEXT
-          </PxButton>
+          <div className="panel-title" style={{ marginTop: 18 }}>
+            LEADERBOARD
+          </div>
+          <div className="lb">
+            {(d.leaderboard ?? []).map((row, i) => (
+              <div key={row.id} className="lbrow">
+                <span className="lbrank">{i + 1}</span>
+                <span className="lbname">{row.name}</span>
+                <span className="lbval">{money(row.valueC)}</span>
+              </div>
+            ))}
+          </div>
         </>
       )}
-    </div>
+    </section>
   );
-}
-
-const fmt = (v) => `${Math.abs(v).toFixed(2)}°${v >= 0 ? "N" : "S"}`;
-const fmtLon = (v) => `${Math.abs(v).toFixed(2)}°${v >= 0 ? "E" : "W"}`;
-
-/**
- * Rebuild a release's covariance from its sigma.
- *
- * The reveal only needs the ellipse to draw at the right size and tilt, and
- * the ratio and tilt are fixed for a round, so carrying the whole matrix
- * through the payload would be three numbers of duplication.
- */
-function covFrom(sigmaKm, ratio = 6, tiltDeg = 12) {
-  const a = sigmaKm;
-  const b = sigmaKm / ratio;
-  const t = (tiltDeg * Math.PI) / 180;
-  const c = Math.cos(t);
-  const s = Math.sin(t);
-  return [
-    [a * a * c * c + b * b * s * s, (a * a - b * b) * c * s],
-    [(a * a - b * b) * c * s, a * a * s * s + b * b * c * c],
-  ];
 }

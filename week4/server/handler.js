@@ -31,13 +31,17 @@ import {
   MARKETS, MARKET_META, BOOK, LIMITS, MONEY, SCENARIO, CONFIDENCE,
   PHASES, TIMERS, BOTS, RULES_TEXT, DATA_NOTE, MODEL_NOTE, aiPrompt,
 } from "../shared/rules.js";
-import { EVENTS, EVENT_KEYS, eventByKey, OTHER_IMPACTS } from "../shared/events.js";
-import { AI_DEFAULTS, AI_MODELS, PYTHON_TOOL, systemPrompt, apiKeyFrom, chat } from "./ai.js";
+
 import {
-  corridorOf, covariance, chol2, walk, latAt, northProbability, confidenceOf,
-  nonlinearityPts,
-  placeLine, R_EARTH_KM,
-} from "../shared/corridor.js";
+  makeTruth, makeCampaign, visible, housePrice, pathsFor, gaussFrom, clipOutliers,
+  RELEASE_COUNTS, RELEASE_ARCS, SIGHTING_SIGMA_KM, EARTH_EPHEM_SIGMA_KM, GM_SUN_REL_SIGMA,
+  T_ENCOUNTER, T_END,
+} from "../shared/round.js";
+import {
+  AU_KM, GM_SUN, GM_EARTH, EARTH, EARTH_RADIUS_AU, EARTH_RADIUS_KM, trail, earthAt,
+} from "../shared/orbit.js";
+import { AI_DEFAULTS, AI_MODELS, PYTHON_TOOL, systemPrompt, apiKeyFrom, chat } from "./ai.js";
+
 
 /* ── secrets ──────────────────────────────────────────────────────────── */
 
@@ -311,7 +315,7 @@ async function advanceIfDue(state, version, now) {
     const spec = await loadSpec(state.roundId);
     if (spec) {
       // Not a simulation: where the rock actually landed, relative to the line.
-      settle(state, spec.winner, now);
+      settle(state, spec.truth.hit ? "north" : "south", now); // north is HIT
       await recordHistory(state, spec, now);
       changed = true;
     }
@@ -338,7 +342,7 @@ async function recordHistory(state, spec, now) {
     at: now,
     winner: spec.winner,
     event: spec.truth?.name ?? null,
-    lineDeg: spec.lineDeg,
+
     podium: rows,
   };
   const prev = (await kv.getJSON(HISTORY)) ?? [];
@@ -491,28 +495,31 @@ const teamCard = (team) => ({
 });
 
 /**
- * The solution the room is allowed to have: the latest released one, and not
- * one step further. Everything the students need to price the round, and
- * nothing that would tell them the answer.
+ * What the room is allowed to know at the release it has reached.
+ *
+ * The sightings, the constants, and nothing else. Not which sightings are bad,
+ * not the true orbit, not where it ends up.
  */
 function publishedSolution(state, spec) {
   const upto = state.released ?? 0;
   if (upto <= 0) return null;
-  const r = spec.releases[upto - 1];
-  if (!r) return null;
+  const sightings = visible(spec.campaign, upto).map((o) => ({ t: o.t, x: o.x, y: o.y }));
   return {
     release: upto,
     of: spec.releases.length,
-    eventName: spec.truth.name,
-    nominalLat: r.nominalLat,
-    nominalLon: r.nominalLon,
-    azimuthDeg: spec.corridor.azimuthDeg,
-    groundSpeedKms: spec.corridor.groundSpeedKms,
-    covarianceKm2: r.covarianceKm2,
-    sigmaAlongKm: Math.sqrt(r.covarianceKm2[0][0]),
-    sigmaCrossKm: Math.sqrt(r.covarianceKm2[1][1]),
-    lineDeg: spec.lineDeg,
-    geometry: spec.corridor.geometry,
+    sightings,
+    arcDays: RELEASE_ARCS[upto - 1],
+    sightingSigmaKm: SIGHTING_SIGMA_KM,
+    earthEphemSigmaKm: EARTH_EPHEM_SIGMA_KM,
+    gmSun: GM_SUN,
+    gmSunRelSigma: GM_SUN_REL_SIGMA,
+    gmEarth: GM_EARTH,
+    earth: EARTH,
+    earthRadiusAu: EARTH_RADIUS_AU,
+    earthRadiusKm: EARTH_RADIUS_KM,
+    auKm: AU_KM,
+    tEncounter: T_ENCOUNTER,
+    tEnd: T_END,
   };
 }
 
@@ -649,40 +656,27 @@ export async function handle(method, route, body, query) {
       const state = r.state;
       requirePlayer(state, query);
       const spec = await loadSpec(state.roundId);
-      if (!spec) throw httpError(409, "the solution is not ready yet", "no-data");
-      if (!(state.released > 0)) throw httpError(409, "no solution has been released yet", "no-data");
-      const sol = publishedSolution(state, spec);
-      tx((st) => {
-        const p = st.players?.[query.playerId];
-        if (p) p.downloads = (p.downloads ?? 0) + 1;
-      }).catch(() => {});
-      const C = sol.covarianceKm2;
-      const lines = [
-        "# impact solution " + sol.release + " of " + sol.of,
-        "# distances in km; along = corridor direction, cross = 90 deg clockwise",
-        "# the covariance is NOT diagonal - draw the two components together",
-        "key,value",
-        "nominal_lat_deg," + sol.nominalLat.toFixed(6),
-        "nominal_lon_deg," + sol.nominalLon.toFixed(6),
-        "corridor_azimuth_deg," + sol.azimuthDeg.toFixed(3),
-        "ground_speed_km_s," + sol.groundSpeedKms.toFixed(3),
-        "cov_along_along_km2," + C[0][0].toFixed(3),
-        "cov_along_cross_km2," + C[0][1].toFixed(3),
-        "cov_cross_along_km2," + C[1][0].toFixed(3),
-        "cov_cross_cross_km2," + C[1][1].toFixed(3),
-        "sigma_along_km," + sol.sigmaAlongKm.toFixed(3),
-        "sigma_cross_km," + sol.sigmaCrossKm.toFixed(3),
-        "line_latitude_deg," + sol.lineDeg.toFixed(3),
-        "earth_radius_km,6371.0088",
+      if (!spec) throw httpError(409, "the sightings are not ready yet", "no-data");
+      if (!(state.released > 0)) throw httpError(409, "nothing has been released yet", "no-data");
+      const d = publishedSolution(state, spec);
+      const head = [
+        `# asteroid sightings - release ${d.release} of ${d.of}`,
+        `# positions in AU, Sun at the origin, plane of the Earth's orbit`,
+        `# every sighting is 1-sigma ${d.sightingSigmaKm} km in x and in y, independently`,
+        `# SOME SIGHTINGS ARE BLUNDERS, not noise. about one in twenty-five.`,
+        `# GM_sun=${d.gmSun} AU^3/day^2  GM_earth=${d.gmEarth}  earth_radius_au=${d.earthRadiusAu}`,
+        `# earth: a=${d.earth.aAu} e=${d.earth.e} period=${d.earth.periodDays} peri=${d.earth.peri} M0=${d.earth.M0}`,
+        `# earth position uncertain by ~${d.earthEphemSigmaKm} km; GM_sun by ~${d.gmSunRelSigma} fractional`,
+        `# encounter near day ${d.tEncounter}; integrate to day ${d.tEnd}`,
+        "t_days,x_au,y_au",
       ];
+      const rows = d.sightings.map((o) => `${o.t},${o.x.toFixed(9)},${o.y.toFixed(9)}`);
       return {
-        __raw: lines.join("\n") + "\n",
-        __contentType: "text/csv; charset=utf-8",
-        __filename: `impact-solution-${state.roundId}-${sol.release}.csv`,
+        __raw: head.concat(rows).join("\n") + "\n",
+        __type: "text/csv; charset=utf-8",
+        __filename: `sightings-${state.roundId}-release-${d.release}.csv`,
       };
     }
-
-    /* ── trading ──────────────────────────────────────────────────────── */
 
     case "POST order": {
       const pid = body.playerId;
@@ -826,20 +820,24 @@ export async function handle(method, route, body, query) {
       return {
         roundId: state.roundId,
         winner: state.winner,
-        lineDeg: spec.lineDeg,
-        truth: spec.truth,
-        corridor: spec.corridor,
-        // Every solution the room saw, so the reveal can show the ellipse
-        // walking in toward the place it actually landed.
+
+        // The truth, now that it cannot help anyone: how close it really came,
+        // and which sightings were the ones that were simply wrong.
+        truth: {
+          hit: spec.truth.hit,
+          missKm: Math.round(spec.truth.missKm),
+          earthRadiusKm: Math.round(EARTH_RADIUS_KM),
+          tDays: Number(spec.truth.tDays.toFixed(2)),
+        },
+        sightings: spec.campaign.map((o, i) => ({ i, t: o.t, x: o.x, y: o.y, bad: !!o.bad })),
         releases: spec.releases.map((x) => ({
           index: x.index,
-          sigmaKm: x.sigmaKm,
-          nominalLat: x.nominalLat,
-          nominalLon: x.nominalLon,
-          pNorth: x.pNorth,
+          sightings: x.sightings,
+          arcDays: x.arcDays,
+          pHit: x.pHit,
+          medianMissKm: x.medianMissKm,
         })),
         shown: state.released ?? 0,
-        others: spec.others,
         leaderboard: leaderboard(state, 100).filter((t) => t.id !== BOT_TEAM),
       };
     }
@@ -956,7 +954,7 @@ export async function handle(method, route, body, query) {
         if (state.status === "settled") return { round: publicRound(state, now), already: true };
         state.status = "ended";
         state.endedAt = now;
-        if (spec) settle(state, spec.winner, now);
+        if (spec) settle(state, spec.truth.hit ? "north" : "south", now); // north is HIT
         return { round: publicRound(state, now) };
       }).then(async (out) => {
         const fresh = await readMarket({ fresh: true });
@@ -1090,20 +1088,20 @@ export async function handle(method, route, body, query) {
         // The operator alone sees the answer, before anybody else does.
         truth: spec
           ? {
-              winner: spec.winner,
-              lineDeg: spec.lineDeg,
-              event: spec.truth,
-              corridor: spec.corridor,
+              outcome: spec.truth.hit ? "HIT" : "MISS",
+              missKm: Math.round(spec.truth.missKm),
+              earthRadiusKm: Math.round(EARTH_RADIUS_KM),
+              tDays: Number(spec.truth.tDays.toFixed(2)),
+              badSightings: spec.campaign.filter((o) => o.bad).length,
+              totalSightings: spec.campaign.length,
               releases: spec.releases.map((x) => ({
                 index: x.index,
-                sigmaKm: x.sigmaKm,
-                pNorth: x.pNorth,
-                confidence: x.confidence,
-                // What a team reaching for the normal approximation would price
-                // instead, and what that costs them. The operator wants to know
-                // before the bell whether this round teaches the week's lesson.
-                gaussPNorth: x.gaussPNorth,
-                gaussGapPts: x.gaussGapPts,
+                sightings: x.sightings,
+                arcDays: x.arcDays,
+                pHit: x.pHit,
+                medianMissKm: x.medianMissKm,
+                bad: x.bad,
+                suspect: x.suspect,
               })),
             }
           : null,
@@ -1160,221 +1158,54 @@ function normalPair(rand) {
  * toward the truth the way real ones do, rather than jumping about.
  */
 /**
- * Pick the line of latitude the round asks about.
+ * Build a round: one true orbit, one observing campaign, six releases.
  *
- * Four things want to be true, and they pull against each other:
- *
- *   HARD AT THE OPEN. The first solution should leave the room about as
- *   uncertain as the operator asked for. That is the only dial they get.
- *
- *   DECIDED BY THE CLOSE. A line the sharpest solution still cannot call makes
- *   a miserable round - the room works for an hour and ends up knowing less.
- *
- *   NEVER A PURE COIN TOSS ON THE WAY. The published solution wanders as it
- *   tightens, so it can wander across the line: the market goes confident, then
- *   ambiguous, then confident the other way. Measured on a live round once as
- *   63 -> 59 -> 55 -> 51 -> 59 -> 71%, which is a worse game after every
- *   release.
- *
- *   AND THE LESSON HAS TO BITE. The week is built on "simulate, do not reach
- *   for PHI(z)". A playtester was handed a round where the shortcut was wrong
- *   by 0.9 points - one tick - because the line happened to sit where latitude
- *   is very nearly linear in distance along the corridor, which is exactly
- *   where a Gaussian is right. Correct, and worth nothing. So MEASURE what the
- *   shortcut costs and prefer lines where it costs real money.
- *
- * An earlier version tried to guarantee the third by forbidding any line the
- * solutions could cross. That works only while the solutions march straight in;
- * once they wander - and once the corridor is long enough for the fourth point
- * to bite - the forbidden band swallows every line that makes an interesting
- * question, and every round opens at 100%. Measured: 14 of 14 rounds certain
- * from the first release. So the crossing is allowed and the COLLAPSE is what
- * gets bounded: the round may change its mind, it may not stop having one.
- *
- * All four are scored rather than enforced, because they are all negotiable
- * against each other and an unshippable round is the worst outcome of the four.
+ * There is no line to place any more - the question is simply hit or miss - so
+ * all this does is make a marginal encounter, observe it badly, and work out
+ * roughly what the market should say at each release so the operator can see
+ * whether the round is worth running.
  */
-function chooseLine(event, corridor, releases, startConf, rand) {
-  const views = releases.map((r) => ({
-    view: { lat: r.nominalLat, lon: r.nominalLon },
-    C: r.covarianceKm2,
-  }));
-  const base = Math.round(releases[0].nominalLat * 10);
-  let best = null;
-  for (let step = -110; step <= 110; step++) {
-    const line = (base + step) / 10;
-    // confidenceOf returns { p, confidence }, not a number. Taking the object
-    // made every score NaN, every comparison false, and the chooser silently
-    // kept its FIRST candidate - a line eleven degrees away that nobody could
-    // be uncertain about. It shipped three times before the score curve was
-    // printed, because a round built fine and only the confidences looked odd.
-    // Hence the assertion below.
-    const conf = views.map((v) => confidenceOf(v.view, corridor, v.C, line, 1200, rand).confidence);
-    const open = conf[0];
-    const end = conf[conf.length - 1];
-    const floor = Math.min(...conf);
-    // What the normal approximation costs a team on the data they open with.
-    const gap = Math.abs(
-      nonlinearityPts(views[0].view, corridor, views[0].C, line, 1200, rand).pts
-    );
-    // The lesson terms are deliberately modest, and finding that balance took
-    // two wrong answers. Weighted at 0.02 the lesson lost every argument and one
-    // round in four was hollow - the shortcut costing under half a point, which
-    // is exactly the round the playtester was given. Weighted at 0.6 it won too
-    // many: rounds opened as certain as 84% against the 65% the operator asked
-    // for, because the placer would pay almost any amount of difficulty for a
-    // curvier line.
-    //
-    // The fix is not a weight. A draw that offers no good line cannot be
-    // rescued by scoring harder, so buildRound takes a fresh draw instead, and
-    // that lets these terms stay small enough to leave difficulty alone.
-    const score =
-      Math.abs(open - startConf) +          // as hard as the operator asked
-      3 * Math.max(0, 0.85 - end) +         // and settled by the last release
-      2 * Math.max(0, 0.58 - floor) +       // and never a pure coin toss
-      0.15 * Math.max(0, 2.5 - gap) -       // with a nudge away from hollow ones
-      0.02 * Math.min(gap, 10);             // and a nudge toward the lesson
-    if (!Number.isFinite(score)) {
-      throw new Error(
-        `line placement scored ${score} at ${line} - open ${open}, end ${end}, gap ${gap}`
-      );
-    }
-    if (!best || score < best.score) best = { line, score, open, end, floor, gap };
-  }
-  return best;
-}
-
 async function buildRound(body, now) {
   const seed = String(body.seed ?? "").trim() || rid(4);
   const roundId = rid(5);
   const rand = rng(`${seed}|${roundId}`);
+  const gauss = gaussFrom(rand);
 
-  const key = EVENT_KEYS.includes(body.event) ? body.event : EVENT_KEYS[Math.floor(rand() * EVENT_KEYS.length)];
-  const event = eventByKey(key);
-  const corridor = corridorOf(event);
+  const wantHit = body.outcome === "hit" ? true : body.outcome === "miss" ? false : undefined;
+  const truth = makeTruth(rand, wantHit === undefined ? {} : { wantHit });
+  const campaign = makeCampaign(truth, rand, gauss);
 
-  const startConf = clamp(numOr(body.startConfidence, CONFIDENCE.defaultStart), ...CONFIDENCE.range);
   const startCashC = Math.round(clamp(numOr(body.startCash, MONEY.startCashC / 100), 100, 10_000_000) * 100);
   const defaultSize = Math.round(clamp(numOr(body.defaultSize, LIMITS.defaultOrderSize), 1, LIMITS.maxSharesPerOrder));
-  const sigma0 = clamp(numOr(body.sigmaKm, SCENARIO.sigma0Km), 40, 4000);
 
-  // How much of each published solution is fresh noise rather than the same
-  // error seen more sharply.
-  //
-  // Reusing a single draw for every release makes all six solutions sit on one
-  // straight path in to the truth, and that is a boring round: the favoured
-  // side is favoured a little harder every time, so the only trade a release
-  // ever asks for is "buy more of what you already own". A playtest named it
-  // exactly - every release just made SOUTH righter.
-  //
-  // Real successive solutions wander as they tighten. The ellipse still shrinks
-  // monotonically, but the centre moves both ways, so a release can move the
-  // price against you, and that is what makes the updates worth trading rather
-  // than worth waiting out. Measured, it turns roughly half of all rounds into
-  // ones where somebody who was right at the open is wrong by the second
-  // release and right again by the close.
-  const WANDER = 0.35;
-  const keep = Math.sqrt(1 - WANDER * WANDER);
+  // What a competent team should get at each release. Kept cheap: this is a
+  // reference price for the control room, not the room's own work.
+  const releases = RELEASE_COUNTS.map((count, i) => {
+    const seen = visible(campaign, i + 1);
+    const h = housePrice(seen, rand, gauss, SCENARIO.refits);
+    return {
+      index: i + 1,
+      sightings: count,
+      arcDays: RELEASE_ARCS[i],
+      pHit: h.pHit,
+      medianMissKm: h.medianMissKm,
+      suspect: h.dropped ?? 0,
+      bad: seen.filter((o) => o.bad).length,
+    };
+  });
 
-  /** One candidate round: a fresh error draw, and the best line for it. */
-  const draw = () => {
-    const z = normalPair(rand);
-    const releases = SCENARIO.shrink.map((f, i) => {
-      const sigmaKm = sigma0 * f;
-      const C = covariance(sigmaKm, SCENARIO.ratio, SCENARIO.tiltDeg);
-      const L = chol2(C);
-      const w = i === 0 ? [0, 0] : normalPair(rand);
-      const e0 = keep * z[0] + WANDER * w[0];
-      const e1 = keep * z[1] + WANDER * w[1];
-      const along = L[0][0] * e0;
-      const crossKm = L[1][0] * e0 + L[1][1] * e1;
-      const nominal = walk(event.lat, event.lon, corridor.azimuthDeg, along, crossKm);
-      return { index: i + 1, sigmaKm, covarianceKm2: C, nominalLat: nominal.lat, nominalLon: nominal.lon };
-    });
-    return { releases, placed: chooseLine(event, corridor, releases, startConf, rand) };
-  };
-
-  const explicit = numOr(body.lineDeg, null);
-  let releases;
-  let placed = null;
-  let lineDeg;
-
-  if (explicit != null) {
-    // The operator named the line. Their round, their call - one draw, no
-    // second-guessing, even if the geometry makes a dull question.
-    releases = draw().releases;
-    lineDeg = explicit;
-  } else {
-    // Otherwise, redraw rather than ship a hollow round.
-    //
-    // Where the published solution happens to land is random, and some draws
-    // simply do not offer any line that is both as hard as the operator asked
-    // for and sits where the corridor's curvature matters. Line placement can
-    // only choose among the lines the draw gives it; it cannot fix a bad draw.
-    // Measured over twenty rounds, one in five came out with the normal
-    // approximation costing under two points - a hollow round, and the exact
-    // complaint a playtester made about the one he was given. A new draw costs
-    // about a second and fixes it, so take one.
-    const WANT = 3.5;   // points of shortcut error: good enough, stop looking
-    const FLOOR = 2.0;  // below this the round does not teach anything
-    let bestTry = null;
-    for (let attempt = 0; attempt < 5; attempt++) {
-      const got = draw();
-      const gap = Math.abs(got.placed?.gap ?? 0);
-      if (!bestTry || gap > Math.abs(bestTry.placed?.gap ?? 0)) bestTry = got;
-      if (gap >= WANT) break;
-    }
-    releases = bestTry.releases;
-    placed = bestTry.placed;
-    lineDeg = placed.line;
-    if (Math.abs(placed.gap ?? 0) < FLOOR) {
-      // Not fatal - the round still works as a market, and the operator is told
-      // on the control room so they can rebuild if the Monte Carlo is the point.
-      placed.weakLesson = true;
-    }
-  }
-
-  // What a good team should be able to see at each release, priced the same
-  // way the room is being asked to price it.
-  for (const r of releases) {
-    const view = { lat: r.nominalLat, lon: r.nominalLon };
-    // Both prices: the one simulating gets, and the one the shortcut gets. The
-    // difference is the week's lesson in points, and the control room shows it
-    // so the operator knows before the bell whether the lesson is live.
-    const lin = nonlinearityPts(view, corridor, r.covarianceKm2, lineDeg, SCENARIO.draws, rand);
-    r.gaussPNorth = lin.gauss;
-    r.gaussGapPts = lin.pts;
-    const p = northProbability(view, corridor, r.covarianceKm2, lineDeg, SCENARIO.draws, rand);
-    r.pNorth = p;
-    r.confidence = Math.max(p, 1 - p);
-  }
-
-  // The settlement is not a simulation. It is where the rock actually landed.
-  const winner = event.lat > lineDeg ? "north" : "south";
+  const winner = truth.hit ? "north" : "south"; // north is HIT, south is MISS
 
   const spec = {
-    roundId,
-    seed,
-    eventKey: key,
-    lineDeg,
-    winner,
     truth: {
-      name: event.name,
-      nick: event.nick ?? null,
-      when: event.when,
-      lat: event.lat,
-      lon: event.lon,
-      where: event.where,
-      story: event.story,
-      leadHours: event.leadHours,
-      diameterM: event.diameterM,
-      impactKt: event.impactKt,
-      speedKms: event.speedKms,
-      geometry: event.geometry,
+      hit: truth.hit,
+      missKm: truth.missAu * AU_KM,
+      tDays: truth.tDays,
+      state: truth.state,
     },
-    corridor,
+    campaign,
     releases,
-    others: OTHER_IMPACTS,
+    earthTrail: trail([EARTH.aAu, 0, 0, 0], 0, 0, 1).length ? null : null,
   };
   await kv.setJSON(SPEC(roundId), spec);
   specCache.set(roundId, spec);
@@ -1384,19 +1215,15 @@ async function buildRound(body, now) {
     startCashC,
     defaultSize,
     lateJoin: body.lateJoin !== false,
-    question: `Does it land NORTH or SOUTH of ${fmtLine(lineDeg)}?`,
+    question: "Does it HIT the Earth, or MISS?",
   });
-  state.releases = releases.map((r) => ({ index: r.index, sigmaKm: r.sigmaKm }));
+  state.releases = releases.map((r) => ({ index: r.index, sightings: r.sightings }));
   state.released = 0;
   state.releaseLog = [];
-  state.lineDeg = lineDeg;
-  state.eventName = event.name;
+  state.eventName = "2027 QX";
   state.tradingMinutes = clamp(numOr(body.tradingMinutes, TIMERS.defaultTradingMinutes), TIMERS.minMinutes, TIMERS.maxMinutes);
-  // ON by default, quietly. A round that opens with an empty book has nothing
-  // on the other side: a playtest priced the market right to within a point and
-  // then could not act on it, because there was no counterparty in either book.
-  // Four slots, all four books' sides covered, small size, slow cadence - the
-  // operator can turn any of them off or wind them up from the control room.
+  // The desk TAKES and never quotes: the books open empty and the room makes
+  // the market. These are what pay the room for doing it.
   state.bots = BOTS.slots.map((sl) => ({
     key: sl.key, market: sl.market, side: sl.side,
     on: true, shares: 8, everySec: 45, nextAt: null, sent: 0, fills: 0,
@@ -1425,30 +1252,15 @@ async function buildRound(body, now) {
   return {
     round: publicRound(state, now),
     truth: {
-      event: event.name,
-      where: event.where,
-      trueLat: event.lat,
-      trueLon: event.lon,
-      lineDeg,
+      event: "2027 QX",
+      outcome: truth.hit ? "HIT" : "MISS",
+      missKm: Math.round(truth.missAu * AU_KM),
+      earthRadiusKm: Math.round(EARTH_RADIUS_KM),
+      tDays: Number(truth.tDays.toFixed(2)),
       winner,
-      geometry: event.geometry,
-      releases: releases.map((r) => ({
-        index: r.index,
-        sigmaKm: r.sigmaKm,
-        pNorth: r.pNorth,
-        confidence: r.confidence,
-        // The operator is trusted with the true impact point already, so there
-        // is nothing to protect by hiding where each solution says it lands -
-        // and it is the only thing the line is placed relative to, which makes
-        // it the number to look at when a round comes out strangely.
-        nominalLat: r.nominalLat,
-        nominalLon: r.nominalLon,
-        gaussPNorth: r.gaussPNorth,
-        gaussGapPts: r.gaussGapPts,
-        offsetKm: Math.round(
-          haversineKm(r.nominalLat, r.nominalLon, event.lat, event.lon)
-        ),
-      })),
+      badSightings: campaign.filter((o) => o.bad).length,
+      totalSightings: campaign.length,
+      releases,
     },
   };
 }
