@@ -47,6 +47,18 @@
     {
       "source": "/week4/admin",
       "destination": "/week4/index.html"
+    },
+    {
+      "source": "/api/week5/:path*",
+      "destination": "/api/week5/router?__path=:path*"
+    },
+    {
+      "source": "/week5/board",
+      "destination": "/week5/index.html"
+    },
+    {
+      "source": "/week5/admin",
+      "destination": "/week5/index.html"
     }
   ],
   "headers": [
@@ -184,10 +196,58 @@
           "value": "no-store, must-revalidate"
         }
       ]
+    },
+    {
+      "source": "/week5",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-store, must-revalidate"
+        }
+      ]
+    },
+    {
+      "source": "/week5/",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-store, must-revalidate"
+        }
+      ]
+    },
+    {
+      "source": "/week5/index.html",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-store, must-revalidate"
+        }
+      ]
+    },
+    {
+      "source": "/week5/admin",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-store, must-revalidate"
+        }
+      ]
+    },
+    {
+      "source": "/week5/board",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-store, must-revalidate"
+        }
+      ]
     }
   ],
   "functions": {
     "api/week4/router.mjs": {
+      "maxDuration": 60
+    },
+    "api/week5/router.mjs": {
       "maxDuration": 60
     }
   }
