@@ -41,8 +41,8 @@ export default function Rules({ onClose }) {
               <div className="marketcard south">
                 <b>NOISE DESKS</b>
                 <span>
-                  {rules.desks.noise.length} of them. Each buys or sells {rules.desks.noise[0]?.size} shares at random every
-                  half-minute or so.
+                  {rules.desks.noise.length} of them. Each buys or sells {rules.desks.noise[0]?.size} shares at random every{" "}
+                  {rules.desks.noise.map((d) => d.everySec).join(" and ")} seconds.
                 </span>
               </div>
             </div>

@@ -51,10 +51,10 @@ the lobby and in research; they **lock once trading opens**.
 
 ## The house desks
 
-- **NAIVE DESK** (togglable): every 10 s, quotes 5 shares a side ±4 around the
+- **NAIVE DESK** (togglable): every 10 s, quotes 30 shares a side ±4 around the
   random-walk price Φ((Y_now − K)/(σ̂√h)), σ̂ from the public data only. Right
   in random-walk rounds, wrong in mean-reverting ones. That is the point.
-- **NOISE DESK A / B**: buy or sell 3 shares at random every 23 s / 31 s.
+- **NOISE DESK A / B**: buy or sell 30 shares at random every 13 s / 19 s.
 
 Each desk has its own player id at one hidden table (never on the leaderboard),
 fires once when due and then re-bases, so a quiet minute cannot become a burst.

@@ -131,11 +131,11 @@ export const BOTS = {
     name: "NAIVE DESK",
     everySec: 10,
     halfSpread: 4,
-    size: 5,
+    size: 30,
   },
   noise: [
-    { key: "noise-1", pid: "bot-noise-1", name: "NOISE DESK A", everySec: 23, size: 3 },
-    { key: "noise-2", pid: "bot-noise-2", name: "NOISE DESK B", everySec: 31, size: 3 },
+    { key: "noise-1", pid: "bot-noise-1", name: "NOISE DESK A", everySec: 13, size: 30 },
+    { key: "noise-2", pid: "bot-noise-2", name: "NOISE DESK B", everySec: 19, size: 30 },
   ],
   /** How far through the touch a noise desk's market order may sweep. */
   maxSweep: 15,
@@ -151,7 +151,7 @@ export const RULES_TEXT = `**The contract.** A hidden process **Y** ticks live o
 
 **Step 2 — trade.** The book opens and Y starts to tick. Click the bid side to buy at a price, the offer side to sell. Cross the book and you trade immediately. As ticks print, the data grows — download it again and re-fit. **Do not assume the process stays the same all round.**
 
-**The desks.** A **NAIVE DESK** quotes a bid and an offer about four either side of the price you would get if Y were a **random walk**. It re-quotes every ten seconds. Sometimes that is right. Two small **NOISE DESKS** buy or sell a few shares at random so the book is never dead.
+**The desks.** A **NAIVE DESK** quotes a bid and an offer about four either side of the price you would get if Y were a **random walk**. It re-quotes every ten seconds. Sometimes that is right. Two **NOISE DESKS** buy or sell 30 shares at random, every 13 and 19 seconds, so the book is never dead.
 
 **Your money.** **$10,000**. A resting bid ties up **$price × shares**; a resting offer ties up **$(100 − price) × shares**. You can never be filled into a negative balance.
 
