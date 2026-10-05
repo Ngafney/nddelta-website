@@ -87,7 +87,7 @@ only. See `.env.example`.
 
 | var | |
 | --- | --- |
-| `SESSION_SECRET` | **required in production** (server refuses to boot on Vercel / NODE_ENV=production without it). Signs player and admin tokens. |
+| `SESSION_SECRET` | recommended. Signs player and admin tokens. If unset, a key is derived from an API key or the Upstash token already in the environment (as week 2 does); production refuses to boot only if there is nothing at all to sign with. |
 | `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN` | Upstash for Vercel (or `KV_REST_API_URL` / `KV_REST_API_TOKEN` from the integration). Without them Vercel storage is per-invocation and nothing persists — the admin panel shows a banner. |
 | `ADMIN_PASSWORD` | optional starting admin password (default `123`, changeable in the panel). |
 | `KV_FORCE_MEMORY=1` | force the in-process store (tests, a live room on one box). |

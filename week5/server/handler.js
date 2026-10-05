@@ -67,20 +67,33 @@ import { rngFrom } from "../shared/rng.js";
 const sha = (s) => crypto.createHash("sha256").update(s).digest("hex");
 
 /**
- * The signing key for player and admin tokens. Unlike weeks 1–4 there is no
- * fallback to a committed store config: SESSION_SECRET, or (dev only) a fixed
- * key with a loud warning. Production refuses to boot without it.
+ * The signing key for player and admin tokens — week 2's ladder, minus the
+ * committed store config: SESSION_SECRET, else a key derived from a strong
+ * value already in the ENVIRONMENT (an API key or the Upstash token), else, in
+ * dev only, a fixed key with a loud warning. Production refuses to boot when
+ * there is nothing at all to sign with.
  */
 const DEFAULT_SECRET = "week5-dev-secret";
 const IS_PROD = process.env.VERCEL === "1" || process.env.NODE_ENV === "production";
-const SECRET = process.env.SESSION_SECRET || DEFAULT_SECRET;
-const SECRET_FROM = process.env.SESSION_SECRET ? "SESSION_SECRET" : "nothing";
+
+function resolveSecret() {
+  if (process.env.SESSION_SECRET) return { secret: process.env.SESSION_SECRET, from: "SESSION_SECRET" };
+  const apiKey = process.env.OPENAI_API_KEY || process.env.LLM_API_KEY;
+  if (apiKey) return { secret: sha(`week5|session|${apiKey}`), from: "an API key in the environment" };
+  const store = process.env.UPSTASH_REDIS_REST_TOKEN || process.env.KV_REST_API_TOKEN;
+  if (store) return { secret: sha(`week5|session|${store}`), from: "the Upstash token in the environment" };
+  return { secret: DEFAULT_SECRET, from: "nothing" };
+}
+
+const { secret: SECRET, from: SECRET_FROM } = resolveSecret();
 
 if (SECRET === DEFAULT_SECRET) {
   const msg =
-    'No SESSION_SECRET — player and admin tokens are forgeable. Set one: node -e "console.log(require(\'crypto\').randomBytes(32).toString(\'hex\'))"';
+    'No SESSION_SECRET and nothing in the environment to derive one from — player and admin tokens are forgeable. Set one: node -e "console.log(require(\'crypto\').randomBytes(32).toString(\'hex\'))"';
   if (IS_PROD) throw new Error(`REFUSING TO START: ${msg}`);
   console.warn(`[week5] ⚠ ${msg} (allowed in dev only)`);
+} else if (SECRET_FROM !== "SESSION_SECRET") {
+  console.warn(`[week5] SESSION_SECRET is unset — signing tokens with a key derived from ${SECRET_FROM}.`);
 }
 
 const rid = (n = 6) => crypto.randomBytes(n).toString("hex");
