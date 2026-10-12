@@ -302,8 +302,8 @@ ok("a team forms with a legal number, any member may change it, and the lock sea
   assert.throws(() => setTeamNumber(s, "c", 4, 1), /join or create/);
   assert.throws(() => setTeamNumber(s, "a", 11, 1), /0 to 10/);
   s.locked = true;
-  assert.throws(() => setTeamNumber(s, "a", 4, 1), /sealed/);
-  assert.throws(() => createTeam(s, "c", "Team C", "tc", "CCCC", 4, 0), /sealed/);
+  assert.throws(() => setTeamNumber(s, "a", 4, 1), /locked/);
+  assert.throws(() => createTeam(s, "c", "Team C", "tc", "CCCC", 4, 0), /locked/);
   assert.throws(() => leaveTeam(s, "b"), /locked/);
   leaveTeam(s, "b", { force: true });
   assert.ok(s.teams.ta, "a kicked player does not take the team with them after the lock");

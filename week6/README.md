@@ -1,6 +1,6 @@
-# Week 6 — The Pot
+# Week 6 — The Sum
 
-Every team drops a **secret whole number 0–10** into the pot when it forms.
+Every team drops a **secret whole number 0–10** when it forms.
 **S is the sum.** Three books trade on it:
 
 | book | pays | ladder |
@@ -11,7 +11,7 @@ Every team drops a **secret whole number 0–10** into the pot when it forms.
 
 One strike K for both options (default **5N**, set at the open), so at the bell
 **CALL − PUT = SUM − K** exactly; the floor shows the parity check live from the
-mids. The host reveals the numbers one at a time — by hand (**REVEAL NEXT**) or
+mids. The host draws the numbers one at a time — by hand (**REVEAL NEXT**) or
 on a clock (**AUTO every n s**) — and the round settles the instant the last one
 lands. Nobody, not even the team, is told whose number just came out until the
 final reveal screen.
@@ -26,7 +26,7 @@ lobby ──(pick clock runs out, or OPEN TRADING)──▶ live ──(last num
   member may change it (`POST team/number`). The host can start a **pick
   clock** (default 30 s; +30 s / HOLD); when it runs out trading opens by
   itself, anchored to when it was due.
-- **live** — the pot is **sealed** (`lock`): N, K, every number and the reveal
+- **live** — the numbers are **locked** (`lock`): N, K, every number and the reveal
   order (a seeded shuffle) are fixed. A team that never picked gets a number
   **drawn** from the seed and is told. No new teams (late arrivals join one),
   no leaving, no changing numbers. Books can be opened/shut any time (shutting
@@ -106,7 +106,7 @@ npm run test:all       # all of it, plus the build
     shared/engine.js    the three-book matching engine and the solvency rule
     server/handler.js   the API (pick clock, lock, reveals, auto, desks, views)
     server/kv.js        storage, env-only credentials
-    src/                React app: floor (Pot, SumChart, Books, ladder), /board, /admin, reveal
+    src/                React app: floor (Draw, Ladders, SumChart), /board, /admin, reveal
     api/week6/router.mjs  (repo root) the Vercel entry
 
 ## The insider

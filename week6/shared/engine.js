@@ -176,16 +176,25 @@ function reserveAtC(o, S, K) {
  * state that does not exist yet.
  */
 function worstC(state, cash, pos, orders) {
+  return worstPoint(state, cash, pos, orders).min;
+}
+
+/** The worst wealth over every reachable S, and the S it happens at. */
+function worstPoint(state, cash, pos, orders) {
   const { lo, hi } = bounds(state);
   const K = state.K ?? grid(state, "fut").K;
   let min = Infinity;
+  let at = lo;
   for (let S = lo; S <= hi; S++) {
     let w = cash;
     for (const k of BOOK_ORDER) if (pos[k]) w += pos[k] * payoff(k, S, K) * SHARE_C;
     for (const o of orders) w -= reserveAtC(o, S, K);
-    if (w < min) min = w;
+    if (w < min) {
+      min = w;
+      at = S;
+    }
   }
-  return min;
+  return { min, at };
 }
 
 export function myOrders(state, pid) {
@@ -219,7 +228,8 @@ export function powers(state, p) {
     if (o.side === "B") bidC += h;
     else askC += h;
   }
-  return { bidC, askC, freeC: worstC(state, p.cash, p.pos, mine) };
+  const w = worstPoint(state, p.cash, p.pos, mine);
+  return { bidC, askC, freeC: w.min, worstS: w.at };
 }
 
 /** Cash a player may spend outright without breaking the invariant. */
@@ -300,8 +310,11 @@ function afterPlan(state, p, mkt, side, px, plan, restQty) {
 function applyPlan(state, book, pid, side, px, plan, restQty, now) {
   const taker = { pid, side };
   const trades = [];
+  const selfCanceled = [];
   for (const st of plan.steps) {
     if (st.kill != null) {
+      const o = book.orders.find((x) => x.id === st.kill);
+      if (o) selfCanceled.push({ id: o.id, px: o.px, qty: o.qty, side: o.side });
       removeOrder(book, st.kill);
       continue;
     }
@@ -315,7 +328,7 @@ function applyPlan(state, book, pid, side, px, plan, restQty, now) {
     resting = { id: state.nextOrderId++, pid, mkt: book.key, side, px, qty: restQty, ts: now, seq: state.seq++ };
     book.orders.push(resting);
   }
-  return { trades, resting };
+  return { trades, resting, selfCanceled };
 }
 
 function removeOrder(book, id) {
@@ -366,11 +379,21 @@ export function midPx(state, key) {
   return grid(state, key).center;
 }
 
-/** The price the leaderboard marks a book against: last trade, else the mid. */
+/**
+ * The price the leaderboard marks a book against: the mid of a two-sided
+ * book first, then the last print, then the uniform fair value. A single
+ * silly print against an empty book should not be able to move everyone's
+ * portfolio.
+ */
 export function markPx(state, key) {
-  const last = state.books[key].last;
-  if (last != null) return last;
   return midPx(state, key);
+}
+
+/** The mid of the touch, or null when the book is not two-sided. */
+export function touchMid(state, key) {
+  const b = bestBid(state, key);
+  const a = bestAsk(state, key);
+  return b != null && a != null ? (b + a) / 2 : null;
 }
 
 /* ── trading ──────────────────────────────────────────────────────────── */
@@ -396,8 +419,8 @@ function execute(state, book, taker, maker, qty, px, now) {
   book.tape.unshift({ s, px, qty, ts: now, aggr: taker.side });
   if (book.tape.length > LIMITS.tapeLength) book.tape.length = LIMITS.tapeLength;
 
-  pushFill(buyer, { s, market: book.key, side: "B", px, qty, ts: now, taker: taker.side === "B", cp: seller.name });
-  pushFill(seller, { s, market: book.key, side: "A", px, qty, ts: now, taker: taker.side === "A", cp: buyer.name });
+  pushFill(buyer, { s, mkt: book.key, market: book.key, side: "B", px, qty, ts: now, taker: taker.side === "B", cp: seller.name });
+  pushFill(seller, { s, mkt: book.key, market: book.key, side: "A", px, qty, ts: now, taker: taker.side === "A", cp: buyer.name });
 
   return { s, px, qty, buyer: buyer.id, seller: seller.id };
 }
@@ -448,15 +471,15 @@ export function placeOrder(state, pid, mkt, side, px, qty, now) {
       ioc = true;
     } else {
       throw new EngineError(
-        `out of balance — ${qty} share${qty > 1 ? "s" : ""} at ${px} could leave you ${fmt(-whole)} short if the pot goes against you. ` +
+        `out of balance — ${qty} share${qty > 1 ? "s" : ""} at ${px} could leave you ${fmt(-whole)} short if the numbers go against you. ` +
           `cancel some resting orders, or try fewer shares.`,
         "balance"
       );
     }
   }
 
-  const { trades, resting } = applyPlan(state, book, pid, side, px, plan, ioc ? 0 : plan.left, now);
-  return { trades, resting, filled: qty - plan.left, canceled: ioc ? plan.left : 0, ioc };
+  const { trades, resting, selfCanceled } = applyPlan(state, book, pid, side, px, plan, ioc ? 0 : plan.left, now);
+  return { trades, resting, filled: qty - plan.left, canceled: ioc ? plan.left : 0, ioc, selfCanceled };
 }
 
 export function cancelOrder(state, pid, orderId) {
@@ -621,7 +644,7 @@ export function createTeam(state, pid, name, teamId, code, number, now) {
   const p = state.players[pid];
   if (!p) throw new EngineError("unknown player", "no-player");
   if (p.teamId) throw new EngineError("you are already on a team", "has-team");
-  if (state.locked) throw new EngineError("the pot is sealed for this round — join a team with its code instead", "locked");
+  if (state.locked) throw new EngineError("the numbers are locked for this round — join a team with its code instead", "locked");
   if (teamCount(state) >= LIMITS.maxTeams) throw new EngineError(`the room is full — ${LIMITS.maxTeams} teams at most`, "full");
   const clean = String(name ?? "").trim().replace(/\s+/g, " ");
   if (clean.length < 2 || clean.length > LIMITS.teamNameMax) {
@@ -629,7 +652,7 @@ export function createTeam(state, pid, name, teamId, code, number, now) {
   }
   if (!teamSlug(clean)) throw new EngineError("team name needs some letters or numbers");
   if (!Number.isInteger(number) || number < 0 || number > NUMBER_MAX) {
-    throw new EngineError(`pick a whole number from 0 to ${NUMBER_MAX} for the pot`, "bad-number");
+    throw new EngineError(`pick a whole number from 0 to ${NUMBER_MAX}`, "bad-number");
   }
   for (const t of Object.values(state.teams)) {
     if (!t.hidden && teamSlug(t.name) === teamSlug(clean)) throw new EngineError("a team already has that name", "name-taken");
@@ -658,7 +681,7 @@ export function setTeamNumber(state, pid, number, now) {
   if (!p) throw new EngineError("unknown player", "no-player");
   const team = p.teamId ? state.teams[p.teamId] : null;
   if (!team) throw new EngineError("join or create a team first", "no-team");
-  if (state.locked) throw new EngineError("the pot is sealed — your number is in and cannot change", "locked");
+  if (state.locked) throw new EngineError("the numbers are locked — yours is in and cannot change", "locked");
   if (!Number.isInteger(number) || number < 0 || number > NUMBER_MAX) {
     throw new EngineError(`pick a whole number from 0 to ${NUMBER_MAX}`, "bad-number");
   }
@@ -798,7 +821,7 @@ export function auditState(state) {
   for (const t of Object.values(state.teams ?? {})) {
     if (!t.hidden && t.members.length > LIMITS.teamSize) problems.push(`team ${t.name} has ${t.members.length} members`);
     if (!t.hidden && state.codes[t.code] !== t.id) problems.push(`team ${t.name} has a dangling code`);
-    if (!t.hidden && state.locked && !Number.isInteger(t.number)) problems.push(`team ${t.name} has no number in a sealed pot`);
+    if (!t.hidden && state.locked && !Number.isInteger(t.number)) problems.push(`team ${t.name} has no number after the lock`);
     for (const pid of t.members) {
       if (state.players[pid]?.teamId !== t.id) problems.push(`team ${t.name} lists a player who is not on it`);
     }

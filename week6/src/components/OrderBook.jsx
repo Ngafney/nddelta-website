@@ -50,6 +50,11 @@ export default function OrderBook({
   lo = null,
   hi = null,
   unit = null,
+  // Compact: no position bar, no size picker, no hint — the ladder and its
+  // touch only. The floor shows three of these side by side.
+  compact = false,
+  height = null,
+  busyKey = "",
 }) {
   const bounded = lo != null && hi != null;
   const scrollRef = useRef(null);
@@ -184,7 +189,7 @@ export default function OrderBook({
     <div>
       {/* Your position, stated plainly and immediately above the ladder, so
           nobody clicks a side without knowing which way they are already. */}
-      {me && (
+      {me && !compact && (
         <div className={`posbar ${pos > 0 ? "long" : pos < 0 ? "short" : "flat"}`}>
           <span className="posbar-main">
             <i>{pos > 0 ? "LONG" : pos < 0 ? "SHORT" : "FLAT"}</i>
@@ -220,10 +225,13 @@ export default function OrderBook({
         </span>
       </div>
 
-      <div className="book-tools">
+      <div className={`book-tools ${compact ? "compact" : ""}`}>
+        {!compact && (
         <span className="field-label" style={{ margin: 0 }}>
           SHARES
         </span>
+        )}
+        {!compact && (
         <div className="sizepick">
           {/* Always offer the round's own default, whatever the admin set it to. */}
           {[...new Set([1, 5, size, 10, 25, 50])]
@@ -236,6 +244,7 @@ export default function OrderBook({
               </button>
             ))}
         </div>
+        )}
         <div className="sizepick zoompick" title="how many prices fit on screen at once">
           <button disabled={zoom <= 0} onClick={() => changeZoom(-1)} aria-label="show more prices">
             −
@@ -253,7 +262,7 @@ export default function OrderBook({
           MIDDLE
         </PxButton>
         <PxButton variant="red" small disabled={disabled || !mine?.length} onClick={onCancelAll}>
-          CANCEL ALL{mine?.length ? ` (${mine.length})` : ""}
+          {compact ? "PULL" : "CANCEL ALL"}{mine?.length ? ` (${mine.length})` : ""}
         </PxButton>
       </div>
 
@@ -274,7 +283,7 @@ export default function OrderBook({
             ▼ {sideOf(below)} down at {below}
           </button>
         )}
-        <div className="book" ref={scrollRef} onScroll={onScroll}>
+        <div className="book" ref={scrollRef} onScroll={onScroll} style={height ? { height, maxHeight: height } : undefined}>
         <div style={{ height: rows * ROW, position: "relative" }}>
           {visible.map((px, n) => {
             const r = first + n;
@@ -300,7 +309,7 @@ export default function OrderBook({
               >
                 <button
                   className="side bid"
-                  disabled={disabled || busyPx === `B${px}`}
+                  disabled={disabled || busyPx === `${busyKey}B${px}`}
                   title={`bid ${size} share${size > 1 ? "s" : ""} at ${px}`}
                   onClick={() => onOrder("B", px)}
                 >
@@ -325,7 +334,7 @@ export default function OrderBook({
 
                 <button
                   className="side ask"
-                  disabled={disabled || busyPx === `A${px}`}
+                  disabled={disabled || busyPx === `${busyKey}A${px}`}
                   title={`offer ${size} share${size > 1 ? "s" : ""} at ${px}`}
                   onClick={() => onOrder("A", px)}
                 >
@@ -352,6 +361,7 @@ export default function OrderBook({
         </div>
       </div>
 
+      {!compact && (
       <div className="hint">
         {bounded
           ? `Prices run ${lo} to ${hi} — whole dollars a share, the range this book can pay. Zoom to fit more on screen, or jump back to the middle.`
@@ -360,6 +370,7 @@ export default function OrderBook({
         resting price.
         {mine?.length ? ` You have ${mine.length} order${mine.length > 1 ? "s" : ""} working.` : ""}
       </div>
+      )}
     </div>
   );
 }

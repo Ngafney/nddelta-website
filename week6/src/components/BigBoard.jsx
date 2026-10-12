@@ -1,22 +1,20 @@
 /**
  * /week6/board — the projector page. Zero interaction.
  *
- * The pot is the show: the cells lighting up one by one, the sum rolling, the
+ * The draw is the show: cells lighting up one by one, the sum rolling, the
  * cone closing. Beside it the three prices the room is paying, the parity
  * check, the leaderboard and the clock. At the bell it plays the same reveal
- * the players get, once, on a timer. Sound is on by default here — this is the
- * screen the room is looking at.
+ * the players get, once, on a timer. Sound is on by default here.
  */
 import React, { useEffect, useRef, useState } from "react";
 import { api } from "../api.js";
 import { PixelSprite, clock, num, DELTA, DELTA_PALETTE } from "./PixelBits.jsx";
 import Leaderboard from "./Leaderboard.jsx";
 import Reveal from "./Reveal.jsx";
-import Pot from "./Pot.jsx";
+import Draw from "./Draw.jsx";
 import SumChart from "./SumChart.jsx";
 import Books from "./Books.jsx";
 
-/** `initial` seeds the first render (the render test uses it). */
 export default function BigBoard({ initial = null } = {}) {
   const [data, setData] = useState(initial);
   const [now, setNow] = useState(Date.now());
@@ -94,9 +92,9 @@ export default function BigBoard({ initial = null } = {}) {
           <div className="logo-block">
             <PixelSprite grid={DELTA} palette={DELTA_PALETTE} scale={5} />
             <div>
-              <div className="title-main">THE POT</div>
+              <div className="title-main">THE SUM</div>
               <div className="title-sub">
-                WEEK 6 · {round.N} NUMBERS · TRADE THE SUM · K = {round.K}
+                WEEK 6 · {round.N} HIDDEN NUMBERS, 0–10 EACH · K = {round.K}
               </div>
             </div>
           </div>
@@ -105,9 +103,17 @@ export default function BigBoard({ initial = null } = {}) {
               {sound ? "🔔" : "🔕"}
             </button>
             <div className={`clockbox ${msLeft != null && msLeft < 10_000 ? "warn" : ""}`}>
-              <i>{settled ? "SETTLED" : lobby ? (msLeft != null ? "BOOKS OPEN IN" : "PICKING") : round.auto.on ? "NEXT NUMBER" : "LIVE"}</i>
+              <i>{settled ? "SETTLED" : lobby ? (msLeft != null ? "TRADING OPENS IN" : "PICKING") : round.auto.on ? "NEXT NUMBER" : "DRAWN"}</i>
               <b className="bb-clock">
-                {lobby ? (msLeft == null ? "—:—" : clock(msLeft)) : settled ? `S = ${round.settleS}` : round.auto.on && round.auto.nextAt != null ? `${Math.max(0, Math.ceil((round.auto.nextAt - serverNow) / 1000))}s` : `${round.revealedCount}/${round.N}`}
+                {lobby
+                  ? msLeft == null
+                    ? "—:—"
+                    : clock(msLeft)
+                  : settled
+                    ? `S = ${round.settleS}`
+                    : round.auto.on && round.auto.nextAt != null
+                      ? `${Math.max(0, Math.ceil((round.auto.nextAt - serverNow) / 1000))}s`
+                      : `${round.revealedCount}/${round.N}`}
               </b>
             </div>
           </div>
@@ -116,17 +122,17 @@ export default function BigBoard({ initial = null } = {}) {
         {lobby && (
           <div className="panel bb-join">
             <div className="panel-title" style={{ justifyContent: "center" }}>
-              JOIN NOW · FORM A TEAM · PICK YOUR NUMBER
+              JOIN · FORM A TEAM · PICK YOUR NUMBER
             </div>
             <div className="big">{url}</div>
             <div className="hint">
-              {round.players} player{round.players === 1 ? "" : "s"} · {round.teams} team{round.teams === 1 ? "" : "s"} · each team drops one number 0–10 in the pot
+              {round.players} player{round.players === 1 ? "" : "s"} · {round.teams} team{round.teams === 1 ? "" : "s"} · each team holds one number, 0 to 10
             </div>
           </div>
         )}
 
         <div className="panel">
-          <Pot round={liveRound} big sound={sound} />
+          <Draw round={liveRound} big sound={sound} />
         </div>
 
         <div className="bb-grid">
@@ -134,14 +140,12 @@ export default function BigBoard({ initial = null } = {}) {
             <div className="panel">
               <div className="panel-title">
                 THE BOOKS
-                <span className="right">
-                  {Object.values(data.market ?? {}).reduce((s, m) => s + (m?.volume ?? 0), 0)} shares traded
-                </span>
+                <span className="right">{Object.values(data.market ?? {}).reduce((s, m) => s + (m?.volume ?? 0), 0)} shares traded</span>
               </div>
               <Books round={round} market={data.market} me={null} selected={null} onSelect={null} big />
             </div>
             <div className="panel panel--tight">
-              <SumChart round={round} height={260} big />
+              <SumChart round={round} height={240} big />
             </div>
             {data.history?.length > 0 && (
               <div className="panel panel--tight">

@@ -42,12 +42,13 @@ import Reveal from "./src/components/Reveal.jsx";
 import Rules from "./src/components/Rules.jsx";
 import AdminPanel, { Console } from "./src/components/AdminPanel.jsx";
 import BigBoard from "./src/components/BigBoard.jsx";
-import Pot from "./src/components/Pot.jsx";
+import Draw from "./src/components/Draw.jsx";
+import Ladders from "./src/components/Ladders.jsx";
 import SumChart, { FairChart } from "./src/components/SumChart.jsx";
 import Books, { parityCheck } from "./src/components/Books.jsx";
 import NumberPick from "./src/components/NumberPick.jsx";
 import StaleBuild from "./src/components/StaleBuild.jsx";
-export const C = { App, Floor, Console, Gate, OrderBook, YouPanel, Leaderboard, Toasts, Reveal, Rules, AdminPanel, BigBoard, Pot, SumChart, FairChart, Books, NumberPick, StaleBuild };
+export const C = { App, Floor, Console, Gate, OrderBook, YouPanel, Leaderboard, Toasts, Reveal, Rules, AdminPanel, BigBoard, Draw, Ladders, SumChart, FairChart, Books, NumberPick, StaleBuild };
 export { React, renderToStaticMarkup, fillToasts, parityCheck };
 `;
 
@@ -219,24 +220,40 @@ const noop = () => {};
 
 console.log("\nscreens");
 
-ok("the pot shows every cell, the ones that have landed, the sum, the range and K", () => {
-  const out = render(h(C.Pot, { round }));
+ok("the draw shows every cell, the ones that have landed, the sum, the range and K", () => {
+  const out = render(h(C.Draw, { round }));
   assert.strictEqual((out.match(/class="cell /g) ?? []).length, 8, "one cell per team");
   assert.strictEqual((out.match(/class="cell in/g) ?? []).length, 3, "three have landed");
   assert.match(out, /cell in v10/);
   assert.match(out, /class="odo[^"]*">20</);
   assert.match(out, /20 – 70/);
   assert.match(out, /STRIKE K[\s\S]*40/);
-  assert.match(out, /3 of 8 out · 5 still in/);
-  assert.match(out, /AUTO · next number in 4s/);
-  const lobby = render(h(C.Pot, { round: { ...round, status: "lobby", locked: false, revealed: [], revealedCount: 0, sum: 0, N: 3, Smax: 30, lo: 0, hi: 30, left: 3, auto: { on: false } } }));
-  assert.match(lobby, /IN THE POT/);
+  assert.match(out, /DRAWN[\s\S]*3 \/ 8/);
+  assert.match(out, /NEXT[\s\S]*4s/);
+  const lobby = render(h(C.Draw, { round: { ...round, status: "lobby", locked: false, revealed: [], revealedCount: 0, sum: 0, N: 3, Smax: 30, lo: 0, hi: 30, left: 3, auto: { on: false } } }));
+  assert.match(lobby, /TEAMS/);
   assert.match(lobby, /class="odo[^"]*">3</);
   assert.match(lobby, /0 – 30/);
-  const done = render(h(C.Pot, { round: { ...round, status: "settled", revealed: reveal.numbers, revealedCount: 8, sum: 46, left: 0, lo: 46, hi: 46, settleS: 46, auto: { on: false } } }));
-  assert.match(done, /S · THE SUM/);
-  assert.match(done, /every number is out/);
+  const done = render(h(C.Draw, { round: { ...round, status: "settled", revealed: reveal.numbers, revealedCount: 8, sum: 46, left: 0, lo: 46, hi: 46, settleS: 46, auto: { on: false } } }));
+  assert.match(done, /S · FINAL/);
   assert.strictEqual((done.match(/class="cell in/g) ?? []).length, 8);
+});
+
+ok("the three ladders sit side by side with a shared size picker, the parity check, and the shut one greyed", () => {
+  const out = render(h(C.Ladders, { round, market, me, size: 10, onSize: noop, onOrder: noop, onCancelLevel: noop, onCancelBook: noop, onCancelAll: noop, disabled: false, busyPx: null }));
+  assert.strictEqual((out.match(/class="ladder /g) ?? []).length, 3);
+  assert.match(out, /ladder put shut/);
+  assert.match(out, /NOT OPEN YET/);
+  assert.match(out, /long 10/);
+  assert.match(out, /short 3/);
+  assert.match(out, /fair 45\.0/);
+  assert.match(out, /CANCEL ALL \(2\)/);
+  assert.match(out, /PARITY/);
+  assert.strictEqual((out.match(/class="sizepick"/g) ?? []).length, 1, "one size picker, not three");
+  assert.ok(!/posbar/.test(out), "no per-ladder position bar in compact mode");
+  const pxs = [...out.matchAll(/data-px="(-?\d+)"/g)].map((m) => Number(m[1]));
+  assert.ok(pxs.some((p) => p > 40), "the SUM ladder goes above 40");
+  assert.ok(pxs.every((p) => p >= 0 && p <= 80));
 });
 
 ok("the sum chart and the fair charts mount to a canvas", () => {
@@ -286,10 +303,10 @@ ok("you-panel, leaderboard, rules and the gate all mount", () => {
   assert.match(render(h(C.Leaderboard, { rows: lb, myTeamId: "t1", settled: false })), /Mean Team[\s\S]*S−10/);
   render(h(C.Rules, { onClose: noop }));
   const gate = render(h(C.Gate, { round, player: null, me: null, team: null, limits: { teamSize: 4 }, onPlayer: noop, onHold: noop, onDone: noop }));
-  assert.match(gate, /THE POT/);
+  assert.match(gate, /THE SUM/);
   assert.match(gate, /WEEK 6/);
   const sealed = render(h(C.Gate, { round, player: { playerId: "p", token: "t", name: "Zed" }, me: null, team: null, limits: { teamSize: 4 }, onPlayer: noop, onHold: noop, onDone: noop }));
-  assert.match(sealed, /choice off[\s\S]*pot is sealed/);
+  assert.match(sealed, /choice off[\s\S]*numbers are locked/);
 });
 
 ok("fills become toasts that say which book", () => {
@@ -301,7 +318,7 @@ ok("fills become toasts that say which book", () => {
 ok("the reveal counts down, and every one of its beats renders", () => {
   assert.match(render(h(C.Reveal, { reveal, me, leaderboard: lb, myTeamId: "t1", onClose: noop })), /TIME/);
   for (const [phase, want] of [
-    [1, /THE POT[\s\S]*S = 46[\s\S]*Mean Team[\s\S]*\(drawn\)/],
+    [1, /THE NUMBERS[\s\S]*S = 46[\s\S]*Mean Team[\s\S]*\(drawn\)/],
     [2, /WHAT IT PAID[\s\S]*THE SUM PAID[\s\S]*\$46\.00[\s\S]*THE CALL PAID[\s\S]*\$6\.00[\s\S]*CALL − PUT = 6 − 0[\s\S]*SUM − K = 46 − 40/],
     [3, /WHAT IT WAS WORTH[\s\S]*THE SUM[\s\S]*THE CALL[\s\S]*THE PUT[\s\S]*insider struck 2 times[\s\S]*\+\$312\.00[\s\S]*noise desks finished/],
     [4, /THE PODIUM[\s\S]*Mean Team/],
@@ -326,7 +343,7 @@ ok("the admin console renders every field and control", () => {
     assert.match(src, new RegExp(`set\\("${f}"\\)`), `no input for ${f}`);
   }
   assert.match(src, /BOOK_ORDER\.map\(\(k\) => \([\s\S]*?onChange=\{set\(k\)\}/, "no checkbox per book at the start");
-  for (const b of ["CREATE ROUND", "PICK CLOCK", "OPEN TRADING NOW", "REVEAL NEXT", "AUTO", "END NOW", "APPLY DESKS", "RESET", "REMOVE", "PEEK", "HOLD", "\\+30s"]) {
+  for (const b of ["CREATE ROUND", "TO PICK, THEN OPEN", "OPEN TRADING", "DRAW THE NEXT NUMBER", "AUTO", "DRAW ALL", "STRIKE ONCE", "RESET", "REMOVE", "PEEK", "STOP THE CLOCK", "\\+30s", "NEW ROUND"]) {
     assert.match(src, new RegExp(b), `no ${b} control`);
   }
 });
@@ -367,30 +384,30 @@ ok("the admin console renders a live round with the pot, the books, the peek and
     teams: [],
   };
   const out = render(h(C.Console, { token: "t", onOut: noop, initial: info }));
-  for (const want of [/CONTROL ROOM · WEEK 6/, /REVEAL NEXT \(4 of 8\)/, /PAUSE AUTO/, /S · THE SUM[\s\S]*46/, /NEXT OUT[\s\S]*Team 3 → 5/, /SUM 46 · CALL 6 · PUT 0/, /● THE SUM · 0–80/, /○ THE PUT/, /Alice[\s\S]*S\+10 C-3/, /A: 5 sent \/ 12 filled/, /THE INSIDER[\s\S]*STRIKE ONCE[\s\S]*LOOP EVERY 15s[\s\S]*2 strikes · 60 shares taken · last: SUM \+40 CALL -20 PUT 0[\s\S]*\+\$312\.00/]) {
+  for (const want of [/CONTROL ROOM · THE SUM/, /DRAW THE NEXT NUMBER · 4 OF 8/, /STOP AUTO/, /S · THE SUM[\s\S]*46/, /NEXT OUT[\s\S]*Team 3 → 5/, /SUM 46 · CALL 6 · PUT 0/, /● SUM 0–80/, /○ PUT/, /Alice[\s\S]*S\+10 C-3/, /A: 5 sent \/ 12 filled/, /THE INSIDER[\s\S]*STRIKE ONCE[\s\S]*LOOP EVERY 15s[\s\S]*2 strikes · 60 shares taken · last: SUM \+40 CALL -20 PUT 0[\s\S]*\+\$312\.00/, /<details/]) {
     assert.match(out, want);
   }
   const lobbyInfo = { ...info, round: { ...round, status: "lobby", phase: "LOBBY", locked: false, pickEndsAt: null, teams: 3 }, peek: { ...info.peek, unpicked: 1 } };
   const lob = render(h(C.Console, { token: "t", onOut: noop, initial: lobbyInfo }));
-  assert.match(lob, /START THE 30s PICK CLOCK/);
-  assert.match(lob, /1 without a number/);
-  assert.match(render(h(C.Console, { token: "t", onOut: noop, initial: { ...info, persistent: false, showPeek: false } })), /STORAGE IS NOT PERSISTENT[\s\S]*Click SHOW/);
+  assert.match(lob, /30s TO PICK, THEN OPEN/);
+  assert.match(lob, /OPEN TRADING/);
+  assert.match(lob, /1 team has not picked/);
+  const done = render(h(C.Console, { token: "t", onOut: noop, initial: { ...info, round: { ...round, status: "settled", phase: "SETTLED", settleS: 46, payouts: { fut: 46, call: 6, put: 0 } } } }));
+  assert.match(done, /NEW ROUND — SAME TEAMS, FRESH NUMBERS/);
+  assert.match(render(h(C.Console, { token: "t", onOut: noop, initial: { ...info, round: null, peek: null, sharp: null, desks: null } })), /CREATE A ROUND/);
+  assert.match(render(h(C.Console, { token: "t", onOut: noop, initial: { ...info, persistent: false, showPeek: false } })), /STORAGE IS NOT PERSISTENT[\s\S]*Hidden so it does not end up/);
 });
 
 ok("the player floor renders live: pot, chart, books, ladder, you — and lobby, pick prompt and settled states", () => {
   const st = { round, me, team, market, leaderboard: lb, fills: [], seq: 9 };
   const out = render(h(C.Floor, { initial: { player: { playerId: "p1", token: "t" }, state: st } }));
-  assert.match(out, /THE POT/);
+  assert.match(out, /THE SUM/);
   assert.match(out, /<canvas/);
-  assert.match(out, /3\/8 out/);
-  assert.match(out, /bookcard fut on/);
+  assert.match(out, /3\/8 drawn/);
+  assert.match(out, /YOURS <b>7/);
+  assert.strictEqual((out.match(/class="ladder /g) ?? []).length, 3, "all three ladders on screen");
   assert.match(out, /data-px="46"/);
-  assert.match(out, /2 noise desks/);
   assert.match(out, /your number 7/);
-  // Selecting the call puts its ladder up (0 … 40).
-  const call = render(h(C.Floor, { initial: { player: { playerId: "p1", token: "t" }, state: st, mkt: "call" } }));
-  assert.match(call, /Prices run 0 to 40/);
-  assert.match(call, /THE CALL/);
   // A new round in the lobby with no number picked yet prompts for one.
   const lobbyRound = { ...round, status: "lobby", phase: "LOBBY", locked: false, revealed: [], revealedCount: 0, sum: 0, left: 8, lo: 0, hi: 80, auto: { on: false }, pickEndsAt: NOW + 25_000, msLeft: 25_000 };
   const pick = render(h(C.Floor, { initial: { player: { playerId: "p1", token: "t" }, state: { ...st, round: lobbyRound, team: { ...team, number: null, canPick: true } } } }));
@@ -399,7 +416,7 @@ ok("the player floor renders live: pot, chart, books, ladder, you — and lobby,
   assert.strictEqual((pick.match(/class="numbtn/g) ?? []).length, 11);
   assert.match(pick, /YOUR TEAM HAS NOT PICKED A NUMBER/);
   const picked = render(h(C.Floor, { initial: { player: { playerId: "p1", token: "t" }, state: { ...st, round: lobbyRound, team: { ...team, canPick: true } } } }));
-  assert.match(picked, /YOUR NUMBER IS <b class="gold">7<\/b> \(picked by Alice\)\. THE BOOKS OPEN IN 0:25/);
+  assert.match(picked, /YOUR NUMBER IS <b class="gold">7<\/b> \(picked by Alice\)\. TRADING OPENS IN 0:25/);
   assert.ok(!/NEW ROUND — PICK/.test(picked));
   const settled = render(h(C.Floor, { initial: { player: { playerId: "p1", token: "t" }, state: { ...st, round: { ...round, status: "settled", phase: "SETTLED", revealed: reveal.numbers, revealedCount: 8, left: 0, sum: 46, lo: 46, hi: 46, settleS: 46, payouts: { fut: 46, call: 6, put: 0 }, auto: { on: false } } } } }));
   assert.match(settled, /SETTLED — S = 46\. SUM PAID \$46 · CALL PAID \$6 · PUT PAID \$0/);
@@ -409,15 +426,15 @@ ok("the player floor renders live: pot, chart, books, ladder, you — and lobby,
 ok("the projector renders a live round, a lobby, and a settled one", () => {
   const history = [{ roundId: "r4", N: 6, K: 30, S: 33, payouts: { fut: 33, call: 3, put: 0 }, podium: [{ name: "Mean Team" }] }];
   const live = render(h(C.BigBoard, { initial: { round, market, leaderboard: lb, history } }));
-  assert.match(live, /THE POT/);
-  assert.match(live, /8 NUMBERS · TRADE THE SUM · K = 40/);
+  assert.match(live, /THE SUM/);
+  assert.match(live, /8 HIDDEN NUMBERS, 0–10 EACH · K = 40/);
   assert.match(live, /NEXT NUMBER[\s\S]*4s/);
   assert.match(live, /6 numbers · S = 33 · K = 30/);
   assert.match(live, /Mean Team/);
   assert.match(live, /bookcards/);
   const lobby = render(h(C.BigBoard, { initial: { round: { ...round, status: "lobby", locked: false, pickEndsAt: NOW + 12_000, revealed: [], revealedCount: 0, auto: { on: false } }, market, leaderboard: lb, history: [] } }));
   assert.match(lobby, /nddelta\.com\/week6\//);
-  assert.match(lobby, /BOOKS OPEN IN[\s\S]*0:12/);
+  assert.match(lobby, /TRADING OPENS IN[\s\S]*0:12/);
   const settled = render(h(C.BigBoard, { initial: { round: { ...round, status: "settled", settleS: 46, payouts: { fut: 46, call: 6, put: 0 }, revealed: reveal.numbers, revealedCount: 8, auto: { on: false } }, market, leaderboard: lb, history: [] } }));
   assert.match(settled, /S = 46/);
 });
@@ -425,7 +442,7 @@ ok("the projector renders a live round, a lobby, and a settled one", () => {
 console.log("\nregressions carried from weeks 2–5");
 
 ok("the stylesheet cannot override the row height the virtualizer places rows by", () => {
-  const css = fs.readFileSync(path.join(root, "src", "styles.css"), "utf8") + fs.readFileSync(path.join(root, "src", "pot.css"), "utf8");
+  const css = fs.readFileSync(path.join(root, "src", "styles.css"), "utf8") + fs.readFileSync(path.join(root, "src", "sum.css"), "utf8");
   const blocks = [...css.matchAll(/\.bookrow[^{]*\{([^}]*)\}/g)].map((m) => m[1]);
   assert.ok(blocks.length, "expected some .bookrow rules");
   for (const b of blocks) {

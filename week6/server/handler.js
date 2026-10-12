@@ -48,6 +48,7 @@ import {
   bounds,
   teamCount,
   midPx,
+  touchMid,
   bookLevels,
   createTeam,
   setTeamNumber,
@@ -216,7 +217,7 @@ const liveTeams = (state) => Object.values(state.teams).filter((t) => !t.hidden)
  */
 function lock(state, at) {
   const teams = liveTeams(state).sort((a, b) => a.id.localeCompare(b.id));
-  if (!teams.length) throw httpError(409, "no team has a number in the pot yet — nothing to trade on", "no-teams");
+  if (!teams.length) throw httpError(409, "no team has picked a number yet — nothing to trade on", "no-teams");
   for (const t of teams) {
     if (!validNumber(t.number)) {
       t.number = drawNumber(`${state.seed}|draw|${t.id}`);
@@ -609,7 +610,7 @@ function marketView(state, pid) {
       bestBid: bestBid(state, k),
       bestAsk: bestAsk(state, k),
       mark: markPx(state, k),
-      mid: midPx(state, k),
+      mid: touchMid(state, k),
       volume: book.volume,
       open: book.open && state.status === "live",
       tape: book.tape.slice(0, 16).map((t) => ({ s: t.s, px: t.px, qty: t.qty, ts: t.ts, aggr: t.aggr })),
@@ -630,9 +631,9 @@ function meView(state, p) {
     bidResC: pw.bidC,
     askResC: pw.askC,
     freeC: pw.freeC,
-    spendableC: spendableC(state, p),
+    /** The sum at which your money would be at its lowest — where freeC is measured. */
+    worstS: pw.worstS,
     valueC: valueC(state, p),
-    spentC: p.spentC,
     startC: p.startC,
     orders: myOrders(state, p.id)
       .map((o) => ({ id: o.id, mkt: o.mkt, side: o.side, px: o.px, qty: o.qty, ts: o.ts, holdC: holdC(state, o) }))
@@ -788,15 +789,17 @@ export async function handle(method, route, body, query, nowArg) {
       return tx((state) => {
         const p = requirePlayer(state, body);
         const side = body.side === "B" || body.side === "A" ? body.side : null;
-        if (!side) throw httpError(400, "bad side");
+        if (!side) throw httpError(400, "side must be B (bid) or A (offer)", "bad-side");
         const mkt = BOOK_ORDER.includes(body.mkt) ? body.mkt : null;
-        if (!mkt) throw httpError(400, "bad book");
+        if (!mkt) throw httpError(400, "mkt must be fut, call or put", "bad-book");
         if (state.status === "lobby") throw httpError(409, "the books open when the host opens trading", "closed");
         const res = placeOrder(state, p.id, mkt, side, Number(body.px), Number(body.qty ?? 1), now);
         return {
           filled: res.filled,
           canceled: res.canceled ?? 0,
           ioc: !!res.ioc,
+          // Your own resting orders this order crossed and pulled (self-trade prevention).
+          selfCanceled: res.selfCanceled ?? [],
           resting: res.resting ? { id: res.resting.id, mkt, px: res.resting.px, qty: res.resting.qty, side } : null,
           trades: res.trades.map((t) => ({ px: t.px, qty: t.qty })),
           me: meView(state, p),
@@ -821,7 +824,7 @@ export async function handle(method, route, body, query, nowArg) {
     case "GET reveal": {
       const state = await readAdvanced(now);
       if (!state) throw httpError(409, "no round yet", "no-round");
-      if (state.status !== "settled") throw httpError(403, "the pot is not empty yet", "locked");
+      if (state.status !== "settled") throw httpError(403, "the last number has not been drawn yet", "not-settled");
       const nums = state.revealed.map((r) => r.n);
       // Fair value with i numbers known, i = 0 … N, under the uniform prior.
       const fair = [];
@@ -954,7 +957,7 @@ export async function handle(method, route, body, query, nowArg) {
       await requireAdmin(body);
       const seconds = Math.round(numOr(body.seconds, 30));
       const state = await tx((st) => {
-        if (st.status !== "lobby") throw httpError(409, "the pot is sealed — there is no pick clock to extend");
+        if (st.status !== "lobby") throw httpError(409, "trading has opened — there is no pick clock to extend");
         if (st.pickEndsAt == null) throw httpError(409, "there is no pick clock running");
         st.pickEndsAt = Math.max(now + 1000, st.pickEndsAt + seconds * 1000);
         return st;
@@ -989,7 +992,7 @@ export async function handle(method, route, body, query, nowArg) {
       await requireAdmin(body);
       let settledNow = false;
       const state = await tx((st) => {
-        if (st.status !== "live") throw httpError(409, st.status === "lobby" ? "open trading first" : "the pot is already empty");
+        if (st.status !== "live") throw httpError(409, st.status === "lobby" ? "open trading first" : "every number has been drawn");
         applyDue(st, now);
         if (st.status !== "live") return st;
         revealNext(st, now);
@@ -1036,13 +1039,16 @@ export async function handle(method, route, body, query, nowArg) {
     /** The noise desks, live or not. */
     case "POST admin/bots": {
       await requireAdmin(body);
-      const noise = readParams({ noise: body.noise ?? body }).noise;
+      const raw = body.noise ?? body;
       const state = await tx((st) => {
         if (st.status === "settled") throw httpError(409, "the round is over");
+        if (!st.bots) throw httpError(409, "no round");
+        // A partial payload changes only the fields it names.
+        const noise = readParams({ noise: { ...st.bots.cfg, ...stripBlank(raw) } }).noise;
         configureBots(st, noise, now);
         return st;
       });
-      return { round: publicRound(state, now), desks: state.bots };
+      return { round: publicRound(state, now), desks: { cfg: state.bots.cfg, desks: state.bots.desks.slice(0, state.bots.cfg.desks) } };
     }
 
     /**
@@ -1068,7 +1074,7 @@ export async function handle(method, route, body, query, nowArg) {
         }
         if (sh.loop && st.status === "live" && sh.nextAt == null) sh.nextAt = now + Math.round(sh.cfg.everySec * 1000);
         if (body.strike) {
-          if (st.status !== "live") throw httpError(409, st.status === "lobby" ? "open trading first - the insider needs a sealed pot" : "the round is over");
+          if (st.status !== "live") throw httpError(409, st.status === "lobby" ? "open trading first - the insider needs the numbers locked" : "the round is over");
           applyDue(st, now);
           if (st.status === "live") report = runSharp(st, now);
           if (sh.loop && sh.nextAt != null) sh.nextAt = now + Math.round(sh.cfg.everySec * 1000);
@@ -1192,10 +1198,29 @@ function sharpView(state) {
     lastError: sh.lastError ?? null,
     pos: p ? { ...(state.status === "settled" ? p.settledPos ?? p.pos : p.pos) } : null,
     pnlC: p ? valueC(state, p) - p.startC : 0,
+    /** What it has really made, valuing positions at the true payoffs. */
+    trueC: p && state.locked ? trueValueC(state, p) - p.startC : 0,
   };
 }
 
+/** A player's wealth with every position paid its TRUE payoff (host only). */
+function trueValueC(state, p) {
+  if (state.status === "settled") return p.cash;
+  const S = liveTeams(state).reduce((s, t) => s + t.number, 0);
+  let v = p.cash;
+  for (const k of BOOK_ORDER) v += p.pos[k] * payoff(k, S, state.K) * SHARE_C;
+  return v;
+}
+const SHARE_C = 100;
+
 /* ── building rounds ──────────────────────────────────────────────────── */
+
+/** Drop blank and absent fields so they fall through to what is there. */
+function stripBlank(o) {
+  const out = {};
+  for (const [k, v] of Object.entries(o ?? {})) if (v != null && v !== "" && k !== "token") out[k] = v;
+  return out;
+}
 
 /** The admin form, checked. A bad field is a 400 with the reason. */
 function readParams(body) {

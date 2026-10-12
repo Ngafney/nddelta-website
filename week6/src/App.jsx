@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { api, loadPlayer, savePlayer, clearPlayer, withPlayer } from "./api.js";
 import { clock, Spinner, PxButton } from "./components/PixelBits.jsx";
 import Gate from "./components/Gate.jsx";
-import OrderBook from "./components/OrderBook.jsx";
 import YouPanel from "./components/YouPanel.jsx";
 import Leaderboard from "./components/Leaderboard.jsx";
 import Toasts, { fillToasts } from "./components/Toasts.jsx";
@@ -11,11 +10,10 @@ import Rules from "./components/Rules.jsx";
 import AdminPanel from "./components/AdminPanel.jsx";
 import BigBoard from "./components/BigBoard.jsx";
 import StaleBuild from "./components/StaleBuild.jsx";
-import Pot from "./components/Pot.jsx";
+import Draw from "./components/Draw.jsx";
 import SumChart from "./components/SumChart.jsx";
-import Books from "./components/Books.jsx";
+import Ladders from "./components/Ladders.jsx";
 import NumberPick from "./components/NumberPick.jsx";
-import { BOOK_ORDER, BOOKS } from "../shared/rules.js";
 
 export default function App() {
   const path = window.location.pathname.replace(/\/$/, "");
@@ -95,7 +93,6 @@ export function Floor({ initial = null } = {}) {
   const [busyPx, setBusyPx] = useState(null);
   const [sizePick, setSizePick] = useState(null);
   const [tab, setTab] = useState(initial?.tab ?? "floor");
-  const [mkt, setMkt] = useState(initial?.mkt ?? null);
   const [showRules, setShowRules] = useState(false);
   const [gateHolding, setGateHolding] = useState(false);
   const [reveal, setReveal] = useState(null);
@@ -148,8 +145,6 @@ export function Floor({ initial = null } = {}) {
     }
   }, [player, push]);
 
-  // Poll about once a second, and right after the next scheduled event (an
-  // AUTO reveal, the pick clock) so a new number lands on screen promptly.
   useEffect(() => {
     let stopped = false;
     let timer = null;
@@ -181,7 +176,6 @@ export function Floor({ initial = null } = {}) {
 
   const round = config?.round ?? null;
 
-  /* The reveal plays once per round on a given device. */
   useEffect(() => {
     if (round?.status !== "settled" || !player) return undefined;
     const key = `reveal-${round.roundId}`;
@@ -201,17 +195,9 @@ export function Floor({ initial = null } = {}) {
     };
   }, [round?.status, round?.roundId, player]);
 
-  /* A new round re-opens the pick prompt. */
   useEffect(() => {
     setPickOpen(true);
   }, [round?.roundId]);
-
-  /* Keep the selected book one the host has opened. */
-  useEffect(() => {
-    if (!round) return;
-    const open = BOOK_ORDER.filter((k) => round.books[k].enabled);
-    if (!mkt || !round.books[mkt]?.enabled) setMkt(open[0] ?? "fut");
-  }, [round, mkt]);
 
   const act = async (label, fn, pxKey) => {
     setBusy(label);
@@ -228,13 +214,22 @@ export function Floor({ initial = null } = {}) {
   };
 
   const size = sizePick ?? round?.defaultSize ?? 1;
-  const book = mkt ?? "fut";
 
-  const order = (side, px) =>
+  const order = (mkt, side, px) =>
     act(
-      `${side}${px}`,
+      `${mkt}${side}${px}`,
       async () => {
-        const res = await api.post("order", withPlayer(player, { mkt: book, side, px, qty: size }));
+        const res = await api.post("order", withPlayer(player, { mkt, side, px, qty: size }));
+        if (res?.selfCanceled?.length) {
+          const n = res.selfCanceled.reduce((s, o) => s + o.qty, 0);
+          push({
+            key: `self-${Date.now()}`,
+            kind: "bad",
+            title: "YOUR OWN ORDER PULLED",
+            body: `this crossed ${n} share${n > 1 ? "s" : ""} of your own resting ${res.selfCanceled[0].side === "B" ? "bid" : "offer"} at ${res.selfCanceled[0].px}, so that was cancelled instead of trading against yourself`,
+            ttl: 7000,
+          });
+        }
         if (res?.canceled > 0) {
           push({
             key: `ioc-${Date.now()}`,
@@ -245,9 +240,10 @@ export function Floor({ initial = null } = {}) {
           });
         }
       },
-      `${side}${px}`
+      `${mkt}${side}${px}`
     );
-  const cancelLevel = (side, px) => act("cancel", () => api.post("cancel", withPlayer(player, { mkt: book, side, px })));
+  const cancelLevel = (mkt, side, px) => act("cancel", () => api.post("cancel", withPlayer(player, { mkt, side, px })));
+  const cancelBook = (mkt) => act("cancel", () => api.post("cancel", withPlayer(player, { all: true, mkt })));
   const cancelOne = (orderId) => act("cancel", () => api.post("cancel", withPlayer(player, { orderId })));
   const cancelAll = () => act("cancel", () => api.post("cancel", withPlayer(player, { all: true })));
   const pick = (n) => act("pick", () => api.post("team/number", withPlayer(player, { number: n })));
@@ -258,8 +254,6 @@ export function Floor({ initial = null } = {}) {
       localStorage.setItem(SOUND_KEY, v ? "1" : "0");
     } catch {}
   };
-
-  /* ── gates ─────────────────────────────────────────────────────────── */
 
   const serverNow = now + clockSkew.current;
   const msLeft = round?.pickEndsAt != null && round.status === "lobby" ? Math.max(0, round.pickEndsAt - serverNow) : null;
@@ -311,18 +305,16 @@ export function Floor({ initial = null } = {}) {
   }
 
   if (showReveal && reveal) {
-    return (
-      <Reveal reveal={reveal} me={state.me} leaderboard={reveal.leaderboard ?? state.leaderboard} myTeamId={state.team?.id} onClose={() => setShowReveal(false)} />
-    );
+    return <Reveal reveal={reveal} me={state.me} leaderboard={reveal.leaderboard ?? state.leaderboard} myTeamId={state.team?.id} onClose={() => setShowReveal(false)} />;
   }
 
   const me = state.me;
   const team = state.team;
-  const tradingShut = round.status !== "live" || !round.books[book]?.open;
+  const tradingShut = round.status !== "live";
   const needsPick = round.status === "lobby" && team && team.number == null;
 
   return (
-    <Shell round={round} msLeft={msLeft} sound={sound} onSound={toggleSound}>
+    <Shell round={round} msLeft={msLeft} sound={sound} onSound={toggleSound} team={team}>
       <Toasts items={toasts} onExpire={expire} />
       {showRules && <Rules onClose={() => setShowRules(false)} />}
 
@@ -333,8 +325,8 @@ export function Floor({ initial = null } = {}) {
               <h2>NEW ROUND — PICK YOUR NUMBER</h2>
             </div>
             <p className="hint">
-              <b style={{ color: "var(--gold)" }}>{team.name}</b> needs a fresh number for the pot. Any of you can pick it.
-              {msLeft != null ? ` The host opens trading in ${clock(msLeft)} — a team that has not picked gets a number drawn for it.` : " If nobody picks before the host opens trading, a number is drawn for you."}
+              <b style={{ color: "var(--gold)" }}>{team.name}</b> needs a fresh number. Any of you can pick it.
+              {msLeft != null ? ` Trading opens in ${clock(msLeft)} — a team that has not picked gets a number drawn for it.` : " If nobody picks before the host opens trading, a number is drawn for you."}
             </p>
             <NumberPick value={team.number} onPick={pick} disabled={busy === "pick"} big />
             <div className="row" style={{ justifyContent: "center", marginTop: 14 }}>
@@ -366,75 +358,60 @@ export function Floor({ initial = null } = {}) {
       </div>
 
       {tab === "floor" && (
-        <div className="h-floor">
-          <div className="h-left">
-            <section className="panel panel--tight">
-              <Pot round={liveRound} sound={sound} />
-            </section>
+        <div className="floor6">
+          <section className="panel panel--tight">
+            <Draw round={liveRound} sound={sound} />
+          </section>
 
-            {round.status === "lobby" && team && (
-              <div className={`shut-note ${team.number == null ? "warn" : ""}`}>
-                {team.number == null ? (
-                  <>
-                    YOUR TEAM HAS NOT PICKED A NUMBER.{" "}
-                    <button className="linkbtn" onClick={() => setPickOpen(true)}>
-                      PICK ONE
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    YOUR NUMBER IS <b className="gold">{team.number}</b>
-                    {team.drawn ? " (drawn for you)" : team.pickedBy ? ` (picked by ${team.pickedBy})` : ""}.{" "}
-                    {msLeft != null ? `THE BOOKS OPEN IN ${clock(msLeft)}.` : "WAITING FOR THE HOST TO OPEN THE BOOKS."}{" "}
-                    <button className="linkbtn" onClick={() => setPickOpen(true)}>
-                      CHANGE IT
-                    </button>
-                  </>
-                )}
-              </div>
-            )}
-            {round.status === "settled" && (
-              <div className="shut-note">
-                SETTLED — S = {round.settleS}. SUM PAID ${round.payouts?.fut} · CALL PAID ${round.payouts?.call} · PUT PAID ${round.payouts?.put}
-              </div>
-            )}
-
-            <section className="panel panel--tight">
-              <SumChart round={round} height={200} />
-            </section>
-
-            <YouPanel me={me} team={team} settled={round.status === "settled"} onCancel={cancelOne} onCancelAll={cancelAll} />
-          </div>
-
-          <section className="panel h-right">
-            <Books round={round} market={state.market} me={me} selected={book} onSelect={setMkt} />
-            <div className="panel-title" style={{ marginTop: 12 }}>
-              {BOOKS[book].name}
-              <span className="right">
-                {round.books[book].open ? `pays ${book === "fut" ? "$S" : book === "call" ? `max(S − ${round.K}, 0)` : `max(${round.K} − S, 0)`}` : round.status === "live" ? "not open yet" : ""}
-                {round.noise?.desks ? ` · ${round.noise.desks} noise desks` : ""}
-              </span>
+          {round.status === "lobby" && team && (
+            <div className={`shut-note ${team.number == null ? "warn" : ""}`}>
+              {team.number == null ? (
+                <>
+                  YOUR TEAM HAS NOT PICKED A NUMBER.{" "}
+                  <button className="linkbtn" onClick={() => setPickOpen(true)}>
+                    PICK ONE
+                  </button>
+                </>
+              ) : (
+                <>
+                  YOUR NUMBER IS <b className="gold">{team.number}</b>
+                  {team.drawn ? " (drawn for you)" : team.pickedBy ? ` (picked by ${team.pickedBy})` : ""}.{" "}
+                  {msLeft != null ? `TRADING OPENS IN ${clock(msLeft)}.` : "WAITING FOR THE HOST TO OPEN TRADING."}{" "}
+                  <button className="linkbtn" onClick={() => setPickOpen(true)}>
+                    CHANGE IT
+                  </button>
+                </>
+              )}
             </div>
-            <OrderBook
-              key={`${round.roundId}-${book}-${round.locked ? "L" : "U"}`}
-              book={state.market[book]}
-              last={state.market[book].last}
-              me={{ ...me, pos: me.pos?.[book] ?? 0, buyC: me.freeC }}
-              center={round.books[book].center}
-              tick={1}
-              lo={round.books[book].orderMin}
-              hi={round.books[book].orderMax}
-              mine={me.orders.filter((o) => o.mkt === book)}
+          )}
+          {round.status === "settled" && (
+            <div className="shut-note">
+              SETTLED — S = {round.settleS}. SUM PAID ${round.payouts?.fut} · CALL PAID ${round.payouts?.call} · PUT PAID ${round.payouts?.put}
+            </div>
+          )}
+
+          <section className="panel panel--tight">
+            <Ladders
+              round={round}
+              market={state.market}
+              me={me}
               size={size}
               onSize={setSizePick}
               onOrder={order}
               onCancelLevel={cancelLevel}
+              onCancelBook={cancelBook}
               onCancelAll={cancelAll}
               disabled={tradingShut || !!busy}
               busyPx={busyPx}
-              unit="dollars"
             />
           </section>
+
+          <div className="floor6-bottom">
+            <section className="panel panel--tight">
+              <SumChart round={round} height={180} />
+            </section>
+            <YouPanel me={me} team={team} settled={round.status === "settled"} onCancel={cancelOne} onCancelAll={cancelAll} />
+          </div>
         </div>
       )}
 
@@ -450,7 +427,7 @@ export function Floor({ initial = null } = {}) {
   );
 }
 
-function Shell({ children, round, msLeft, sound, onSound }) {
+function Shell({ children, round, msLeft, sound, onSound, team }) {
   return (
     <div className="shell">
       <header className="topbar">
@@ -459,7 +436,7 @@ function Shell({ children, round, msLeft, sound, onSound }) {
           <span>
             ND DELTA <b>WEEK 6</b>
           </span>
-          <small>THE POT</small>
+          <small>THE SUM</small>
         </div>
         {round && (
           <div className="topstate">
@@ -467,7 +444,12 @@ function Shell({ children, round, msLeft, sound, onSound }) {
             {msLeft != null && <span className="clock">{clock(msLeft)}</span>}
             {round.locked && (
               <span className="dim">
-                {round.revealedCount}/{round.N} out
+                {round.revealedCount}/{round.N} drawn
+              </span>
+            )}
+            {team && team.number != null && (
+              <span className="yournum-pill" title="your team's number — only your team can see it">
+                YOURS <b>{team.number}</b>
               </span>
             )}
             <span className="dim">

@@ -1,4 +1,4 @@
-# Start Week 6 — The Pot — on a public URL from this machine.
+# Start Week 6 — The Sum — on a public URL from this machine.
 #   Right-click -> Run with PowerShell, or: powershell -File week6\start-public.ps1
 #
 # This is the recommended way to run a live round for a room of people: one

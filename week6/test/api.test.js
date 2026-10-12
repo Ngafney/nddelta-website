@@ -161,7 +161,7 @@ await ok("the pick clock needs a team, opens trading by itself when it runs out,
   assert.strictEqual(s.round.locked, true);
   assert.strictEqual(s.round.liveStartedAt, t0 + 15_000, "opened when the clock was DUE to run out");
   await fails(call("POST", "admin/pick", { token }), /already opened/);
-  await fails(call("POST", "admin/extend", { token }), /sealed/);
+  await fails(call("POST", "admin/extend", { token }), /trading has opened/);
 });
 
 console.log("\nthe lock");
@@ -183,10 +183,10 @@ await ok("opening seals the pot: N, K = 5N, the ladders, no new teams, no new nu
   assert.strictEqual(o.peek.S, 20);
   assert.deepStrictEqual(o.peek.payouts, { fut: 20, call: 5, put: 0 });
   const late = await player("Late");
-  await fails(call("POST", "team/create", { ...late, name: "Too Late", number: 5 }), /sealed/);
+  await fails(call("POST", "team/create", { ...late, name: "Too Late", number: 5 }), /locked/);
   await call("POST", "team/join", { ...late, code: c.code });
   assert.strictEqual((await state(late)).team.number, 10, "a late joiner sees the team's number");
-  await fails(call("POST", "team/number", { ...a, number: 9 }), /sealed/);
+  await fails(call("POST", "team/number", { ...a, number: 9 }), /locked/);
   await fails(call("POST", "team/leave", { ...b }), /locked/);
   await fails(call("POST", "admin/settings", { token }), /opened/);
   assert.strictEqual((await state(a)).round.N, 3, "N did not move");
@@ -205,7 +205,7 @@ await ok("a typed K is used when it fits, and falls back to 5N when it cannot", 
 
 await ok("opening an empty lobby is refused", async () => {
   await call("POST", "admin/round", { token });
-  await fails(call("POST", "admin/open", { token }), /no team has a number/);
+  await fails(call("POST", "admin/open", { token }), /no team has picked a number/);
 });
 
 console.log("\nthe reveal");
@@ -246,7 +246,7 @@ await ok("a manual reveal pulls one number, the public view grows by exactly one
   assert.strictEqual((await state(b)).me.cashC, MONEY.startCashC + paid * 100 - got * 100);
   assert.strictEqual((await state(c)).me.cashC, MONEY.startCashC, "a resting order never fills at the bell");
   assert.deepStrictEqual(s.me.pos, { fut: 10, call: 7, put: -5 }, "settled positions are shown as they were");
-  await fails(call("POST", "admin/reveal", { token }), /already empty/);
+  await fails(call("POST", "admin/reveal", { token }), /every number has been drawn/);
   await fails(order(a, "fut", "B", 10, 1), /closed/);
   const rv = await call("GET", "reveal");
   assert.strictEqual(rv.S, 20);
@@ -282,7 +282,7 @@ await ok("nothing a player can read before settlement says whose number is whose
     for (const [what, blob] of [["config", await call("GET", "config")], ["board", await call("GET", "board")], ["leaderboard", await call("GET", "leaderboard")], ["rules", await call("GET", "rules")]]) {
       assert.ok(!/"number"|"revealOrder"|"pickedBy"/.test(JSON.stringify(blob)), `${label} ${what}`);
     }
-    await fails(call("GET", "reveal"), /not empty/);
+    await fails(call("GET", "reveal"), /not been drawn yet/);
   };
   await check("open");
   await call("POST", "admin/reveal", { token });
@@ -580,7 +580,7 @@ await ok("a strike buys only offers below the true payoff by the edge, sells onl
   assert.strictEqual(rv.sharp.strikes, 4);
 });
 
-await ok("the insider's loop fires on its clock, can be switched off, and does nothing before the pot is sealed", async () => {
+await ok("the insider's loop fires on its clock, can be switched off, and does nothing before the pot is locked", async () => {
   const { a, b } = await freshRound();
   await fails(call("POST", "admin/sharp", { token, strike: true }), /open trading first/);
   await call("POST", "admin/sharp", { token, loop: true, everySec: 10 });
@@ -603,6 +603,51 @@ await ok("the insider's loop fires on its clock, can be switched off, and does n
   assert.strictEqual(insp.sharp.strikes, 1, "off means off");
   assert.strictEqual((await state(a)).market.fut.asks.length, 1);
   await fails(call("POST", "admin/sharp", { token: "forged", strike: true }), /bad admin token/);
+});
+
+console.log("\nfrom the playtests");
+
+await ok("crossing your own resting order reports the self-cancel; a one-sided book has no mid; a silly print does not move the mark", async () => {
+  const { a, b } = await freshRound();
+  await call("POST", "admin/open", { token });
+  await order(a, "fut", "A", 12, 5); // a's own offer
+  const r = await order(a, "fut", "B", 14, 5); // a crosses it: pulled, not traded
+  assert.strictEqual(r.filled, 0);
+  assert.deepStrictEqual(r.selfCanceled.map((o) => [o.px, o.qty, o.side]), [[12, 5, "A"]]);
+  let s = await state(a);
+  assert.strictEqual(s.market.fut.mid, null, "one side only: no mid");
+  assert.strictEqual(s.market.fut.mark, 14, "…so the mark is the best price there is");
+  // b sells 1 at a's silly 14 bid while a two-sided book exists elsewhere: the mark is the mid, not the print.
+  await order(b, "fut", "A", 16, 5);
+  s = await state(a);
+  assert.strictEqual(s.market.fut.mid, 15);
+  await order(b, "fut", "A", 14, 1);
+  s = await state(a);
+  assert.strictEqual(s.market.fut.last, 14);
+  assert.strictEqual(s.market.fut.mid, 15, "the bid at 14 still has 4 left, the offer at 16 stands");
+  assert.strictEqual(s.market.fut.mark, 15, "marked at the mid, not the print");
+  assert.ok(Number.isInteger(s.me.worstS) && s.me.worstS >= s.round.lo && s.me.worstS <= s.round.hi);
+  assert.strictEqual(s.me.spendableC, undefined);
+  assert.strictEqual(s.me.spentC, undefined);
+  assert.strictEqual(s.fills[0]?.mkt, s.fills[0]?.market, "fills carry mkt like orders do");
+  const e1 = await fails(order(a, "xyz", "B", 1, 1), /mkt must be/);
+  assert.strictEqual(e1.code, "bad-book");
+  const e2 = await fails(call("POST", "order", { ...a, mkt: "fut", side: "X", px: 1, qty: 1 }), /side must be/);
+  assert.strictEqual(e2.code, "bad-side");
+  const e3 = await fails(call("GET", "reveal"), /not been drawn/);
+  assert.strictEqual(e3.code, "not-settled");
+});
+
+await ok("a partial admin/bots payload changes only what it names", async () => {
+  const { a } = await freshRound({ noise: { on: true, desks: 3, everySec: 7, size: 9, sweep: 2 } });
+  await call("POST", "admin/open", { token });
+  let r = await call("POST", "admin/bots", { token, on: false });
+  assert.deepStrictEqual(r.desks.cfg, { on: false, desks: 3, everySec: 7, size: 9, sweep: 2 });
+  assert.strictEqual((await state(a)).round.noise.desks, 0, "off reads as no desks to players");
+  r = await call("POST", "admin/bots", { token, on: true, size: "20", everySec: "" });
+  assert.deepStrictEqual(r.desks.cfg, { on: true, desks: 3, everySec: 7, size: 20, sweep: 2 });
+  assert.strictEqual(r.desks.desks.length, 3, "only the desks in play are listed");
+  await fails(call("POST", "admin/bots", { token, desks: 9 }), /noise desks/);
 });
 
 await ok("reset wipes the game but keeps the password", async () => {

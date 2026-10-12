@@ -26,10 +26,10 @@ export default function YouPanel({ me, team, settled, onCancel, onCancelAll }) {
         <div className="stat">
           <i>CASH</i>
           <b>{money(me.cashC)}</b>
-          <small>{money(Math.max(0, me.freeC))} free in the worst case</small>
+          <small>{money(Math.max(0, me.freeC))} free if S ends at {me.worstS ?? "—"}, your worst case</small>
         </div>
         <div className="stat">
-          <i>HELD BY ORDERS</i>
+          <i>HELD BY ORDERS (GROSS)</i>
           <b style={{ color: reserved ? "var(--blue)" : undefined }}>{money(reserved)}</b>
           <small>
             {money(me.bidResC)} bids · {money(me.askResC)} offers
@@ -56,7 +56,7 @@ export default function YouPanel({ me, team, settled, onCancel, onCancelAll }) {
           <i>{settled ? "FINAL" : "PORTFOLIO"}</i>
           <b className={pnl > 0 ? "up" : pnl < 0 ? "down" : ""}>{money(me.valueC)}</b>
           <small className={pnl > 0 ? "up" : pnl < 0 ? "down" : ""}>
-            {money(pnl, { sign: true })} {settled ? "" : "· marked at each book's last"}
+            {money(pnl, { sign: true })} {settled ? "" : "· marked at each book's mid"}
           </small>
         </div>
       </div>

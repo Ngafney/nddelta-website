@@ -2,7 +2,7 @@
  * The bell, in five beats.
  *
  *   3 · 2 · 1            the room goes quiet
- *   the pot              every number, and whose it was
+ *   the draw             every number, and whose it was
  *   what it paid         SUM, CALL, PUT — and parity, checked
  *   what it was worth    each book: the uniform fair value as the numbers came
  *                        out, against what the room paid
@@ -18,7 +18,7 @@ import { FairChart } from "./SumChart.jsx";
 import { BOOK_ORDER, BOOKS } from "../../shared/rules.js";
 
 const STEPS = 5;
-const TITLES = ["TIME", "THE POT", "WHAT IT PAID", "WHAT IT WAS WORTH", "THE PODIUM", "FINAL STANDINGS"];
+const TITLES = ["TIME", "THE NUMBERS", "WHAT IT PAID", "WHAT IT WAS WORTH", "THE PODIUM", "FINAL STANDINGS"];
 
 /** `startPhase` skips the countdown (the render test uses it to reach each beat). */
 export default function Reveal({ reveal, me, leaderboard, myTeamId, onClose, projector = false, startPhase = 0 }) {

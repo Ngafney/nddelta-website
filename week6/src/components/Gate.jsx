@@ -23,11 +23,11 @@ export default function Gate({ player, round, me, limits, team, onHold, onPlayer
     <div className="wrap wrap--narrow">
       <div className="gate">
         <PixelSprite grid={DELTA} palette={DELTA_PALETTE} scale={6} className="delta-big" />
-        <h1>THE POT</h1>
+        <h1>THE SUM</h1>
         <div className="sub">
           WEEK 6 · OPTIONS
           <br />
-          EVERY TEAM DROPS A NUMBER IN · TRADE THE SUM
+          EVERY TEAM HIDES A NUMBER · TRADE THE SUM OF THEM
         </div>
 
         {step === "name" && (
@@ -49,7 +49,7 @@ export default function Gate({ player, round, me, limits, team, onHold, onPlayer
               <div className={`choice ${sealed ? "off" : ""}`} onClick={() => !sealed && setStep("create")} role="button" tabIndex={0}>
                 <span className="ico">🎲</span>
                 <span className="lbl">CREATE TEAM</span>
-                <span className="desc">{sealed ? "The pot is sealed for this round — join a team instead." : "Name it, drop your number in the pot, read the code out."}</span>
+                <span className="desc">{sealed ? "The numbers are locked for this round — join a team instead." : "Name it, pick your number, read the code out."}</span>
               </div>
               <div className="choice" onClick={() => setStep("join")} role="button" tabIndex={0}>
                 <span className="ico">🔑</span>
@@ -169,7 +169,7 @@ function TeamStep({ mode, player, team, onHold, busy, setBusy, err, setErr, onBa
           <b style={{ color: "var(--gold)" }}>Read this out to your team.</b> Up to {made.max ?? 4} of you, including you.
         </div>
         <div className="yournum">
-          <i>YOUR NUMBER IN THE POT</i>
+          <i>YOUR TEAM&#39;S NUMBER</i>
           <b>{num}</b>
           <small>Only your team can see it. Any of you can change it until the host opens trading.</small>
         </div>
@@ -225,7 +225,7 @@ function TeamStep({ mode, player, team, onHold, busy, setBusy, err, setErr, onBa
           </div>
           <NumberPick value={number} onPick={setNumber} big />
           <div className="hint" style={{ textAlign: "center" }}>
-            It goes in the pot with everyone else's. Nobody outside your team will know which one is yours — not even when it comes out.
+            It goes into the draw with everyone else's. Nobody outside your team will know which one is yours — not even when it comes out.
           </div>
           <div className="mt">
             <PxButton type="button" onClick={go} disabled={busy || value.trim().length < 2 || number == null}>

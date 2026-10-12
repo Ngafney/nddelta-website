@@ -1,7 +1,7 @@
 /**
- * Week 6 — The Pot. The rules, written once.
+ * Week 6 — The Sum. The rules, written once.
  *
- * Every team drops a secret whole number from 0 to 10 into the pot when it
+ * Every team picks a secret whole number from 0 to 10 when it
  * forms. S is the sum of all of them. Three books trade on S:
  *
  *   THE SUM   a share pays $S
@@ -115,14 +115,16 @@ export const BOTS = {
 
 /* ── player-facing copy ───────────────────────────────────────────────── */
 
-export const RULES_TEXT = `**The pot.** Every team drops a **secret whole number from 0 to 10** into the pot. **S is the sum of all of them.** You know your own number and how many teams there are. The host pulls the numbers out one at a time, in a random order, without saying whose is whose.
+export const RULES_TEXT = `**The numbers.** Every team picks a **secret whole number from 0 to 10**. **S is the sum of all of them.** You know your own number and how many teams there are. The host draws the numbers one at a time, in a random order, without saying whose is whose.
 
 **Three books.** **SUM** pays **$S** a share. **CALL** pays **max(S − K, 0)**. **PUT** pays **max(K − S, 0)**. One strike K for both. The host opens the books one at a time.
 
 **Parity.** At the end **CALL − PUT = SUM − K**, exactly. Before the end the prices should line up the same way, or there is free money on the table.
 
+**What the screen tells you.** "Fair" on each book is what it would be worth if every hidden number were uniform on 0–10. It ignores what you know — your own number, and your read of the room. "Free" is the least your money can be worth at any sum still possible, with your positions and every resting order counted together.
+
 **Trading.** Click the bid side of a ladder to buy there, the offer side to sell. Cross the book and you trade at once. Prices are whole dollars a share. A few **noise desks** fire market orders at random — they never quote. If nobody quotes, nothing trades.
 
 **Money.** **$10,000**. A resting order ties up the most it could lose over every sum still possible, so you can never go below zero. Teams of up to four, one number per team, scored on the team's **average**. Teams lock when trading opens.
 
-**The end.** The last number out of the pot settles everything by itself.`;
+**The end.** The last number drawn settles everything by itself.`;

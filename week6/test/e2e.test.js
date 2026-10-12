@@ -90,11 +90,11 @@ console.log("\ne2e over http");
 await ok("the app, its assets and the SPA fallback are served", async () => {
   const index = await get("/week6/");
   assert.strictEqual(index.status, 200);
-  assert.match(index.text, /The Pot/);
+  assert.match(index.text, /The Sum/);
   const js = index.text.match(/src="(\/week6\/assets\/[^"]+\.js)"/)?.[1];
   assert.ok(js, "no script tag");
   assert.strictEqual((await get(js)).status, 200);
-  for (const p of ["/week6/admin", "/week6/board"]) assert.match((await get(p)).text, /The Pot/);
+  for (const p of ["/week6/admin", "/week6/board"]) assert.match((await get(p)).text, /The Sum/);
   assert.strictEqual((await get("/week6/fonts/press-start-2p.ttf")).status, 200);
 });
 
