@@ -14,6 +14,7 @@ import Draw from "./components/Draw.jsx";
 import SumChart from "./components/SumChart.jsx";
 import Ladders from "./components/Ladders.jsx";
 import NumberPick from "./components/NumberPick.jsx";
+import * as sfx from "./components/sfx.js";
 
 export default function App() {
   const path = window.location.pathname.replace(/\/$/, "");
@@ -99,6 +100,10 @@ export function Floor({ initial = null } = {}) {
   const [showReveal, setShowReveal] = useState(false);
   const [pickOpen, setPickOpen] = useState(true);
   const [sound, setSound] = useState(() => loadSound(false));
+  // Which ladder just filled, and which way, for the flash.
+  const [hits, setHits] = useState({});
+  const soundRef = useRef(sound);
+  soundRef.current = sound;
   const [now, setNow] = useState(Date.now());
   const shown = useRef(loadShown());
   const sinceRef = useRef(0);
@@ -127,6 +132,17 @@ export function Floor({ initial = null } = {}) {
       if (s.fills.length) {
         for (const t of fillToasts(s.fills)) push(t);
         for (const f of s.fills) sinceRef.current = Math.max(sinceRef.current, f.s);
+        // Light the ladders that filled, and blip once per side.
+        const stamp = Date.now();
+        const next = {};
+        const sides = new Set();
+        for (const f of s.fills) {
+          next[f.mkt ?? f.market] = { side: f.side, at: stamp };
+          sides.add(f.side);
+        }
+        setHits((cur) => ({ ...cur, ...next }));
+        if (soundRef.current) for (const side of sides) sfx.fill(side);
+        setTimeout(() => setHits((cur) => Object.fromEntries(Object.entries(cur).filter(([, v]) => v.at !== stamp))), 950);
       }
       setState(s);
       setConfig({ round: s.round });
@@ -249,7 +265,9 @@ export function Floor({ initial = null } = {}) {
   const pick = (n) => act("pick", () => api.post("team/number", withPlayer(player, { number: n })));
   const toggleSound = () => {
     const v = !sound;
+    sfx.unlock();
     setSound(v);
+    if (v) sfx.tick(1);
     try {
       localStorage.setItem(SOUND_KEY, v ? "1" : "0");
     } catch {}
@@ -403,6 +421,7 @@ export function Floor({ initial = null } = {}) {
               onCancelAll={cancelAll}
               disabled={tradingShut || !!busy}
               busyPx={busyPx}
+              hits={hits}
             />
           </section>
 

@@ -14,6 +14,7 @@ import Reveal from "./Reveal.jsx";
 import Draw from "./Draw.jsx";
 import SumChart from "./SumChart.jsx";
 import Books from "./Books.jsx";
+import * as sfx from "./sfx.js";
 
 export default function BigBoard({ initial = null } = {}) {
   const [data, setData] = useState(initial);
@@ -21,6 +22,19 @@ export default function BigBoard({ initial = null } = {}) {
   const [reveal, setReveal] = useState(null);
   const [playing, setPlaying] = useState(false);
   const [sound, setSound] = useState(true);
+  const [unlocked, setUnlocked] = useState(false);
+  useEffect(() => {
+    const on = () => {
+      sfx.unlock();
+      setTimeout(() => setUnlocked(sfx.isUnlocked()), 100);
+    };
+    document.addEventListener("pointerdown", on, { passive: true });
+    document.addEventListener("keydown", on);
+    return () => {
+      document.removeEventListener("pointerdown", on);
+      document.removeEventListener("keydown", on);
+    };
+  }, []);
   const shown = useRef(new Set());
   const skew = useRef(0);
 
@@ -99,9 +113,17 @@ export default function BigBoard({ initial = null } = {}) {
             </div>
           </div>
           <div className="header-right">
-            <button className="ghost soundbtn" onClick={() => setSound((v) => !v)} title={sound ? "sound on" : "sound off"}>
+            <button
+              className="ghost soundbtn"
+              onClick={() => {
+                sfx.unlock();
+                setSound((v) => !v);
+              }}
+              title={sound ? "sound on" : "sound off"}
+            >
               {sound ? "🔔" : "🔕"}
             </button>
+            {sound && !unlocked && <span className="soundhint">CLICK ANYWHERE FOR SOUND</span>}
             <div className={`clockbox ${msLeft != null && msLeft < 10_000 ? "warn" : ""}`}>
               <i>{settled ? "SETTLED" : lobby ? (msLeft != null ? "TRADING OPENS IN" : "PICKING") : round.auto.on ? "NEXT NUMBER" : "DRAWN"}</i>
               <b className="bb-clock">

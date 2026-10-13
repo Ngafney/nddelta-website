@@ -5,59 +5,124 @@
  *
  *   a cell that has just landed flips over, flares, and throws sparks
  *   the sum rolls up to its new value rather than jumping
- *   the border lights chase for a moment
- *   a two-note chime, if sound is on
+ *   the border lights chase for a moment (and idle slowly while live)
+ *   the whole screen flashes on a big draw, gold for a 10, cold for a 0
+ *   the last seconds before an auto draw tick
+ *   settlement: a fanfare and confetti
  *
  * Which cell is which team is nobody's business: cells fill in the order the
  * numbers came out, and that order is secret until the end.
  */
 import React, { useEffect, useRef, useState } from "react";
+import * as sfx from "./sfx.js";
 
 export default function Draw({ round, big = false, sound = false }) {
   const N = round?.N ?? 0;
   const revealed = round?.revealed ?? [];
   const count = revealed.length;
   const prev = useRef(count);
+  const prevStatus = useRef(round?.status);
   const [flash, setFlash] = useState(null);
   const [sparks, setSparks] = useState([]);
   const [chase, setChase] = useState(false);
+  const [screen, setScreen] = useState(null); // "gold" | "cold" | "win"
+  const [confetti, setConfetti] = useState([]);
+  const lastTick = useRef(null);
 
+  // Every click on the page is the gesture that lets sound start.
+  useEffect(() => {
+    const on = () => sfx.unlock();
+    document.addEventListener("pointerdown", on, { passive: true });
+    document.addEventListener("keydown", on);
+    return () => {
+      document.removeEventListener("pointerdown", on);
+      document.removeEventListener("keydown", on);
+    };
+  }, []);
+
+  /* a number landed */
   useEffect(() => {
     if (count > prev.current) {
       const i = count - 1;
+      const n = revealed[i];
       setFlash(i);
       setChase(true);
-      const n = big ? 18 : 10;
-      setSparks(Array.from({ length: n }, (_, k) => ({ id: `${i}-${k}`, a: (k / n) * 360, d: (big ? 40 : 22) + ((k * 37) % (big ? 50 : 26)) })));
-      if (sound) chime(revealed[i]);
+      const k = big ? 22 : 12;
+      setSparks(Array.from({ length: k }, (_, j) => ({ id: `${i}-${j}`, a: (j / k) * 360, d: (big ? 46 : 24) + ((j * 37) % (big ? 60 : 30)) })));
+      if (n === 10) setScreen("gold");
+      else if (n === 0) setScreen("cold");
+      else if (n >= 8) setScreen("warm");
+      if (sound) sfx.draw(n);
       const t1 = setTimeout(() => setFlash(null), 1600);
       const t2 = setTimeout(() => setChase(false), 2200);
       const t3 = setTimeout(() => setSparks([]), 1400);
+      const t4 = setTimeout(() => setScreen(null), 900);
       prev.current = count;
       return () => {
         clearTimeout(t1);
         clearTimeout(t2);
         clearTimeout(t3);
+        clearTimeout(t4);
       };
     }
     prev.current = count;
     return undefined;
   }, [count, big, sound, revealed]);
 
+  /* the bell */
+  useEffect(() => {
+    const was = prevStatus.current;
+    prevStatus.current = round?.status;
+    if (round?.status === "settled" && was && was !== "settled") {
+      if (sound) sfx.settle();
+      setScreen("win");
+      const m = big ? 140 : 80;
+      setConfetti(Array.from({ length: m }, (_, j) => ({ id: j, x: Math.random() * 100, d: 2.4 + Math.random() * 2.2, w: 0.6 + Math.random() * 1.6, h: Math.random() * 360, r: Math.random() * 720 - 360 })));
+      const t1 = setTimeout(() => setScreen(null), 1200);
+      const t2 = setTimeout(() => setConfetti([]), 5200);
+      return () => {
+        clearTimeout(t1);
+        clearTimeout(t2);
+      };
+    }
+    return undefined;
+  }, [round?.status, sound, big]);
+
   useEffect(() => {
     if (count === 0) prev.current = 0;
   }, [round?.roundId, count]);
 
+  const autoIn = round?.auto?.on && round.status === "live" && round.auto.nextAt != null ? Math.max(0, Math.ceil((round.auto.nextAt - round.serverNow) / 1000)) : null;
+
+  /* the countdown ticks */
+  useEffect(() => {
+    if (autoIn == null || autoIn > 3 || autoIn < 1) return;
+    const key = `${round?.auto?.nextAt}-${autoIn}`;
+    if (lastTick.current === key) return;
+    lastTick.current = key;
+    if (sound) sfx.tick(autoIn);
+  }, [autoIn, sound, round?.auto?.nextAt]);
+
   if (!round) return null;
   const settled = round.status === "settled";
   const lobby = round.status === "lobby";
-  const autoIn = round.auto?.on && round.status === "live" && round.auto.nextAt != null ? Math.max(0, Math.ceil((round.auto.nextAt - round.serverNow) / 1000)) : null;
+  const live = round.status === "live";
+  const last = count ? revealed[count - 1] : null;
+  const streak = count >= 2 ? (revealed[count - 1] >= 8 && revealed[count - 2] >= 8 ? "hot" : revealed[count - 1] <= 2 && revealed[count - 2] <= 2 ? "cold" : null) : null;
 
   return (
-    <div className={`draw ${big ? "big" : ""} ${chase ? "chase" : ""} ${settled ? "settled" : ""}`}>
+    <div className={`draw ${big ? "big" : ""} ${chase ? "chase" : ""} ${live ? "live" : ""} ${settled ? "settled" : ""} ${autoIn != null && autoIn <= 3 ? "arming" : ""}`}>
+      {screen && <div className={`screenflash ${screen}`} aria-hidden="true" />}
+      {confetti.length > 0 && (
+        <div className="confetti" aria-hidden="true">
+          {confetti.map((c) => (
+            <i key={c.id} style={{ left: `${c.x}%`, animationDuration: `${c.d}s`, width: `${c.w * 6}px`, height: `${c.w * 10}px`, background: `hsl(${c.h} 90% 60%)`, "--r": `${c.r}deg` }} />
+          ))}
+        </div>
+      )}
       <div className="draw-lights" aria-hidden="true">
         {Array.from({ length: 24 }, (_, i) => (
-          <i key={i} style={{ animationDelay: `${(i % 6) * 120}ms` }} />
+          <i key={i} style={{ animationDelay: `${(i % 6) * 120}ms`, "--i": i }} />
         ))}
       </div>
 
@@ -68,8 +133,8 @@ export default function Draw({ round, big = false, sound = false }) {
 
       <div className="draw-facts">
         <span>
-          <i>{lobby ? "EACH HOLDS" : settled ? "DRAWN" : "DRAWN"}</i>
-          <b>{lobby ? "0 – 10" : `${count} / ${N}`}</b>
+          <i>DRAWN</i>
+          <b>{lobby ? "0 – 10 EACH" : `${count} / ${N}`}</b>
         </span>
         <span>
           <i>{settled ? "FINAL" : "STILL POSSIBLE"}</i>
@@ -80,9 +145,21 @@ export default function Draw({ round, big = false, sound = false }) {
           <b className="gold">{round.K}</b>
         </span>
         {autoIn != null && (
-          <span>
+          <span className={autoIn <= 3 ? "arming" : ""}>
             <i>NEXT</i>
             <b>{autoIn}s</b>
+          </span>
+        )}
+        {streak && (
+          <span className={`streak ${streak}`}>
+            <i>STREAK</i>
+            <b>{streak === "hot" ? "🔥 HOT" : "🧊 COLD"}</b>
+          </span>
+        )}
+        {!streak && last != null && !settled && (last === 10 || last === 0) && (
+          <span className={`streak ${last === 10 ? "hot" : "cold"}`}>
+            <i>LAST</i>
+            <b>{last === 10 ? "💥 TEN" : "🫥 ZERO"}</b>
           </span>
         )}
       </div>
@@ -92,7 +169,7 @@ export default function Draw({ round, big = false, sound = false }) {
           const n = i < count ? revealed[i] : null;
           const landed = n != null;
           return (
-            <div key={`${round.roundId}-${i}`} className={`cell ${landed ? `in v${n}` : "out"} ${flash === i ? "flash" : ""} ${lobby ? "lobby" : ""}`}>
+            <div key={`${round.roundId}-${i}`} className={`cell ${landed ? `in v${n}` : "out"} ${flash === i ? "flash" : ""} ${lobby ? "lobby" : ""} ${live && !landed && i === count ? "next" : ""}`}>
               <span className="cell-face">{landed ? n : lobby ? "•" : "?"}</span>
               {flash === i && sparks.map((s) => <span key={s.id} className="spark" style={{ "--a": `${s.a}deg`, "--d": `${s.d}px` }} />)}
             </div>
@@ -127,32 +204,4 @@ export function Odometer({ value, big = false }) {
   return <b className={`odo ${big ? "big" : ""} ${shown !== value ? "rolling" : ""}`}>{shown}</b>;
 }
 
-let audioCtx = null;
-
-/** Two quick notes, the second pitched by the number: a 10 rings higher than a 0. */
-export function chime(n) {
-  try {
-    const AC = window.AudioContext || window.webkitAudioContext;
-    if (!AC) return;
-    if (!audioCtx) audioCtx = new AC();
-    const ctx = audioCtx;
-    if (ctx.state === "suspended") ctx.resume().catch(() => {});
-    const t = ctx.currentTime;
-    const base = 523.25;
-    const notes = [base, base * Math.pow(2, (4 + (n ?? 5)) / 12)];
-    notes.forEach((f, i) => {
-      const o = ctx.createOscillator();
-      const g = ctx.createGain();
-      o.type = "triangle";
-      o.frequency.value = f;
-      g.gain.setValueAtTime(0.0001, t + i * 0.09);
-      g.gain.exponentialRampToValueAtTime(0.18, t + i * 0.09 + 0.015);
-      g.gain.exponentialRampToValueAtTime(0.0001, t + i * 0.09 + 0.5);
-      o.connect(g).connect(ctx.destination);
-      o.start(t + i * 0.09);
-      o.stop(t + i * 0.09 + 0.55);
-    });
-  } catch {
-    /* no audio */
-  }
-}
+export const chime = sfx.draw;

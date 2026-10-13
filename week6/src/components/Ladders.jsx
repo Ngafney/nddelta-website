@@ -10,7 +10,8 @@ import { parityCheck } from "./Books.jsx";
 import { PxButton, money } from "./PixelBits.jsx";
 import { BOOK_ORDER, BOOKS } from "../../shared/rules.js";
 
-export default function Ladders({ round, market, me, size, onSize, onOrder, onCancelLevel, onCancelBook, onCancelAll, disabled, busyPx, height = 440 }) {
+export default function Ladders({ round, market, me, size, onSize, onOrder, onCancelLevel, onCancelBook, onCancelAll, disabled, busyPx, height = 440, hits = {} }) {
+  const anyHit = Object.keys(hits).length > 0;
   const parity = parityCheck(round, market);
   const pnl = me ? me.valueC - me.startC : 0;
   return (
@@ -39,7 +40,7 @@ export default function Ladders({ round, market, me, size, onSize, onOrder, onCa
         {me && (
           <span className="tb-cell">
             <i>P&amp;L</i>
-            <b className={pnl > 0 ? "up" : pnl < 0 ? "down" : ""}>{money(pnl, { sign: true })}</b>
+            <b className={`${pnl > 0 ? "up" : pnl < 0 ? "down" : ""} ${anyHit ? "pop" : ""}`}>{money(pnl, { sign: true })}</b>
           </span>
         )}
         <span className={`tb-parity ${parity.gap != null && Math.abs(parity.gap) >= 1 ? "off" : ""}`} title="put–call parity: CALL − PUT should equal SUM − K">
@@ -61,7 +62,7 @@ export default function Ladders({ round, market, me, size, onSize, onOrder, onCa
           const shut = !b.open;
           const mine = (me?.orders ?? []).filter((o) => o.mkt === k);
           return (
-            <section key={k} className={`ladder ${k} ${shut ? "shut" : ""}`}>
+            <section key={k} className={`ladder ${k} ${shut ? "shut" : ""} ${hits[k] ? `hit-${hits[k].side}` : ""}`}>
               <header className="ladder-head">
                 <span className="lh-name">
                   {BOOKS[k].short}
