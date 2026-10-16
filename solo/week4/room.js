@@ -537,7 +537,7 @@ export async function step(bot, meta) {
     const own = mkt === "north" ? 100 * b.p : 100 * (1 - b.p);
     const m = s.markets[mkt];
     const mid = m.bestBid != null && m.bestAsk != null ? (m.bestBid + m.bestAsk) / 2 : null;
-    return Math.max(lo, Math.min(hi, blend(own, mid, P.herd)));
+    return Math.max(lo, Math.min(hi, blend(own, mid, P.kind === "alpha" ? P.herd * 0.3 : P.herd)));
   };
 
   // How much it has riding on HIT, net: a HIT share and a MISS share cancel.
