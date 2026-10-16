@@ -515,6 +515,9 @@ export async function step(bot, meta) {
         return null;
       });
       if (res) stats.steps++;
+      // A refused step (it would land where it already stood, e.g. at the edge
+      // of the curve) still uses up the bot's appetite, so it does not loop.
+      else M.steps++;
       if (res?.me) {
         me = res.me;
         M.steps++;
