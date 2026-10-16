@@ -171,10 +171,10 @@ function habits(P, r) {
     // lowest point they have seen and call it the floor; good traders don't).
     // wary: how much it allows for a deeper valley somewhere it has not walked.
     alpha: { steps: Math.round(j(4, 7)), pace: 0.55, style: "newton", explore: true, wary: j(16, 26), extrap: 1, priorSd: 200, cap: true, maxPos: 150 },
-    steady: { steps: Math.round(j(2, 4)), pace: 1, style: "newton", explore: r() < 0.3, wary: j(0, 10), extrap: j(0.45, 0.8), priorSd: 170, cap: true, maxPos: 90 },
-    stale: { steps: Math.round(j(1, 3)), pace: 1.3, style: "timid", explore: false, wary: 0, extrap: j(0.2, 0.5), priorSd: 150, cap: true, maxPos: 60 },
+    steady: { steps: Math.round(j(2, 4)), pace: 1.2, style: "newton", explore: r() < 0.3, wary: j(0, 8), extrap: j(0.25, 0.6), priorSd: 170, cap: true, maxPos: 90 },
+    stale: { steps: Math.round(j(1, 3)), pace: 1.5, style: "timid", explore: false, wary: 0, extrap: j(0.1, 0.4), priorSd: 150, cap: true, maxPos: 120, big: 1.8, herd: 0.3 },
     // Made up their mind on their first point, leans on 500, barely walks.
-    anchored: { steps: r() < 0.5 ? 0 : 1, pace: 1.5, style: "timid", explore: false, wary: 0, extrap: j(0, 0.2), priorSd: j(70, 110), cap: false, maxPos: 60 },
+    anchored: { steps: r() < 0.5 ? 0 : 1, pace: 1.5, style: "timid", explore: false, wary: 0, extrap: j(0, 0.2), priorSd: j(60, 100), cap: false, maxPos: 140, big: 2, herd: 0.2 },
     gambler: { steps: Math.round(j(1, 3)), pace: 0.8, style: "wild", explore: false, wary: 0, extrap: j(0.2, 0.6), priorSd: 150, cap: false, maxPos: 70 },
     fatfinger: { steps: Math.round(j(2, 3)), pace: 1, style: "newton", explore: false, wary: j(0, 8), extrap: j(0.3, 0.7), priorSd: 170, cap: true, maxPos: 70 },
   }[P.kind] ?? { steps: 4, pStep: 0.3, style: "newton", explore: false, wary: 15, extrap: 1, priorSd: 180, cap: true, maxPos: 80 };
@@ -208,6 +208,7 @@ async function newRound(admin, cfg, keepPlayers, seed) {
     mode: "gradient",
     difficulty: pickCurve(cfg),
     minutes: cfg.minutes,
+    descentCost: cfg.stepCost ?? 500,
     keepPlayers,
     lateJoin: true,
     ...(seed ? { seed } : {}),
@@ -247,6 +248,18 @@ const room = {
           brutal: "False bottoms everywhere. Good luck.",
           surprise: "A different curve each round, and you are not told which.",
         })[v],
+    },
+    {
+      key: "stepCost",
+      label: "Price of a step",
+      type: "seg",
+      def: 500,
+      options: [
+        { v: 250, l: "$250" },
+        { v: 500, l: "$500" },
+        { v: 1000, l: "$1,000" },
+      ],
+      hint: (v) => (v === 1000 ? "The meeting's price. Every step has to earn its keep." : v === 250 ? "Cheap information. Walk freely." : "Information costs something, but a good step pays for itself."),
     },
     {
       key: "minutes",
@@ -477,7 +490,7 @@ export async function step(bot, meta) {
 
   // A share here is worth hundreds of dollars and a step costs a thousand, so
   // the room trades in lots big enough that being right pays for the walking.
-  const lot = Math.round(Math.min(32, P.size * 2));
+  const lot = Math.round(Math.min(45, P.size * 2 * (M.habits.big ?? 1)));
   const turn = mood(P, r);
   stats.turns++;
   if (turn === "skip") return;
@@ -530,8 +543,10 @@ export async function step(bot, meta) {
 
   const b = opinion(me.points, H, M, P);
   const mid = m.bestBid != null && m.bestAsk != null ? (m.bestBid + m.bestAsk) / 2 : m.last ?? null;
-  // How much the book moves it: less when it is sure of itself.
-  const herd = mid == null ? 0 : P.herd * Math.min(1, b.sd / 40);
+  // How much the book moves it: less when it is sure of itself, and the room
+  // only slowly comes to trust the book (early on, everyone trusts their own point).
+  const elapsed = Math.max(0, Math.min(1, (round.serverNow - (round.startedAt ?? round.serverNow)) / Math.max(60_000, (round.endsAt ?? 0) - (round.startedAt ?? 0))));
+  const herd = mid == null ? 0 : P.herd * (H.herd ?? 1) * Math.min(1, b.sd / 40) * (0.35 + 0.65 * elapsed);
   let fair = mid == null ? b.fair : b.fair * (1 - herd) + mid * herd;
   if (H.cap) fair = Math.min(fair, b.lb);
 

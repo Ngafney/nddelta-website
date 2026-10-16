@@ -5,11 +5,11 @@
  * a "probe" player did:
  *
  *   probe=none    sits on its hands (should finish at $0)
- *   probe=smart   walks its own valley (Newton steps, a few jumps), then sells
+ *   probe=smart   takes a few steps (Newton, a jump if its valley is flat), then sells
  *                 every bid above its own floor and trades its belief against
  *                 the book, 10 shares a click, about one click a second
  *
- * node solo/sim/week2.mjs [rounds=3] [probe=smart] [level=sharp] [teams=7] [curve=bumpy] [minutes=1.5]
+ * node solo/sim/week2.mjs [rounds=3] [probe=smart] [level=sharp] [teams=7] [curve=bumpy] [minutes=1.5] [stepCost=500] [probeSteps=4]
  */
 import { register } from "node:module";
 
@@ -51,6 +51,8 @@ const level = args[2] ?? "sharp";
 const teams = Number(args[3] ?? 7);
 const curve = args[4] ?? "bumpy";
 const minutes = Number(args[5] ?? 1.5);
+const stepCost = Number(args[6] ?? 500);
+const probeMaxSteps = Number(args[7] ?? 4);
 const SPEED = 2.5;
 Runner.speed = SPEED;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -60,7 +62,7 @@ for (let n = 0; n < rounds; n++) {
   const { token: admin } = await local.post("admin/auth", { password: "123" });
   await local.post("admin/reset", { token: admin, confirm: "RESET" }).catch(() => {});
   const seed = `sim${n}${Date.now() % 1e6}`;
-  const cfg = { curve, minutes };
+  const cfg = { curve, minutes, stepCost };
   const out = await room.setup({ admin, cfg, you: ["Probe"], botTeams: teams, level, seed });
   const me = out.seats[0];
   const P = { playerId: me.playerId, token: me.token };
@@ -86,7 +88,7 @@ for (let n = 0; n < rounds; n++) {
     track.push({ t: (Date.now() - t0) / 1000, mid: mk.bestBid != null && mk.bestAsk != null ? (mk.bestBid + mk.bestAsk) / 2 : null, last: mk.last });
     if (probe === "smart") {
       const msLeft = s.round.endsAt - s.round.serverNow;
-      if (probeSteps < 8 && msLeft > 10_000) {
+      if (probeSteps < probeMaxSteps && msLeft > 10_000) {
         const v = localView(s.me.points);
         const pl = planStep(s.me.points, { explore: jumps < 3 });
         if (pl) {
