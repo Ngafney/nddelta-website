@@ -1,6 +1,14 @@
 {
   "rewrites": [
     {
+      "source": "/games",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/games/",
+      "destination": "/index.html"
+    },
+    {
       "source": "/api/week4/:path*",
       "destination": "/api/week4/router?__path=:path*"
     },
@@ -298,6 +306,60 @@
           "value": "no-store, must-revalidate"
         }
       ]
+    },
+    {
+      "source": "/solo/week1/",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-store, must-revalidate"
+        }
+      ]
+    },
+    {
+      "source": "/solo/week2/",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-store, must-revalidate"
+        }
+      ]
+    },
+    {
+      "source": "/solo/week3/",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-store, must-revalidate"
+        }
+      ]
+    },
+    {
+      "source": "/solo/week4/",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-store, must-revalidate"
+        }
+      ]
+    },
+    {
+      "source": "/solo/week5/",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-store, must-revalidate"
+        }
+      ]
+    },
+    {
+      "source": "/solo/week6/",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-store, must-revalidate"
+        }
+      ]
     }
   ],
   "functions": {
@@ -310,5 +372,37 @@
     "api/week6/router.mjs": {
       "maxDuration": 60
     }
-  }
+  },
+  "redirects": [
+    {
+      "source": "/solo/week1",
+      "destination": "/solo/week1/",
+      "permanent": false
+    },
+    {
+      "source": "/solo/week2",
+      "destination": "/solo/week2/",
+      "permanent": false
+    },
+    {
+      "source": "/solo/week3",
+      "destination": "/solo/week3/",
+      "permanent": false
+    },
+    {
+      "source": "/solo/week4",
+      "destination": "/solo/week4/",
+      "permanent": false
+    },
+    {
+      "source": "/solo/week5",
+      "destination": "/solo/week5/",
+      "permanent": false
+    },
+    {
+      "source": "/solo/week6",
+      "destination": "/solo/week6/",
+      "permanent": false
+    }
+  ]
 }

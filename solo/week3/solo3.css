@@ -1,0 +1,20 @@
+.solo3-labnote {
+  max-width: 1180px;
+  margin: 12px auto 0;
+  padding: 10px 14px;
+  border: 1px solid #24406e;
+  border-left: 4px solid #f5c542;
+  border-radius: 6px;
+  background: #0f1729;
+  color: #8ea3c8;
+  font: 13px/1.5 Inter, system-ui, sans-serif;
+}
+.solo3-labnote b {
+  color: #f5c542;
+}
+@media (max-width: 640px) {
+  .solo3-labnote {
+    margin: 10px 12px 0;
+    font-size: 12px;
+  }
+}

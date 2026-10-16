@@ -1,0 +1,136 @@
+/* The solo strip above the original Week 1 app. */
+.w1s {
+  position: relative;
+  z-index: 2;
+  max-width: 1100px;
+  margin: 10px auto 0;
+  padding: 0 16px;
+  font-family: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 13px;
+  line-height: 1.45;
+  color: #c9d3e6;
+  box-sizing: border-box;
+}
+.w1s * {
+  box-sizing: border-box;
+}
+.w1s-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+}
+.w1s-ai {
+  flex: 1 1 420px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  background: rgba(12, 22, 44, 0.85);
+  border: 1px solid #24406e;
+  border-radius: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+}
+.w1s-ai:hover {
+  border-color: #3b5f99;
+}
+.w1s-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #f5c542;
+  flex: none;
+}
+.w1s-more {
+  color: #f5c542;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.w1s-side {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.w1s-feed {
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: rgba(96, 165, 250, 0.14);
+  border: 1px solid rgba(96, 165, 250, 0.35);
+  color: #cfe0ff;
+  animation: w1s-in 0.3s ease-out;
+  white-space: nowrap;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.w1s-feed.up {
+  background: rgba(74, 222, 128, 0.14);
+  border-color: rgba(74, 222, 128, 0.4);
+  color: #c8f5d8;
+}
+.w1s-feed.down {
+  background: rgba(248, 113, 122, 0.14);
+  border-color: rgba(248, 113, 122, 0.4);
+  color: #ffd0d4;
+}
+.w1s-rec {
+  color: #8ea3c8;
+  white-space: nowrap;
+}
+@keyframes w1s-in {
+  from {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.w1s-tips {
+  margin-top: 8px;
+  background: rgba(12, 22, 44, 0.92);
+  border: 1px solid #24406e;
+  border-radius: 8px;
+  padding: 12px 14px;
+}
+.w1s-tips p {
+  margin: 0 0 8px;
+}
+.w1s-cols {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 6px 22px;
+}
+.w1s-cols b {
+  color: #f5c542;
+}
+.w1s-cols ul {
+  margin: 4px 0 0;
+  padding-left: 18px;
+}
+.w1s-cols li {
+  margin: 2px 0;
+  color: #dfe6f3;
+}
+.w1s-final {
+  margin-top: 8px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: rgba(245, 197, 66, 0.12);
+  border: 1px solid rgba(245, 197, 66, 0.45);
+  color: #fbe7b0;
+}
+.w1s-final b {
+  color: #f5c542;
+}
+
+/* The original footer links to the live meeting's projector board; not in solo. */
+.solo-stage .footer-note a[href="/week1/board"] {
+  display: none;
+}

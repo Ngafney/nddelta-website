@@ -1,0 +1,19 @@
+{
+  "name": "delta-solo",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Single-player versions of the DELTA weekly games: the real game server runs in the browser and bots fill the room.",
+  "scripts": {
+    "build": "node build-all.mjs",
+    "dev": "vite --config vite.config.js"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.7.0",
+    "vite": "^6.4.3"
+  }
+}

@@ -1,0 +1,25 @@
+/* Solo week 5: the pixel font from the week's own folder (the live build serves
+   it at /week5/fonts, which a solo build cannot count on), and the series panel. */
+@font-face {
+  font-family: "Press Start 2P";
+  src: url("@week/public/fonts/press-start-2p.ttf") format("truetype");
+  font-display: swap;
+}
+
+.solo5-series { padding-top: 0; }
+.solo5-series__grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+.solo5-series__sub { font-family: var(--px); font-size: 8px; color: var(--muted); letter-spacing: 1px; margin: 2px 0 10px; }
+.solo5-log { list-style: none; display: flex; flex-direction: column; gap: 6px; }
+.solo5-log li {
+  display: grid; grid-template-columns: 34px 1fr auto; gap: 10px; align-items: center;
+  padding: 8px 10px; background: #0a1830; border-left: 3px solid var(--line);
+}
+.solo5-log__n { font-family: var(--px); font-size: 9px; color: var(--gold); }
+.solo5-log__what { color: var(--ink); font-size: 13px; }
+.solo5-log__what small, .solo5-log__you small { display: block; color: var(--dim); font-size: 11px; }
+.solo5-log__you { text-align: right; font-weight: 700; font-size: 14px; }
+.solo5-series .up { color: var(--green); }
+.solo5-series .down { color: var(--red); }
+@media (max-width: 720px) {
+  .solo5-series__grid { grid-template-columns: 1fr; }
+}

@@ -1,0 +1,383 @@
+/* Solo frame: the setup card and the host bar. The game below keeps its own look. */
+
+:root {
+  --solo-navy: #0a1224;
+  --solo-navy-2: #111c35;
+  --solo-line: rgba(255, 255, 255, 0.1);
+  --solo-text: #e9edf6;
+  --solo-dim: #94a0b8;
+  --solo-gold: #f2b84b;
+  --solo-gold-2: #ffd27a;
+  --solo-red: #ff6b6b;
+  --solo-font: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --solo-bar-h: 46px;
+}
+
+/* ── setup ── */
+
+.solo-setup {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: 32px 16px;
+  background: radial-gradient(1200px 600px at 80% -10%, #1b2c55 0%, transparent 60%), radial-gradient(900px 500px at -10% 110%, #2a2140 0%, transparent 55%), var(--solo-navy);
+  font-family: var(--solo-font);
+  color: var(--solo-text);
+  position: relative;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+.solo-setup *,
+.solo-bar * {
+  box-sizing: border-box;
+}
+.solo-setup__glow {
+  position: absolute;
+  inset: -40% -10% auto auto;
+  width: 640px;
+  height: 640px;
+  background: radial-gradient(circle, rgba(242, 184, 75, 0.14), transparent 65%);
+  pointer-events: none;
+}
+.solo-card {
+  position: relative;
+  width: 100%;
+  max-width: 620px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02));
+  border: 1px solid var(--solo-line);
+  border-radius: 20px;
+  padding: 28px 28px 22px;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(8px);
+}
+.solo-back {
+  color: var(--solo-dim);
+  text-decoration: none;
+  font-size: 13px;
+}
+.solo-back:hover {
+  color: var(--solo-text);
+}
+.solo-kicker {
+  margin-top: 18px;
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--solo-gold);
+  font-weight: 600;
+}
+.solo-title {
+  margin: 6px 0 8px;
+  font-size: clamp(28px, 5vw, 38px);
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  font-weight: 750;
+}
+.solo-lede {
+  margin: 0 0 14px;
+  color: #c6cfdf;
+  font-size: 15.5px;
+  line-height: 1.55;
+}
+.solo-how {
+  margin: 0 0 18px;
+  padding: 12px 14px 12px 32px;
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid var(--solo-line);
+  border-radius: 12px;
+  color: #c6cfdf;
+  font-size: 14px;
+  line-height: 1.55;
+}
+.solo-how li + li {
+  margin-top: 4px;
+}
+.solo-grid {
+  display: grid;
+  gap: 16px;
+}
+.solo-field {
+  display: grid;
+  gap: 7px;
+}
+.solo-field > span {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--solo-text);
+}
+.solo-field > span b {
+  color: var(--solo-gold);
+  margin-left: 4px;
+}
+.solo-field small {
+  color: var(--solo-dim);
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+.solo-field input[type="text"],
+.solo-field input:not([type]),
+.solo-field select {
+  font: inherit;
+  font-size: 15px;
+  color: var(--solo-text);
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid var(--solo-line);
+  border-radius: 10px;
+  padding: 11px 12px;
+  outline: none;
+  width: 100%;
+}
+.solo-field input:focus,
+.solo-field select:focus {
+  border-color: var(--solo-gold);
+  box-shadow: 0 0 0 3px rgba(242, 184, 75, 0.18);
+}
+.solo-field select option {
+  background: var(--solo-navy-2);
+}
+.solo-field input[type="range"] {
+  width: 100%;
+  accent-color: var(--solo-gold);
+}
+.solo-seg {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid var(--solo-line);
+  border-radius: 12px;
+  flex-wrap: wrap;
+}
+.solo-seg button {
+  flex: 1 1 0;
+  min-width: 90px;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--solo-dim);
+  background: transparent;
+  border: 0;
+  border-radius: 9px;
+  padding: 9px 10px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.solo-seg button:hover {
+  color: var(--solo-text);
+}
+.solo-seg button.on {
+  background: var(--solo-gold);
+  color: #1a1305;
+}
+.solo-err {
+  margin-top: 16px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(255, 107, 107, 0.12);
+  border: 1px solid rgba(255, 107, 107, 0.4);
+  color: #ffc1c1;
+  font-size: 14px;
+}
+.solo-go {
+  margin-top: 22px;
+  width: 100%;
+  font: inherit;
+  font-size: 16px;
+  font-weight: 700;
+  padding: 14px 18px;
+  border: 0;
+  border-radius: 12px;
+  color: #1a1305;
+  background: linear-gradient(180deg, var(--solo-gold-2), var(--solo-gold));
+  cursor: pointer;
+  box-shadow: 0 10px 30px rgba(242, 184, 75, 0.25);
+  transition: transform 0.12s, box-shadow 0.12s, opacity 0.12s;
+}
+.solo-go:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 14px 36px rgba(242, 184, 75, 0.35);
+}
+.solo-go:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.solo-foot {
+  margin: 14px 0 0;
+  text-align: center;
+  color: var(--solo-dim);
+  font-size: 13px;
+}
+.solo-foot a {
+  color: var(--solo-gold);
+}
+
+/* ── the host bar ── */
+
+.solo-wrap {
+  min-height: 100vh;
+}
+.solo-bar {
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: var(--solo-bar-h);
+  padding: 6px 12px;
+  background: rgba(8, 13, 26, 0.94);
+  border-bottom: 1px solid var(--solo-line);
+  backdrop-filter: blur(10px);
+  font-family: var(--solo-font);
+  color: var(--solo-text);
+  flex-wrap: wrap;
+}
+.solo-bar__brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  text-decoration: none;
+  color: var(--solo-text);
+  white-space: nowrap;
+}
+.solo-bar__delta {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: var(--solo-gold);
+  color: #1a1305;
+  font-weight: 800;
+  font-size: 16px;
+}
+.solo-bar__name {
+  font-size: 13px;
+  font-weight: 650;
+}
+.solo-bar__name em {
+  font-style: normal;
+  color: var(--solo-gold);
+  margin-left: 2px;
+}
+.solo-bar__status {
+  font-size: 13px;
+  color: var(--solo-dim);
+  padding-left: 10px;
+  border-left: 1px solid var(--solo-line);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 34ch;
+}
+.solo-bar__ctl {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-left: auto;
+}
+.solo-bar__end {
+  display: flex;
+  gap: 6px;
+}
+.solo-btn {
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--solo-text);
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid var(--solo-line);
+  border-radius: 8px;
+  padding: 6px 11px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.12s, border-color 0.12s;
+}
+.solo-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.13);
+}
+.solo-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.solo-btn--primary {
+  background: var(--solo-gold);
+  border-color: var(--solo-gold);
+  color: #1a1305;
+}
+.solo-btn--primary:hover:not(:disabled) {
+  background: var(--solo-gold-2);
+}
+.solo-btn--on {
+  border-color: var(--solo-gold);
+  color: var(--solo-gold);
+}
+.solo-btn--ghost {
+  background: transparent;
+}
+.solo-seats {
+  display: flex;
+  gap: 3px;
+  padding: 3px;
+  border: 1px solid var(--solo-line);
+  border-radius: 9px;
+}
+.solo-seats button {
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  border: 0;
+  border-radius: 6px;
+  padding: 5px 10px;
+  color: var(--solo-dim);
+  background: transparent;
+  cursor: pointer;
+}
+.solo-seats button.on {
+  background: var(--solo-gold);
+  color: #1a1305;
+}
+.solo-note {
+  position: fixed;
+  top: calc(var(--solo-bar-h) + 10px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1001;
+  max-width: min(560px, calc(100vw - 32px));
+  padding: 9px 14px;
+  border-radius: 10px;
+  background: #1c2742;
+  border: 1px solid var(--solo-line);
+  color: var(--solo-text);
+  font-family: var(--solo-font);
+  font-size: 13.5px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+  cursor: pointer;
+}
+
+@media (max-width: 720px) {
+  .solo-card {
+    padding: 22px 18px 18px;
+    border-radius: 16px;
+  }
+  .solo-bar {
+    gap: 6px;
+    padding: 6px 8px;
+  }
+  .solo-bar__name {
+    display: none;
+  }
+  .solo-bar__status {
+    max-width: 50vw;
+    font-size: 12px;
+  }
+  .solo-bar__ctl {
+    margin-left: 0;
+    width: 100%;
+    order: 5;
+  }
+  .solo-bar__end {
+    margin-left: auto;
+  }
+}

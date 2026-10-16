@@ -57,3 +57,7 @@ week6/node_modules
 week6/.data
 public/week6
 week6/.env
+
+# solo builds
+solo/node_modules
+public/solo
