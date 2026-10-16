@@ -1,3 +1,4 @@
+import "./secret.js";
 import "@solo/env.js";
 import "./storage.js";
 import React from "react";
