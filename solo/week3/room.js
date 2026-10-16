@@ -29,6 +29,7 @@ import { local } from "../shared/local.js";
 import { getSeats } from "../shared/api.js";
 import { Runner, persona, roomSkills, botNames, teamNames, rng, gauss, auth, joinAs, requote, takeIfCheap, blend, inventorySkew, mood, anchor, fatFinger } from "../shared/bots.js";
 import { PRIORS } from "../../week3/shared/rules.js";
+import { registerBotPrompt } from "./llm.js";
 
 const ss = typeof sessionStorage !== "undefined" ? sessionStorage : null;
 const load = (k, d) => {
@@ -138,6 +139,7 @@ function labPlan(skill, r) {
 }
 
 async function labStep(bot, prompt) {
+  registerBotPrompt(prompt);
   const c = await local.post("bandit/compile", auth(bot, { prompt }));
   if (c.refused) return null;
   const saved = await local.post(
@@ -198,7 +200,7 @@ const room = {
     "Open the flip window. When it closes, everyone's flips are dealt at once and trading opens on a 1–99 ladder.",
     "Click a bid to buy, an offer to sell. Everyone saw different flips, so everyone has a different fair value.",
     "At the bell p is revealed and every share pays out. Most money wins, flips included. Then flip another coin.",
-    "Bandit Lab (top of the game): write a five-coin strategy in plain English. There is no AI in solo; an offline quick-compiler reads common phrasings.",
+    "Bandit Lab (top of the game): write a five-coin strategy in plain English. The same AI as the meeting writes your code; a built-in reader steps in if it can't be reached.",
   ],
   botTeams: { min: 3, max: 12, def: 7 },
   settings: [

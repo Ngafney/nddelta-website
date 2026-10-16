@@ -41,7 +41,7 @@ const SWAPS = () => {
     [norm(path.join(weekDir, "server", "llm.js")), own("llm.js", path.join(shared, "llm.js"))],
     [norm(path.join(weekDir, "src", "components", "StaleBuild.jsx")), path.join(shared, "NoStale.jsx")],
     // Weeks 1–4 commit event-day store credentials here; a solo/weekN/store-config.mjs keeps them out of the public bundle.
-    [norm(path.join(weekDir, "server", "store-config.mjs")), own("store-config.mjs", path.join(weekDir, "server", "store-config.mjs"))],
+    [norm(path.join(weekDir, "server", "store-config.mjs")), own("store-config.mjs", path.join(shared, "store-config.mjs"))],
   ]);
 };
 

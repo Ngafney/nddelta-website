@@ -19,10 +19,41 @@ import { prepareCode } from "../../week3/shared/bandit.js";
 import { BANDIT } from "../../week3/shared/rules.js";
 
 export function llmAvailable() {
-  return false;
+  return true;
 }
 
+/** Bot teams' prompts never go to the AI: they compile offline, for free. */
+const botPrompts = new Set();
+export function registerBotPrompt(p) {
+  botPrompts.add(String(p));
+}
+
+/**
+ * The same AI as the meeting, through the site's /api/solo/compile (which
+ * holds the key). If it cannot be reached, the built-in reader below steps in.
+ * A 502 carrying the AI's own error message is shown, as at the meeting.
+ */
 export async function compile(prompt) {
+  const text = String(prompt).slice(0, 2000);
+  if (!botPrompts.has(text) && typeof fetch === "function" && typeof window !== "undefined") {
+    let res = null;
+    try {
+      res = await fetch("/api/solo/compile", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ week: 3, prompt: text }) });
+    } catch {
+      res = null;
+    }
+    if (res?.ok) {
+      const data = await res.json().catch(() => null);
+      if (data && (data.refused || data.code)) return data;
+    } else if (res?.status === 502) {
+      const data = await res.json().catch(() => ({}));
+      if (data?.error) throw Object.assign(new Error(data.error), { status: 422 });
+    }
+  }
+  return offlineOnly(text);
+}
+
+function offlineOnly(prompt) {
   const out = offlineCompile(String(prompt).slice(0, 2000));
   if (!out.refused) {
     const prep = prepareCode(out.code);

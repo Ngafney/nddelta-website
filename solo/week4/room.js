@@ -403,6 +403,15 @@ export function brainFor(P, seed) {
     return opts[opts.length - 1][0];
   };
   const lag = (lo, hi) => Math.round((lo + (hi - lo) * r()) * 1000);
+  const B = brainCore(P, r, pick, lag);
+  // Nervous students pull their quotes when a batch lands and wait until they
+  // have worked it through. The stale and the gamblers do not, which is
+  // exactly why they are worth trading against.
+  B.pulls = P.kind === "alpha" || P.kind === "steady" || P.kind === "anchored" || (P.kind === "fatfinger" && r() < 0.5);
+  return B;
+}
+
+function brainCore(P, r, pick, lag) {
   switch (P.kind) {
     case "alpha":
       return { method: "clean", samples: 0, lagMs: lag(0, 4), both: true };
@@ -458,7 +467,7 @@ const memory = new Map(); // per bot: this round's private misreading, first imp
 function mem(bot, roundId) {
   let m = memory.get(bot.playerId);
   if (!m || m.roundId !== roundId) {
-    m = { roundId, bias: gauss(rng(`bias|${bot.playerId}|${roundId}`)), first: new Map(), seen: 0, data: new Map() };
+    m = { roundId, bias: gauss(rng(`bias|${bot.playerId}|${roundId}`)), first: new Map(), seen: 0, data: new Map(), fillSeq: -1, lastRel: 0, relAt: 0, bit: {} };
     memory.set(bot.playerId, m);
   }
   return m;
@@ -510,7 +519,22 @@ export async function step(bot, meta) {
   if (round.status !== "live" || !s.me.teamId) return;
 
   const P = bot.persona;
-  const r = rng(`${bot.playerId}|${Date.now()}|${Math.random()}`);
+  const now = Date.now();
+  // Fills against its resting quotes: it was picked off, and it notices.
+  for (const f of s.fills ?? []) {
+    if (f.s <= M.fillSeq) continue;
+    if (M.fillSeq >= 0 && !f.taker) M.bit[f.market] = { at: now, dir: f.side === "A" ? 1 : -1 };
+  }
+  for (const f of s.fills ?? []) M.fillSeq = Math.max(M.fillSeq, f.s);
+  if (M.fillSeq < 0) M.fillSeq = 0;
+  // A batch just landed: the nervous pull everything before thinking.
+  if (round.released !== M.lastRel) {
+    const fresh = M.lastRel > 0;
+    M.lastRel = round.released;
+    M.relAt = now;
+    if (fresh && bot.brain.pulls && s.me.orders.length) await local.post("cancel", auth(bot, { all: true })).catch(() => {});
+  }
+  const r = rng(`${bot.playerId}|${now}|${Math.random()}`);
   const turn = mood(P, r);
   if (turn === "skip") return;
 
@@ -533,14 +557,23 @@ export async function step(bot, meta) {
 
   const b = belief(bot, M, round);
   if (!b) return; // still working on it
+  // Pulled for the new batch and not through it yet: stay out.
+  if (bot.brain.pulls && b.release < round.released && now - M.relAt < bot.brain.lagMs + 30000) return;
   const lo = round.orderMin;
   const hi = round.orderMax;
   const unc = 3 + 10 * Math.sqrt(b.p * (1 - b.p));
   const half = Math.max(1, P.width * unc * 0.55);
   const edge = Math.max(2, P.edge * unc * 0.5);
 
+  // Bitten once: for a while after being picked off in a book, lean the way
+  // the trade went and quote wider there.
+  const bitFor = (mkt) => {
+    const x = M.bit[mkt];
+    const span = P.kind === "alpha" ? 10000 : P.kind === "stale" || P.kind === "gambler" ? 0 : 20000;
+    return x && now - x.at < span ? x.dir : 0;
+  };
   const fairOf = (mkt) => {
-    const own = mkt === "north" ? 100 * b.p : 100 * (1 - b.p);
+    const own = (mkt === "north" ? 100 * b.p : 100 * (1 - b.p)) + bitFor(mkt) * edge;
     const m = s.markets[mkt];
     const mid = m.bestBid != null && m.bestAsk != null ? (m.bestBid + m.bestAsk) / 2 : null;
     return Math.max(lo, Math.min(hi, blend(own, mid, P.kind === "alpha" ? P.herd * 0.3 : P.herd)));
@@ -591,7 +624,7 @@ export async function step(bot, meta) {
       bot,
       mkt,
       fair: fairOf(mkt) + fatFinger(P, r, half),
-      half,
+      half: bitFor(mkt) ? half * 1.8 : half,
       size: P.size,
       lo,
       hi,

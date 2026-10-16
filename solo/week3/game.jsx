@@ -5,8 +5,7 @@ import App from "@week/src/App.jsx";
 /**
  * Weeks 1–4 do not export their floor; the default App picks it by pathname,
  * and /solo/week3/ is the floor. Around it, one line the live game does not
- * need: in solo the bandit lab has no AI behind it, and the player should know
- * that before typing a paragraph the quick compiler cannot read.
+ * need: the AI may be unreachable, and then a built-in reader compiles instead.
  */
 const labOpen = () => {
   try {
@@ -27,10 +26,7 @@ function Floor() {
     <>
       {lab && (
         <div className="solo3-labnote" role="note">
-          <b>Solo: no AI here.</b> Your plan is compiled by the offline quick-compiler. It reads plans like "explore 10 flips, then the best",
-          "flip each coin twice, then the most heads", "epsilon 5%", "UCB c=0.5", "Thompson sampling", "pretend each coin starts with 1 head
-          and 1 tail, then flip the best", or "stay on a coin until it comes up tails twice in a row, then move to the next". Always read
-          step 3 to check what it actually wrote.
+          <b>The same AI as the meeting writes your strategy.</b> If it can't be reached, a built-in reader steps in: it understands plans like "explore 10 flips, then the best", "epsilon 5%", "UCB c=0.5", "Thompson sampling" or "pretend each coin starts with 1 head and 1 tail, then flip the best". Either way, read step 3 to check what it actually wrote.
         </div>
       )}
       <App />

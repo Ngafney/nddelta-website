@@ -1,0 +1,2 @@
+/* The floor's footer links to the live meeting's projector screen; not in solo. */
+.solo-stage .footer-note a { display: none; }

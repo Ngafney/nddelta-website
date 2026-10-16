@@ -170,13 +170,13 @@ function habits(P, r) {
     // extrap: how far it believes a slope keeps going (most people stop at the
     // lowest point they have seen and call it the floor; good traders don't).
     // wary: how much it allows for a deeper valley somewhere it has not walked.
-    alpha: { steps: Math.round(j(7, 10)), pace: 0.55, style: "newton", explore: true, wary: j(16, 26), extrap: 1, priorSd: 200, cap: true, maxPos: 150 },
-    steady: { steps: Math.round(j(4, 7)), pace: 1, style: "newton", explore: r() < 0.3, wary: j(0, 10), extrap: j(0.45, 0.8), priorSd: 170, cap: true, maxPos: 90 },
+    alpha: { steps: Math.round(j(4, 7)), pace: 0.55, style: "newton", explore: true, wary: j(16, 26), extrap: 1, priorSd: 200, cap: true, maxPos: 150 },
+    steady: { steps: Math.round(j(2, 4)), pace: 1, style: "newton", explore: r() < 0.3, wary: j(0, 10), extrap: j(0.45, 0.8), priorSd: 170, cap: true, maxPos: 90 },
     stale: { steps: Math.round(j(1, 3)), pace: 1.3, style: "timid", explore: false, wary: 0, extrap: j(0.2, 0.5), priorSd: 150, cap: true, maxPos: 60 },
     // Made up their mind on their first point, leans on 500, barely walks.
     anchored: { steps: r() < 0.5 ? 0 : 1, pace: 1.5, style: "timid", explore: false, wary: 0, extrap: j(0, 0.2), priorSd: j(70, 110), cap: false, maxPos: 60 },
-    gambler: { steps: Math.round(j(2, 5)), pace: 0.8, style: "wild", explore: false, wary: 0, extrap: j(0.2, 0.6), priorSd: 150, cap: false, maxPos: 70 },
-    fatfinger: { steps: Math.round(j(3, 5)), pace: 1, style: "newton", explore: false, wary: j(0, 8), extrap: j(0.3, 0.7), priorSd: 170, cap: true, maxPos: 70 },
+    gambler: { steps: Math.round(j(1, 3)), pace: 0.8, style: "wild", explore: false, wary: 0, extrap: j(0.2, 0.6), priorSd: 150, cap: false, maxPos: 70 },
+    fatfinger: { steps: Math.round(j(2, 3)), pace: 1, style: "newton", explore: false, wary: j(0, 8), extrap: j(0.3, 0.7), priorSd: 170, cap: true, maxPos: 70 },
   }[P.kind] ?? { steps: 4, pStep: 0.3, style: "newton", explore: false, wary: 15, extrap: 1, priorSd: 180, cap: true, maxPos: 80 };
   return { ...base, k0: j(0.04, 0.14) };
 }

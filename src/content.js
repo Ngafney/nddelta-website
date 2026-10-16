@@ -147,7 +147,7 @@ export const GAMES = [
     title: "Monte Carlo",
     hook: "An asteroid is on its way. Will it hit Earth or miss?",
     blurb:
-      "You get blurry telescope sightings of an asteroid, each a few hundred kilometres off, and a few of them simply wrong. Two contracts, HIT and MISS, and exactly one pays $100. More sightings arrive while you trade. Fit the orbit, simulate where it could go, and count how often it hits.",
+      "You get blurry telescope sightings of an asteroid, each a few hundred kilometers off, and a few of them simply wrong. Two contracts, HIT and MISS, and exactly one pays $100. More sightings arrive while you trade. Fit the orbit, simulate where it could go, and count how often it hits.",
     topics: ["Monte Carlo", "Simulation"],
     color: "#e76f51",
   },
