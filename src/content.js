@@ -145,9 +145,9 @@ export const GAMES = [
     week: 4,
     meeting: "Monte Carlo Simulations",
     title: "Monte Carlo",
-    hook: "A real asteroid is coming in. Will it land north or south of the line?",
+    hook: "An asteroid is on its way. Will it hit Earth or miss?",
     blurb:
-      "You get the published impact solution: a nominal point, an uncertainty ellipse, and new releases as it tightens. Two contracts, NORTH and SOUTH, and exactly one pays $100. The normal approximation gets it wrong, so simulate.",
+      "You get blurry telescope sightings of an asteroid, each a few hundred kilometres off, and a few of them simply wrong. Two contracts, HIT and MISS, and exactly one pays $100. More sightings arrive while you trade. Fit the orbit, simulate where it could go, and count how often it hits.",
     topics: ["Monte Carlo", "Simulation"],
     color: "#e76f51",
   },

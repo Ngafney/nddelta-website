@@ -160,7 +160,7 @@ export default function Home() {
               play a game built around it. Teams trade against each other on a live order book, and the leaderboard goes up on the projector.
             </p>
             <p>
-              So far we've traded the minimum of a hidden curve, the bias of a coin, where an asteroid would land, a time series that might or might not mean-revert,
+              So far we've traded the minimum of a hidden curve, the bias of a coin, whether an asteroid would hit Earth, a time series that might or might not mean-revert,
               and options on a sum of secret numbers. You don't need any experience, and every major is welcome. Bring a laptop.
             </p>
             <div className="meet">
