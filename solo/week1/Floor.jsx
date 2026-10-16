@@ -4,8 +4,8 @@ import { live, readHistory } from "./room.js";
 
 /**
  * The original Week 1 app, unmodified, with one slim strip above it that only
- * solo needs: the plain statement that there's no AI here (and how to phrase
- * a plan for the built-in reader), what's moving in the room, and your record.
+ * solo needs: how the plan becomes a bot (the AI, or the built-in reader as a
+ * fallback, with phrasing tips), what's moving in the room, and your record.
  */
 export default function Floor() {
   return (
@@ -54,7 +54,7 @@ function SoloStrip() {
       <div className="w1s-row">
         <button className="w1s-ai" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
           <span className="w1s-dot" aria-hidden="true" />
-          No AI in solo mode: a built-in reader turns your plain English into the bot. Always check what it says your bot will do.
+          The same AI as the meeting turns your plain English into the bot (a built-in reader steps in if it can't be reached). Always check what it says your bot will do.
           <span className="w1s-more">{open ? "Hide phrasing tips" : "Phrasing tips"}</span>
         </button>
         <div className="w1s-side">

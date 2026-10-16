@@ -209,7 +209,8 @@ const room = {
     // Your seats. The floor's own gate makes your team.
     const seats = [];
     for (let i = 0; i < you.length; i++) {
-      seats.push(await local.post("join", { name: you[i], deviceId: `solo-w4-you-${i}-${seed}`, fp: "solo0000" }));
+      const j = await local.post("join", { name: you[i], deviceId: `solo-w4-you-${i}-${seed}`, fp: "solo0000" });
+      seats.push({ ...j, name: you[i] });
     }
     // The bot teams: one or two traders each, each with a way of working.
     const skills = roomSkills(level, botTeams * 2, seed);
@@ -323,7 +324,12 @@ const room = {
         run: async () => {
           const spec = await takeSpec();
           await installRound(spec, { keepPlayers: true, tradingMinutes: pace.trading, eventName: designation(readTally(ns).length) });
-          await admin("start", { minutes: pace.research });
+          // The server keeps the last round cached for 300 ms; let it lapse.
+          for (let i = 0; i < 5; i++) {
+            await new Promise((r) => setTimeout(r, 400));
+            const ok = await admin("start", { minutes: pace.research }).then(() => true, () => false);
+            if (ok) break;
+          }
           return { remount: true };
         },
       },

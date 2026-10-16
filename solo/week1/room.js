@@ -154,7 +154,7 @@ const room = {
     "Each round both bots secretly COOPERATE or DEFECT. Both cooperate: 3 each. One defects: 5 to the defector, 0 to the other. Both defect: 1 each.",
     "Your bot plays 200 rounds against every other team's bot, 5 times over. It never learns who it is playing, only what they do.",
     "The board ranks average points per match. Read your replays, figure out who's out there, and resubmit.",
-    "There is no AI in solo mode: a built-in reader turns your plain English into the bot. Check what it says your bot will do.",
+    "Describe your bot in plain English and the same AI as the meeting writes it. Always check what it says your bot will do.",
   ],
   botTeams: { min: 5, max: 19, def: 11 },
   settings: [

@@ -1,5 +1,5 @@
 /**
- * The strategy compiler, for solo play: no AI.
+ * The strategy compiler, for solo play: the meeting's AI via /api/solo/compile, with an offline reader as the fallback.
  *
  * At the meeting, week1/server/llm.js sends your English to a language model
  * that writes the bot. A solo game runs in your browser with no key and no
@@ -19,14 +19,30 @@ import { preparePdCode } from "../../week1/shared/pdCode.js";
 import { prepareIceCode } from "../../week1/shared/iceCode.js";
 
 export function llmAvailable() {
-  return false;
+  return true;
 }
 
+/**
+ * The same AI the meeting uses, through nddelta.com's /api/solo/compile (the
+ * key stays on the server). If that can't be reached (offline, rate-limited,
+ * not configured), the built-in reader below takes over, and says so.
+ */
 export async function compile(game, prompt) {
   const text = String(prompt ?? "").slice(0, 2000);
-  if (game === "pd") return compilePd(text);
-  if (game === "icecream") return compileIce(text);
-  throw new Error(`unknown game: ${game}`);
+  if (game !== "pd" && game !== "icecream") throw new Error(`unknown game: ${game}`);
+  try {
+    const res = await fetch("/api/solo/compile", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ week: 1, game, prompt: text }),
+    });
+    const data = await res.json().catch(() => null);
+    if (res.ok && data && (data.code || data.refused)) return data;
+    if (res.status === 502 && data?.error) throw Object.assign(new Error(data.error), { fromAi: true });
+  } catch (e) {
+    if (e?.fromAi) throw e; // the AI answered but couldn't make a valid bot: same message as the meeting
+  }
+  return game === "pd" ? compilePd(text) : compileIce(text);
 }
 
 const OFFLINE = "offline";
