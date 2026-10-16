@@ -284,7 +284,7 @@ export default function Home() {
           <p className="eyebrow eyebrow--dark">Sponsors</p>
           <h2>Thank you to our 2025 sponsors</h2>
           <p className="section__lede">The first Notre Dame Trading Competition happened because these firms backed it.</p>
-          <div className="logo-wall">
+          <div className="logo-wall logo-wall--sponsors">
             {SPONSORS.map((s) => (
               <div className="logo-card" key={s.name}>
                 <Logo {...s} />

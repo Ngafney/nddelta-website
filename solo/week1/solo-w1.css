@@ -1,7 +1,7 @@
 /* The solo strip above the original Week 1 app. */
 .w1s {
   position: relative;
-  z-index: 2;
+  z-index: 1; /* same layer as the app, so its winner reveal covers this */
   max-width: 1100px;
   margin: 10px auto 0;
   padding: 0 16px;
@@ -50,37 +50,54 @@
   font-weight: 600;
   white-space: nowrap;
 }
+/* The room's feed and your record: a small fixed corner, so nothing shifts when it changes. */
 .w1s-side {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 60;
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: center;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  max-width: calc(100vw - 32px);
+  pointer-events: none;
+}
+body:has(.reveal) .w1s-side {
+  display: none;
 }
 .w1s-feed {
-  padding: 5px 10px;
+  padding: 6px 12px;
   border-radius: 999px;
-  background: rgba(96, 165, 250, 0.14);
+  background: rgba(16, 32, 64, 0.95);
   border: 1px solid rgba(96, 165, 250, 0.35);
   color: #cfe0ff;
   animation: w1s-in 0.3s ease-out;
   white-space: nowrap;
   max-width: 100%;
   overflow: hidden;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(4px);
   text-overflow: ellipsis;
 }
 .w1s-feed.up {
-  background: rgba(74, 222, 128, 0.14);
+  background: rgba(14, 48, 30, 0.95);
   border-color: rgba(74, 222, 128, 0.4);
   color: #c8f5d8;
 }
 .w1s-feed.down {
-  background: rgba(248, 113, 122, 0.14);
+  background: rgba(56, 18, 24, 0.95);
   border-color: rgba(248, 113, 122, 0.4);
   color: #ffd0d4;
 }
 .w1s-rec {
   color: #8ea3c8;
   white-space: nowrap;
+  font-size: 12px;
+  background: rgba(6, 11, 23, 0.85);
+  border: 1px solid #1c3157;
+  border-radius: 999px;
+  padding: 3px 10px;
 }
 @keyframes w1s-in {
   from {

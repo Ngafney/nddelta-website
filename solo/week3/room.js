@@ -493,9 +493,9 @@ export async function step(bot) {
     const mine = sims.n + prior.a + prior.b;
     fair = own.mean + (mid - own.mean) * (mkt / (mkt + mine));
   } else {
-    fair = blend(own.mean, mid, P.herd);
+    // Heads ÷ flips people trust their own coins: they barely look at the book.
+    fair = blend(anchor(M.first, "p", own.mean, P.stick), mid, P.freq ? P.herd * 0.4 : P.herd);
   }
-  fair = anchor(M.first, "p", fair, P.stick);
   fair = clamp(fair + M.bias * P.noise * 2, 2, 98);
 
   // An alpha with almost no flips and a book that disagrees buys one more, dear.
@@ -508,7 +508,7 @@ export async function step(bot) {
   const half = clamp(P.width * own.sd * 0.45 * risk, 1, 9);
   const edge = Math.max(2, P.edge * own.sd * 0.5 * risk);
   // Students here trade in tens of shares; scale the persona up to that.
-  const size = clamp(Math.round(P.size * 3.5 * (round.settlement === "flip" ? 0.7 : 1)), 4, 50);
+  const size = clamp(Math.round(P.size * 3 * (round.settlement === "flip" ? 0.7 : 1)), 4, 50);
 
   const took = await takeIfCheap({ fair, edge, size: P.kind === "alpha" ? size : Math.max(2, Math.round(size / 2)), bestBid: m.bestBid, bestAsk: m.bestAsk, lo, hi, order, cancelId });
   if (took && P.kind !== "alpha") return;

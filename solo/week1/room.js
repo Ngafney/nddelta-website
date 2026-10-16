@@ -309,8 +309,14 @@ export default room;
 
 /* ── phase, ranks, names ───────────────────────────────────────────────── */
 
+/**
+ * Only the tournament runs on the clock. (When two clocks end together the
+ * original app's reveal shows whichever it set last, which is Sunset Scoops;
+ * the tournament is the one people want to see on the podium.) Scoops stays
+ * open the whole time and its board is shown in the final result.
+ */
 function enabledGames(round) {
-  return ["pd", "icecream"].filter((g) => round?.games?.[g]);
+  return ["pd"].filter((g) => round?.games?.[g]);
 }
 
 export function phaseOf(round) {

@@ -658,6 +658,9 @@ p {
   flex: 0 1 calc((100% - 4 * 14px) / 5);
   min-width: 0;
 }
+.logo-wall--sponsors > * {
+  flex-basis: calc((100% - 3 * 14px) / 4);
+}
 .logo-card {
   height: 112px;
   display: grid;

@@ -45,7 +45,7 @@ export const LEADERS = [
     email: "cbacall@nd.edu",
     linkedin: "https://www.linkedin.com/in/calvinbacall/",
     photo: "/images/calvin.jpg",
-    bio: "Calvin Bacall is a junior double majoring in physics and economics. Last summer he conducted research in Theology, and he currently works as the mailman at St. Edward's Hall.",
+    bio: "Calvin Bacall is a senior double majoring in physics and economics. Last summer he conducted research in Theology, and he currently works as the mailman at St. Edward's Hall.",
   },
   {
     name: "Nathan Gafney",
@@ -65,7 +65,7 @@ export const LEADERS = [
   },
 ];
 
-/** 2025 competition sponsors (prospectus p.5, plus Kalshi from the 2025 sponsor board). */
+/** 2025 competition sponsors (prospectus p.5). */
 export const SPONSORS = [
   { name: "Hudson River Trading", logo: "/images/logos/hrt.svg", aspect: 1.782 },
   { name: "Jane Street", logo: "/images/logos/janestreet.svg", aspect: 2.566 },
@@ -75,7 +75,6 @@ export const SPONSORS = [
   { name: "DRW", logo: "/images/logos/drw.svg", aspect: 3.016 },
   { name: "Belvedere Trading", logo: "/images/logos/belvedere.png", aspect: 3.012 },
   { name: "Old Mission", logo: "/images/logos/oldmission.svg", aspect: 3.842 },
-  { name: "Kalshi", logo: "/images/logos/kalshi.svg", aspect: 3.412 },
 ];
 
 export const TIERS = [

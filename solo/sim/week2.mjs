@@ -157,6 +157,13 @@ for (let n = 0; n < rounds; n++) {
   results.push(res);
   console.log(JSON.stringify(res, null, 1));
 }
+const agg = {};
+for (const r of results) for (const [k, v] of Object.entries(r.byKind)) for (const x of String(v).split(",")) (agg[k.split("/")[1]] ??= []).push(Number(x));
+const stepsAgg = {};
+for (const r of results) for (const [k, v] of Object.entries(r.stepsByKind)) for (const x of String(v).split(",")) (stepsAgg[k.split("/")[1]] ??= []).push(Number(x));
+console.log("\nby kind (avg P&L, avg steps, n):");
+for (const k of Object.keys(agg).sort()) console.log(`  ${k.padEnd(10)} ${Math.round(agg[k].reduce((a, b) => a + b, 0) / agg[k].length).toString().padStart(7)}  ${(stepsAgg[k].reduce((a, b) => a + b, 0) / stepsAgg[k].length).toFixed(1).padStart(5)}  ${agg[k].length}`);
+console.log("probe ranks:", results.map((r) => r.probeRank).join(" "), " probe P&L:", results.map((r) => Math.round(r.probePnl)).join(" "));
 const avgP = results.reduce((a, r) => a + r.probePnl, 0) / results.length;
 console.log(`\nprobe=${probe} level=${level} curve=${curve}: average P&L ${avgP.toFixed(0)} over ${results.length} rounds; errors logged: ${errors}`);
 process.exit(0);
