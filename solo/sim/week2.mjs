@@ -68,7 +68,7 @@ for (let n = 0; n < rounds; n++) {
   const me = out.seats[0];
   const P = { playerId: me.playerId, token: me.token };
   await local.post("team/create", { ...P, name: "Probe Team" });
-  const meta = { admin, cfg, bots: out.bots };
+  const meta = { admin, cfg, level, bots: out.bots };
   const runner = room.bots({ meta });
   runner.start();
   await local.post("admin/start", { token: admin, minutes });

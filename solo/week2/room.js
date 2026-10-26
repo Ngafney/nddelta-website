@@ -170,7 +170,7 @@ function habits(P, r) {
     // extrap: how far it believes a slope keeps going (most people stop at the
     // lowest point they have seen and call it the floor; good traders don't).
     // wary: how much it allows for a deeper valley somewhere it has not walked.
-    alpha: { steps: Math.round(j(4, 7)), pace: 0.55, style: "newton", explore: true, wary: j(16, 26), extrap: 1, priorSd: 200, cap: true, maxPos: 150 },
+    alpha: { steps: Math.round(j(3, 5)), pace: 0.6, style: "newton", explore: true, wary: j(10, 18), extrap: j(0.75, 0.9), priorSd: 200, cap: true, maxPos: 150 },
     steady: { steps: Math.round(j(2, 4)), pace: 1.2, style: "newton", explore: r() < 0.3, wary: j(0, 8), extrap: j(0.25, 0.6), priorSd: 170, cap: true, maxPos: 90 },
     stale: { steps: Math.round(j(1, 3)), pace: 1.5, style: "timid", explore: false, wary: 0, extrap: j(0, 0.3), priorSd: 220, cap: true, maxPos: 120, big: 1.8, herd: 0.3 },
     // Trusts its first point: takes the lowest height it has seen to be the floor, barely walks.
@@ -450,6 +450,7 @@ function recordNote() {
 /* ── one bot's turn ────────────────────────────────────────────────────── */
 
 const memory = new Map();
+const H_BIG_KINDS = new Set(["anchored", "stale"]);
 /** Counters the headless harness reads. */
 export const stats = { turns: 0, steps: 0, stepFail: {}, noPlan: 0 };
 
@@ -490,7 +491,9 @@ export async function step(bot, meta) {
 
   // A share here is worth hundreds of dollars and a step costs a thousand, so
   // the room trades in lots big enough that being right pays for the walking.
-  const lot = Math.round(Math.min(45, P.size * 2 * (M.habits.big ?? 1)));
+  // In a room of sharks the weak hands trade small: nobody is there to feed you.
+  const big = meta?.level === "shark" && H_BIG_KINDS.has(P.kind) ? 0.6 : M.habits.big ?? 1;
+  const lot = Math.round(Math.min(45, P.size * 2 * big));
   const turn = mood(P, r);
   stats.turns++;
   if (turn === "skip") return;
@@ -552,10 +555,12 @@ export async function step(bot, meta) {
 
   const unc = Math.max(8, b.sd);
   const half = Math.max(TICK, P.width * unc * 0.5);
-  const edge = Math.max(TICK, P.edge * unc * 0.5);
+  // Bots that did the work press it: they take on smaller mispricings, in size.
+  const worked = P.kind === "alpha" || P.kind === "steady";
+  const edge = Math.max(TICK, P.edge * unc * (worked ? 0.35 : 0.5));
   const pos = me.pos ?? 0;
   const conf = Math.max(0.5, Math.min(2.5, 30 / unc));
-  const takeSize = Math.max(1, Math.min(50, Math.round(lot * 0.7 * (P.kind === "alpha" ? conf : 1))));
+  const takeSize = Math.max(1, Math.min(50, Math.round(lot * (worked ? 1.1 : 0.7) * (P.kind === "alpha" ? conf : 1))));
 
   // Take what is clearly wrong, within its position limit.
   const canBuy = pos < H.maxPos;
