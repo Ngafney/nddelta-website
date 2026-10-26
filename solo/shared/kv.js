@@ -11,6 +11,28 @@ export const KV_PERSISTENT = true;
 export const KV = { mode: KV_MODE };
 
 let mem = new Map();
+
+/**
+ * The saved game holds the round's secret (the hidden p, the process, every
+ * team's number). A meeting player can't see it, so neither should a glance
+ * at devtools: it is stored scrambled. This stops a casual peek, not a
+ * determined one, which is all a single-player game needs.
+ */
+const VEIL = "v1:";
+function veil(text) {
+  const bytes = new TextEncoder().encode(text);
+  for (let i = 0; i < bytes.length; i++) bytes[i] ^= (i * 131 + 71) & 255;
+  let bin = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return VEIL + btoa(bin);
+}
+function unveil(stored) {
+  if (!stored.startsWith(VEIL)) return stored; // a save from before the veil
+  const bin = atob(stored.slice(VEIL.length));
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i) ^ ((i * 131 + 71) & 255);
+  return new TextDecoder().decode(bytes);
+}
 let storageKey = null;
 let saveTimer = null;
 
@@ -22,7 +44,7 @@ export function bindStorage(key) {
   mem = new Map();
   try {
     const raw = sessionStorage.getItem(key);
-    if (raw) for (const [k, v] of Object.entries(JSON.parse(raw))) mem.set(k, v);
+    if (raw) for (const [k, v] of Object.entries(JSON.parse(unveil(raw)))) mem.set(k, v);
   } catch {}
 }
 
@@ -42,7 +64,7 @@ function flush() {
   saveTimer = null;
   if (!storageKey) return;
   try {
-    sessionStorage.setItem(storageKey, JSON.stringify(Object.fromEntries(mem)));
+    sessionStorage.setItem(storageKey, veil(JSON.stringify(Object.fromEntries(mem))));
   } catch {
     /* quota or private mode: the game still runs, it just will not survive a reload */
   }

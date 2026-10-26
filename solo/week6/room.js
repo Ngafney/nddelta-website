@@ -316,7 +316,8 @@ export async function step(bot, meta) {
       fair: fair + fatFinger(P, r, half),
       half,
       size: P.size,
-      lo: Math.max(g.orderMin, mkt === "fut" ? round.lo : 0),
+      // A bid at 0 on an option buys nothing; the lowest useful quote is 1.
+      lo: Math.max(g.orderMin, mkt === "fut" ? round.lo : 1),
       hi: Math.min(g.orderMax, mkt === "fut" ? round.hi : g.orderMax),
       orders: fresh.me.orders,
       order,

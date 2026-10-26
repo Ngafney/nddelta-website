@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Floor } from "@week/src/App.jsx";
 import { money } from "@week/src/components/PixelBits.jsx";
 import { local } from "@solo/local.js";
@@ -18,9 +18,41 @@ export default function SoloFloor() {
   return (
     <>
       <Floor />
+      <CentreOnOpen />
       <Series />
     </>
   );
+}
+
+/**
+ * The ladder opens on its default window (around 50), so when the book opens
+ * at, say, 82/86 the market is off-screen until you press MIDDLE. Press it for
+ * you, once per round per mount, the first time there is a two-sided market.
+ */
+function CentreOnOpen() {
+  const done = useRef(null);
+  useEffect(() => {
+    let stop = false;
+    let roundId = null;
+    const t = setInterval(async () => {
+      try {
+        roundId = (await local.get("config")).round?.roundId ?? null;
+      } catch {}
+      if (stop || !roundId || done.current === roundId) return;
+      const bid = Number(document.querySelector(".bidv")?.textContent);
+      const ask = Number(document.querySelector(".askv")?.textContent);
+      if (!(bid > 0 && ask > 0)) return;
+      const btn = [...document.querySelectorAll(".h-right button")].find((b) => b.textContent.trim() === "MIDDLE");
+      if (!btn) return;
+      btn.click();
+      done.current = roundId;
+    }, 600);
+    return () => {
+      stop = true;
+      clearInterval(t);
+    };
+  }, []);
+  return null;
 }
 
 function describe(t) {

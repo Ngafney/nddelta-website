@@ -2,7 +2,9 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { INTEREST_FORM, CLUB_EMAIL, MEETINGS, COMPETITION, PHOTOS, LEADERS, SPONSORS, TIERS, PLACEMENTS, GAMES } from './content';
 
 /** A logo sized by area, not height, so a wide wordmark and a square mark look the same weight. */
-export function Logo({ name, logo, aspect, area = 5200, maxW = 190, maxH = 64 }) {
+export function Logo({ name, logo, aspect, scale = 1, area = 5200, maxW = 190, maxH = 64 }) {
+  area *= scale;
+  maxH *= Math.sqrt(scale);
   let h = Math.sqrt(area / aspect);
   let w = h * aspect;
   if (w > maxW) {
@@ -154,14 +156,14 @@ export default function Home() {
         <div className="container about">
           <div className="about__text">
             <p className="eyebrow eyebrow--dark">About</p>
-            <h2>Math you can trade on.</h2>
+            <h2>Probability, statistics and markets, every Monday.</h2>
             <p>
               DELTA is a student-run club at Notre Dame. Each meeting covers one topic from probability, statistics, econometrics or market microstructure, and then we
               play a game built around it. Teams trade against each other on a live order book, and the leaderboard goes up on the projector.
             </p>
             <p>
-              So far we've traded the minimum of a hidden curve, the bias of a coin, whether an asteroid would hit Earth, a time series that might or might not mean-revert,
-              and options on a sum of secret numbers. You don't need any experience, and every major is welcome. Bring a laptop.
+              This semester we've written Prisoner's Dilemma bots, traded the minimum of a hidden curve, the bias of a coin, whether an asteroid would hit Earth, a time
+              series that might or might not mean-revert, and options on a sum of secret numbers. Every major is welcome. Bring a laptop.
             </p>
             <div className="meet">
               <div className="meet__row">
@@ -227,9 +229,8 @@ export default function Home() {
                 making, momentum and mean reversion all work if you get them right, and fees, position limits and a fast order book punish you if you don't.
               </p>
               <p>
-                The first competition was held in the Mendoza Trading Room in December 2025. This year it runs all day, across Stayer Hall and the trading room. It's
-                hosted by DELTA with the Notre Dame Institute for Global Investing. No experience is required, all majors are welcome, and food is provided. There are
-                cash prizes, and people from the sponsoring firms will be there.
+                The first competition was held in the Mendoza Trading Room in December 2025. This year it runs all day, across Stayer Hall and the trading room, hosted by
+                DELTA with the Notre Dame Institute for Global Investing. You don't need trading experience to enter, and there are cash prizes.
               </p>
               <dl className="facts">
                 <div>
@@ -296,8 +297,9 @@ export default function Home() {
             <div className="sponsor-pitch__copy">
               <h3>Sponsor the 2026 competition</h3>
               <p>
-                More than 100 students who are serious about markets and programming, in one room for a day, building and running trading systems. Sponsorship pays for
-                prizes, infrastructure and the event itself, and we're happy to shape the benefits around your recruiting goals. Swag and recruiting resources help too.
+                We're planning for more than 100 students who are serious about markets and programming, in one place for a day, building and running trading systems.
+                Sponsorship pays for prizes, infrastructure and the event itself. We can shape the benefits around your recruiting goals, and we're glad to take swag or
+                recruiting resources as well as funding.
               </p>
               <div className="sponsor-pitch__actions">
                 <a className="btn btn--navy" href={`mailto:${COMPETITION.contacts.join(',')}?subject=Sponsoring%20the%202026%20Notre%20Dame%20Trading%20Competition`}>
@@ -335,8 +337,8 @@ export default function Home() {
             <p className="eyebrow">Games</p>
             <h2>Missed a meeting? Play it anyway.</h2>
             <p>
-              Every game from this semester is online. Play live with the room at a meeting, or on your own against a room of bot traders. Some of them are good, and
-              some of them are there to be picked off.
+              Every game from this semester is online. Play live with the room at a meeting, or on your own against bot teams that each trade on their own
+              information.
             </p>
             <a className="btn btn--gold" href="/games">
               See all six games →
@@ -344,7 +346,7 @@ export default function Home() {
           </div>
           <div className="games-teaser__chips">
             {GAMES.map((g) => (
-              <a key={g.week} className="gchip" href="/games" style={{ '--c': g.color }}>
+              <a key={g.week} className="gchip" href={`/games#week${g.week}`} style={{ '--c': g.color }}>
                 <span className="gchip__wk">Week {g.week}</span>
                 <span className="gchip__t">{g.title}</span>
               </a>

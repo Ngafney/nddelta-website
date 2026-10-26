@@ -5,9 +5,10 @@
  * a "probe" player did:
  *
  *   probe=none    sits on its hands (should finish at $0)
- *   probe=smart   takes a few steps (Newton, a jump if its valley is flat), then sells
- *                 every bid above its own floor and trades its belief against
- *                 the book, 10 shares a click, about one click a second
+ *   probe=smart   takes a few steps (Newton, a jump if its valley is flat), then mostly
+ *                 sells: every bid above its own ceiling or well above its estimate;
+ *                 it only buys back (to cover) once its valley is flat and offers are cheap.
+ *                 20 shares a click, about one click a second.
  *
  * node solo/sim/week2.mjs [rounds=3] [probe=smart] [level=sharp] [teams=7] [curve=bumpy] [minutes=1.5] [stepCost=500] [probeSteps=4]
  */
@@ -101,14 +102,14 @@ for (let n = 0; n < rounds; n++) {
       }
       const s2 = await local.get("state", P);
       const b = belief(s2.me.points, {});
-      const edge = Math.max(10, b.sd * 1.2);
+      const edge = Math.max(10, b.sd * 0.6);
       const m2 = s2.market;
       // A sure thing: anything bid above the lowest height I have seen.
       if (m2.bestBid != null && (m2.bestBid > b.lb || m2.bestBid >= b.fair + edge) && s2.me.pos > -150) {
         const r = await local.post("order", { ...P, side: "A", px: m2.bestBid, qty: 20 }).catch(() => null);
         if (r?.resting) await local.post("cancel", { ...P, orderId: r.resting.id });
         if (r?.filled) probeTrades += r.filled;
-      } else if (m2.bestAsk != null && m2.bestAsk <= b.fair - edge && m2.bestAsk < b.lb && s2.me.pos < 150) {
+      } else if (b.converged && m2.bestAsk != null && m2.bestAsk <= b.fair - 2 * edge && s2.me.pos < 0) {
         const r = await local.post("order", { ...P, side: "B", px: m2.bestAsk, qty: 20 }).catch(() => null);
         if (r?.resting) await local.post("cancel", { ...P, orderId: r.resting.id });
         if (r?.filled) probeTrades += r.filled;

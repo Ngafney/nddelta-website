@@ -25,7 +25,7 @@ export const PHOTOS = {
   floor: { src: "/images/competition/trading-floor.jpg", alt: "Teams at their desks in the Mendoza Trading Room during the 2025 competition" },
   wall: { src: "/images/competition/trading-room-wall.jpg", alt: "The live leaderboard and price charts on the trading room wall during the 2025 competition" },
   organizers: { src: "/images/competition/organizers.jpg", alt: "George Gardey, Nathan Gafney and Calvin Bacall in front of the competition screen" },
-  board: { src: "/images/competition/sponsor-board.jpg", alt: "The 2025 sponsor board outside the Mendoza Trading Room" },
+  board: { src: "/images/competition/competition-sign.jpg", alt: "The 2025 Notre Dame Trading Competition sign outside the Mendoza Trading Room" },
   meeting: { src: "/images/group-photo.png", alt: "DELTA members crowded around a table mid-game at a weekly meeting" },
   firstMeeting: { src: "/images/first-meeting-2026.jpg", alt: "A full lecture hall at DELTA's first meeting of the 2026–27 year" },
 };
@@ -69,7 +69,7 @@ export const LEADERS = [
 export const SPONSORS = [
   { name: "Hudson River Trading", logo: "/images/logos/hrt.svg", aspect: 1.782 },
   { name: "Jane Street", logo: "/images/logos/janestreet.svg", aspect: 2.566 },
-  { name: "Susquehanna", logo: "/images/logos/susquehanna.svg", aspect: 11.875 },
+  { name: "Susquehanna", logo: "/images/logos/susquehanna.svg", aspect: 11.875, scale: 1.2 },
   { name: "Optiver", logo: "/images/logos/optiver.svg", aspect: 4.491 },
   { name: "Jump Trading", logo: "/images/logos/jump.svg", aspect: 2.314 },
   { name: "DRW", logo: "/images/logos/drw.svg", aspect: 3.016 },
@@ -100,8 +100,8 @@ export const PLACEMENTS = [
   { name: "Optiver", logo: "/images/logos/optiver.svg", aspect: 4.491 },
   { name: "Goldman Sachs", logo: "/images/logos/goldman.svg", aspect: 2.384 },
   { name: "Citadel", logo: "/images/logos/citadel.svg", aspect: 8.314 },
-  { name: "FT Partners", logo: "/images/logos/ftpartners.svg", aspect: 1.788 },
-  { name: "Barclays", logo: "/images/logos/barclays.svg", aspect: 5.9 },
+  { name: "FT Partners", logo: "/images/logos/ftpartners.svg", aspect: 1.788, scale: 1.9 },
+  { name: "Barclays", logo: "/images/logos/barclays.svg", aspect: 5.9, scale: 0.85 },
   { name: "Bank of America", logo: "/images/logos/bofa.svg", aspect: 9.931 },
   { name: "Deutsche Bank", logo: "/images/logos/deutsche.svg", aspect: 5.068 },
   { name: "Garda Capital Partners", logo: "/images/logos/garda.svg", aspect: 3.699 },
@@ -114,7 +114,7 @@ export const GAMES = [
   {
     week: 1,
     meeting: "Introduction, Games & Model-Building",
-    title: "Dilemmas & Scoops",
+    title: "Games of Strategy",
     hook: "Write a bot for the Prisoner's Dilemma, then hedge an ice cream shop against the weather.",
     blurb:
       "Two games. In the Prisoner's Dilemma each team describes a strategy in plain English, it gets turned into code, and every bot plays every other bot. In Sunset Scoops you run a beach ice cream shop that loses money on cold days and buy weather contracts so a bad week doesn't sink you.",
@@ -144,7 +144,7 @@ export const GAMES = [
   {
     week: 4,
     meeting: "Monte Carlo Simulations",
-    title: "Monte Carlo",
+    title: "Hit or Miss",
     hook: "An asteroid is on its way. Will it hit Earth or miss?",
     blurb:
       "You get blurry telescope sightings of an asteroid, each a few hundred kilometers off, and a few of them simply wrong. Two contracts, HIT and MISS, and exactly one pays $100. More sightings arrive while you trade. Fit the orbit, simulate where it could go, and count how often it hits.",

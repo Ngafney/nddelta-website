@@ -23,3 +23,6 @@
 @media (max-width: 720px) {
   .solo5-series__grid { grid-template-columns: 1fr; }
 }
+
+/* The host bar stays above the reveal overlay, so "Next round" is always reachable. */
+.solo-wrap .solo-bar { z-index: 1100; }

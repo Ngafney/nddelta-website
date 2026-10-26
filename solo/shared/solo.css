@@ -269,7 +269,8 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 34ch;
+  flex: 1 1 auto;
+  min-width: 0;
 }
 .solo-bar__ctl {
   display: flex;
@@ -368,16 +369,27 @@
   .solo-bar__name {
     display: none;
   }
+  /* Two rows on a phone: brand · status · New game, then the host buttons. */
   .solo-bar__status {
-    max-width: 50vw;
+    flex: 1 1 0;
+    min-width: 0;
+    max-width: none;
     font-size: 12px;
+    padding-left: 8px;
+  }
+  .solo-bar__end {
+    order: 3;
+  }
+  .solo-seats {
+    order: 4;
   }
   .solo-bar__ctl {
     margin-left: 0;
     width: 100%;
     order: 5;
   }
-  .solo-bar__end {
-    margin-left: auto;
+  .solo-bar .solo-btn {
+    padding: 6px 9px;
+    font-size: 12.5px;
   }
 }

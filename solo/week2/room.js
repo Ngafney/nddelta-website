@@ -172,9 +172,9 @@ function habits(P, r) {
     // wary: how much it allows for a deeper valley somewhere it has not walked.
     alpha: { steps: Math.round(j(4, 7)), pace: 0.55, style: "newton", explore: true, wary: j(16, 26), extrap: 1, priorSd: 200, cap: true, maxPos: 150 },
     steady: { steps: Math.round(j(2, 4)), pace: 1.2, style: "newton", explore: r() < 0.3, wary: j(0, 8), extrap: j(0.25, 0.6), priorSd: 170, cap: true, maxPos: 90 },
-    stale: { steps: Math.round(j(1, 3)), pace: 1.5, style: "timid", explore: false, wary: 0, extrap: j(0.1, 0.4), priorSd: 150, cap: true, maxPos: 120, big: 1.8, herd: 0.3 },
-    // Made up their mind on their first point, leans on 500, barely walks.
-    anchored: { steps: r() < 0.5 ? 0 : 1, pace: 1.5, style: "timid", explore: false, wary: 0, extrap: j(0, 0.2), priorSd: j(60, 100), cap: false, maxPos: 140, big: 2, herd: 0.2 },
+    stale: { steps: Math.round(j(1, 3)), pace: 1.5, style: "timid", explore: false, wary: 0, extrap: j(0, 0.3), priorSd: 220, cap: true, maxPos: 120, big: 1.8, herd: 0.3 },
+    // Trusts its first point: takes the lowest height it has seen to be the floor, barely walks.
+    anchored: { steps: r() < 0.5 ? 0 : 1, pace: 1.5, style: "timid", explore: false, wary: 0, extrap: j(0, 0.15), priorSd: 300, cap: false, maxPos: 140, big: 2, herd: 0.2 },
     gambler: { steps: Math.round(j(1, 3)), pace: 0.8, style: "wild", explore: false, wary: 0, extrap: j(0.2, 0.6), priorSd: 150, cap: false, maxPos: 70 },
     fatfinger: { steps: Math.round(j(2, 3)), pace: 1, style: "newton", explore: false, wary: j(0, 8), extrap: j(0.3, 0.7), priorSd: 170, cap: true, maxPos: 70 },
   }[P.kind] ?? { steps: 4, pStep: 0.3, style: "newton", explore: false, wary: 15, extrap: 1, priorSd: 180, cap: true, maxPos: 80 };

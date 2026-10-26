@@ -692,7 +692,7 @@ p {
 .sponsor-pitch {
   margin-top: 64px;
   display: grid;
-  grid-template-columns: 0.9fr 1.1fr;
+  grid-template-columns: 1fr 1fr;
   gap: 40px;
   padding: 36px;
   border-radius: 22px;
@@ -961,9 +961,13 @@ p {
 }
 .footer__base {
   margin-top: 40px;
-  padding-top: 20px;
-  border-top: 1px solid var(--line-d);
   font-size: 13px;
+}
+.footer__base::before {
+  content: "";
+  display: block;
+  border-top: 1px solid var(--line-d);
+  margin-bottom: 20px;
 }
 
 /* ── modals ──────────────────────────────────────────── */
@@ -1159,6 +1163,7 @@ p {
 .gcard__veil {
   position: absolute;
   inset: 0;
+  padding-top: 44px !important;
   z-index: 3;
   display: flex;
   flex-direction: column;

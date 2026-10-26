@@ -104,7 +104,8 @@ function GameSheet({ g, onClose }) {
 }
 
 export default function Games() {
-  const [open, setOpen] = useState(null);
+  // /games#week3 opens that game's sheet (the homepage chips link here).
+  const [open, setOpen] = useState(() => GAMES.find((g) => `#week${g.week}` === window.location.hash) ?? null);
   return (
     <main className="games">
       <section className="games__hero">
